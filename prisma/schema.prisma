@@ -1,0 +1,532 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id             String        @id @default(cuid())
+  name           String?
+  email          String        @unique
+  emailVerified  DateTime?     @map("email_verified")
+  image          String?
+  password       String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  systemRole     SystemRole    @default(USER) @map("system_role")
+  onboardingStep String?       @default("initial")
+  onboardingData Json?         @default("{}")
+  accounts       Account[]
+  apiKeys        ApiKey[]
+  invoices       Invoice[]
+  satInvoices    SatInvoice[]
+  memberships    Member[]
+  organizations  Organization?
+  sessions       Session[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model Organization {
+  id                       String         @id @default(cuid())
+  name                     String
+  slug                     String         @unique
+  logo                     String?
+  description              String?
+  createdAt                DateTime       @default(now()) @map("created_at")
+  updatedAt                DateTime       @updatedAt @map("updated_at")
+  ownerId                  String?        @unique
+  onboardingCompleted      Boolean        @default(false)
+  setupRequirements        Json           @default("{\"minUsers\": 2, \"minCompanies\": 1}")
+  operationalAccessEnabled Boolean        @default(false)
+  systemSettings           Json?          @default("{}") @map("system_settings")
+  address                  String?
+  city                     String?
+  state                    String?
+  postalCode               String?        @map("postal_code")
+  country                  String?        @default("México")
+  phone                    String?
+  contactEmail             String?        @map("contact_email")
+  businessDescription      String?        @map("business_description")
+  website                  String?
+  industry                 String?
+  companySize              String?        @map("company_size")
+  foundedYear              Int?           @map("founded_year")
+  taxId                    String?        @map("tax_id")
+  businessType             String?        @map("business_type")
+  fiscalEntities           FiscalEntity[]
+  members                  Member[]
+  companyAccesses          CompanyAccess[]
+  satCredentials           SatCredential[]
+  users                    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([onboardingCompleted])
+  @@index([operationalAccessEnabled])
+  @@map("organizations")
+}
+
+model Member {
+  id                  String       @id @default(cuid())
+  userId              String       @map("user_id")
+  organizationId      String       @map("organization_id")
+  role                MemberRole   @default(VIEWER)
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  status              String       @default("PENDING")
+  approvedBy          String?
+  approvedAt          DateTime?    @db.Timestamp(6)
+  invitationToken     String?
+  invitationExpiresAt DateTime?    @db.Timestamp(6)
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyAccesses     CompanyAccess[]
+  canViewEmission     Boolean      @default(true)  @map("can_view_emission")
+  canViewReception    Boolean      @default(true)  @map("can_view_reception")
+  canViewPayroll      Boolean      @default(true)  @map("can_view_payroll")
+  canViewSatPortal    Boolean      @default(true)  @map("can_view_sat_portal")
+  canViewMassDownloads Boolean      @default(true)  @map("can_view_mass_downloads")
+  canManageOrg        Boolean      @default(false) @map("can_manage_org")
+
+  @@unique([userId, organizationId])
+  @@index([invitationToken])
+  @@index([status])
+  @@map("members")
+}
+
+model FiscalEntity {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  rfc            String       @unique
+  businessName   String       @map("business_name")
+  taxRegime      String       @map("tax_regime")
+  postalCode     String       @map("postal_code")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices       Invoice[]
+  satInvoices    SatInvoice[]
+
+  @@map("fiscal_entities")
+}
+
+model Invoice {
+  id                   String        @id @default(cuid())
+  userId               String        @map("user_id")
+  issuerFiscalEntityId String        @map("issuer_fiscal_entity_id")
+  uuid                 String        @unique
+  cfdiType             CfdiType      @map("cfdi_type")
+  series               String?
+  folio                String?
+  currency             String        @default("MXN")
+  exchangeRate         Float?        @map("exchange_rate")
+  status               InvoiceStatus @default(ACTIVE)
+  satStatus            SatStatus     @default(VIGENTE) @map("sat_status")
+  issuerRfc            String        @map("issuer_rfc")
+  issuerName           String        @map("issuer_name")
+  receiverRfc          String        @map("receiver_rfc")
+  receiverName         String        @map("receiver_name")
+  subtotal             Decimal       @db.Decimal(15, 2)
+  discount             Decimal       @default(0) @db.Decimal(15, 2)
+  total                Decimal       @db.Decimal(15, 2)
+  ivaTransferred       Decimal       @default(0) @map("iva_transferred") @db.Decimal(15, 2)
+  ivaWithheld          Decimal       @default(0) @map("iva_withheld") @db.Decimal(15, 2)
+  isrWithheld          Decimal       @default(0) @map("isr_withheld") @db.Decimal(15, 2)
+  iepsWithheld         Decimal       @default(0) @map("ieps_withheld") @db.Decimal(15, 2)
+  xmlContent           String        @map("xml_content")
+  pdfUrl               String?       @map("pdf_url")
+  issuanceDate         DateTime      @map("issuance_date")
+  certificationDate    DateTime      @map("certification_date")
+  certificationPac     String        @map("certification_pac")
+  paymentMethod        String        @map("payment_method")
+  paymentForm          String        @map("payment_form")
+  cfdiUsage            String        @map("cfdi_usage")
+  placeOfExpedition    String        @map("place_of_expedition")
+  exportKey            String        @default("01") @map("export_key")
+  objectTaxComprobante String?       @map("object_tax_comprobante")
+  paymentConditions    String?       @map("payment_conditions")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  fiscalEntity         FiscalEntity  @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concepts             InvoiceConcept[]
+  relatedCfdis         InvoiceRelatedCfdi[]
+
+  @@index([issuerFiscalEntityId])
+  @@index([issuerRfc])
+  @@index([receiverRfc])
+  @@index([issuanceDate])
+  @@index([total])
+  @@map("invoices")
+}
+
+model SatInvoice {
+  id                String        @id @default(cuid())
+  userId            String        @map("user_id")
+  fiscalEntityId    String        @map("fiscal_entity_id")
+  uuid              String        @unique
+  cfdiType          CfdiType      @map("cfdi_type")
+  series            String?
+  folio             String?
+  currency          String        @default("MXN")
+  exchangeRate      Float?        @map("exchange_rate")
+  status            InvoiceStatus @default(ACTIVE)
+  satStatus         SatStatus     @default(VIGENTE) @map("sat_status")
+  issuerRfc         String        @map("issuer_rfc")
+  issuerName        String        @map("issuer_name")
+  receiverRfc       String        @map("receiver_rfc")
+  receiverName      String        @map("receiver_name")
+  subtotal          Decimal       @db.Decimal(15, 2)
+  discount          Decimal       @default(0) @db.Decimal(15, 2)
+  total             Decimal       @db.Decimal(15, 2)
+  ivaTrasladado     Decimal       @default(0) @map("iva_trasladado") @db.Decimal(15, 2)
+  ivaRetenido       Decimal       @default(0) @map("iva_retenido") @db.Decimal(15, 2)
+  isrRetenido       Decimal       @default(0) @map("isr_retenido") @db.Decimal(15, 2)
+  iepsRetenido      Decimal       @default(0) @map("ieps_retenido") @db.Decimal(15, 2)
+  xmlContent        String        @map("xml_content")
+  pdfUrl            String?       @map("pdf_url")
+  issuanceDate      DateTime      @map("issuance_date")
+  certificationDate DateTime      @map("certification_date")
+  certificationPac  String        @map("certification_pac")
+  paymentMethod     String        @map("payment_method")
+  paymentForm       String        @map("payment_form")
+  usageCfdi         String        @map("usage_cfdi")
+  expeditionPlace   String        @map("expedition_place")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  fiscalEntity      FiscalEntity  @relation(fields: [fiscalEntityId], references: [id], onDelete: Cascade)
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([fiscalEntityId])
+  @@index([issuerRfc])
+  @@index([receiverRfc])
+  @@index([issuanceDate])
+  @@index([total])
+  @@map("sat_invoices")
+}
+
+model InvoiceConcept {
+  id                     Int      @id @default(autoincrement())
+  invoiceId              String   @map("invoice_id")
+  productServiceKey      String   @map("product_service_key")
+  identificationNumber   String?  @map("identification_number")
+  unitQuantity           Decimal  @map("unit_quantity") @db.Decimal(18, 6)
+  unitKey                String   @map("unit_key")
+  unitDescription        String?  @map("unit_description")
+  description            String
+  unitValue              Decimal  @map("unit_value") @db.Decimal(18, 6)
+  amount                 Decimal  @db.Decimal(18, 6)
+  discount               Decimal  @default(0) @db.Decimal(15, 2)
+  objectOfTax            String   @map("object_of_tax")
+  transferredTaxesJson   Json?    @map("transferred_taxes_json")
+  withheldTaxesJson      Json?    @map("withheld_taxes_json")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  invoice                Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_concepts")
+}
+
+model InvoiceRelatedCfdi {
+  id           Int      @id @default(autoincrement())
+  invoiceId    String   @map("invoice_id")
+  relationType String   @map("relation_type")
+  relatedUuid  String   @map("related_uuid")
+  createdAt    DateTime @default(now()) @map("created_at")
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_related_cfdis")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  name        String
+  key         String    @unique
+  lastUsedAt  DateTime? @map("last_used_at")
+  expiresAt   DateTime? @map("expires_at")
+  permissions String[]  @default(["read"])
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Company {
+  id                  String        @id @default(cuid())
+  name                String
+  rfc                 String        @unique
+  businessName        String        @map("business_name")
+  legalRepresentative String?       @map("legal_representative")
+  taxRegime           String        @map("tax_regime")
+  postalCode          String        @map("postal_code")
+  address             String?
+  city                String?
+  state               String?
+  country             String        @default("México")
+  phone               String?
+  email               String?
+  website             String?
+  industry            String?
+  employeesCount      Int?          @map("employees_count")
+  incorporationDate   DateTime?     @map("incorporation_date")
+  status              CompanyStatus @default(PENDING)
+  approvedBy          String?       @map("approved_by")
+  approvedAt          DateTime?     @map("approved_at")
+  rejectionReason     String?       @map("rejection_reason")
+  notes               String?
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  createdBy           String        @map("created_by")
+  updatedBy           String        @map("updated_by")
+  auditLogs           AuditLog[]
+  companyAccesses     CompanyAccess[]
+  massDownloadRequests MassDownloadRequest[]
+
+  @@index([rfc])
+  @@index([status])
+  @@index([businessName])
+  @@map("companies")
+}
+
+model MassDownloadRequest {
+  id            String   @id @default(cuid())
+  companyId     String   @map("company_id")
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  
+  receiverRfc   String?  @map("receiver_rfc")
+  issuerRfc     String   @map("issuer_rfc")
+  requestingRfc String   @map("requesting_rfc")
+  
+  requestType   String   @map("request_type")
+  retrievalType String   @default("emitidos") @map("retrieval_type")
+  folio         String?
+  voucherType   String?  @map("voucher_type")
+  status        String   @default("Todos")
+
+  // Processing fields
+  requestStatus RequestStatus @default(SOLICITADO) @map("request_status")
+  satPackageId  String?       @map("sat_package_id")
+  satMessage    String?       @map("sat_message") // For faultcode or success messages
+  errorLog      Json?         @map("error_log")   // For detailed error tracking
+  
+  // Verification fields (New)
+  packageIds          Json?     @map("package_ids")         // Array of package IDs generated by SAT
+  verificationAttempts Int      @default(0) @map("verification_attempts")
+  nextCheck           DateTime? @map("next_check")
+  
+  thirdPartyRfc String?  @map("third_party_rfc")
+  complement    String?
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("mass_download_requests")
+}
+
+model CompanyAccess {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  companyId      String             @map("company_id")
+  memberId       String             @map("member_id")
+  role           CompanyAccessRole  @default(VIEWER)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  member         Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, companyId])
+  @@map("company_access")
+}
+
+enum CompanyAccessRole {
+  ADMIN
+  AUDITOR
+  VIEWER
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  tableName   String      @map("table_name")
+  recordId    String      @map("record_id")
+  action      AuditAction
+  oldValues   Json?       @map("old_values")
+  newValues   Json?       @map("new_values")
+  userId      String      @map("user_id")
+  userEmail   String      @map("user_email")
+  ipAddress   String?     @map("ip_address")
+  userAgent   String?     @map("user_agent")
+  timestamp   DateTime    @default(now())
+  description String?
+  companyId   String?     @map("company_id")
+  company     Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([tableName, recordId])
+  @@index([userId])
+  @@index([timestamp])
+  @@index([companyId])
+  @@map("audit_logs")
+}
+
+enum MemberRole {
+  ADMIN
+  AUDITOR
+  VIEWER
+}
+
+enum SystemRole {
+  SUPER_ADMIN
+  ADMIN
+  COMPANY_ADMIN
+  USER
+}
+
+enum CfdiType {
+  INGRESO
+  EGRESO
+  TRASLADO
+  NOMINA
+  PAGO
+}
+
+enum InvoiceStatus {
+  ACTIVE
+  CANCELLED
+  PENDING
+}
+
+enum CompanyStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  SUSPEND
+  CANCEL
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  SAT_ERROR
+}
+
+enum SatStatus {
+  VIGENTE
+  CANCELADO
+  NO_ENCONTRADO
+}
+
+model SatCredential {
+  id                  String       @id @default(cuid())
+  organizationId      String       @map("organization_id")
+  rfc                 String
+  encryptedPrivateKey String       @map("encrypted_private_key")
+  encryptedPassword   String       @map("encrypted_password")
+  certificate         String       @map("certificate") // Base64 content of .cer
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, rfc])
+  @@map("sat_credentials")
+}
+
+enum RequestStatus {
+  SOLICITADO
+  EN_PROCESO
+  TERMINADO    // Equivalent to COMPLETADO but user requested terminology
+  ERROR
+  RECHAZADO    // New
+  VENCIDO      // New
+  COMPLETADO   // Keep for backward compatibility if needed, or migrate
+}
+
+enum StatusCancelacion {
+  SIN_ACEPTACION
+  CON_ACEPTACION
+  PLAZO_VENCIDO
+  NO_CANCELABLE
+  RECHAZADO
+  EN_PROCESO
+}
+
+model Cfdi {
+  uuid              String             @id
+  statusSat         SatStatus          @default(VIGENTE)
+  statusCancelacion StatusCancelacion?
+  motivoCancelacion String?
+  uuidSustitucion   String?            @map("uuid_sustitucion")
+  fechaEmision      DateTime           @map("fecha_emision")
+  fechaCancelacion  DateTime?          @map("fecha_cancelacion")
+  montoTotal        Decimal            @map("monto_total") @db.Decimal(15, 2)
+  impuestos         Decimal            @db.Decimal(15, 2)
+  rfcEmisor         String?            @map("rfc_emisor")
+  rfcReceptor       String?            @map("rfc_receptor")
+  nombreReceptor    String?            @map("nombre_receptor")
+  statusErp         String?            @default("Vigente") @map("status_erp")
+
+  sustitucion       Cfdi?              @relation("Sustitucion", fields: [uuidSustitucion], references: [uuid])
+  sustituidoPor     Cfdi[]             @relation("Sustitucion")
+
+  @@map("cfdis")
+}

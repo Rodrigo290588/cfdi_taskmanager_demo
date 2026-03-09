@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Certificado="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" Exportacion="01" Fecha="2026-02-23T10:41:09" Folio="01291309" FormaPago="04" LugarExpedicion="88275" MetodoPago="PUE" Moneda="MXN" NoCertificado="00001000000515790974" Sello="EGXbdavz7MleMngqgisGcrK96lS9lGbMiTp6TJ1u0qfha2gZoo1+HfuKp11SJy11sL4/Elx119HC8JE4lLHm513RgspC7wc/mKc+iU2crZoUGvIv5N584hNyJPgkT1Ct93PIzklUvhuPs6XqKwsYlHpllQwcWQk/7VjE4EOPlP5Joh0o8LELQ5BtTcA12P65T/J7oww4J3NXzRpreKIXaZGJIaOfL9a4eNZlG5CZagMXjH6uFPKQ+ybcVWBwzGIReLD5LfU1aWXJA5fZ/59AQAk0mRhXOBvJbbcD6glW7WKNERVIH1brRP9Q2FJdQ/e/FVZ/SPaYoNyGLMKcIIhnGg==" Serie="PAF" SubTotal="7026.79" TipoCambio="1" TipoDeComprobante="I" Total="7588.92" Version="4.0" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd"><cfdi:CfdiRelacionados TipoRelacion="04"><cfdi:CfdiRelacionado UUID="B80FEB2A-F27E-4F2F-A411-E67C8EE174DB"/></cfdi:CfdiRelacionados><cfdi:Emisor Nombre="OPTICAS DEVLYN" RegimenFiscal="601" Rfc="ODE8604257UA"/><cfdi:Receptor DomicilioFiscalReceptor="88240" Nombre="NIDIA ADRIANA CARRIZALES NAVARRO" RegimenFiscalReceptor="605" Rfc="CANN820219HY2" UsoCFDI="D02"/><cfdi:Conceptos>
+	<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" Importe="1198.15" ObjetoImp="02" Unidad="Pieza" ValorUnitario="1198.1500"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="1198.15" Importe="95.85" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" Importe="1198.15" ObjetoImp="02" Unidad="Pieza" ValorUnitario="1198.1500"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="1198.15" Importe="95.85" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="2" ClaveProdServ="12171500" ClaveUnidad="ACT" Descripcion="6898 AR PREMIUM" Importe="0.02" ObjetoImp="02" Unidad="Unidad" ValorUnitario="0.0100"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="0.02" Importe="0.00" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142901" ClaveUnidad="H87" Descripcion="20128330 COACH 0HC6248U 5895 52 LILA" Importe="3991.67" ObjetoImp="02" Unidad="Pieza" ValorUnitario="3991.6700"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="3991.67" Importe="319.33" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="81111819" ClaveUnidad="ACT" Descripcion="PROTECCION PLUS" Importe="638.80" ObjetoImp="02" Unidad="Unidad" ValorUnitario="638.8000"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="638.80" Importe="51.10" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="562.13">
+		
+		<cfdi:Traslados><cfdi:Traslado Base="7026.79" Importe="562.13" Impuesto="002" TasaOCuota="0.080000" TipoFactor="Tasa"/></cfdi:Traslados>
+	</cfdi:Impuestos><cfdi:Complemento>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2026-02-23T10:45:43" NoCertificadoSAT="00001000000700926429" RfcProvCertif="FAC100625MC0" SelloCFD="EGXbdavz7MleMngqgisGcrK96lS9lGbMiTp6TJ1u0qfha2gZoo1+HfuKp11SJy11sL4/Elx119HC8JE4lLHm513RgspC7wc/mKc+iU2crZoUGvIv5N584hNyJPgkT1Ct93PIzklUvhuPs6XqKwsYlHpllQwcWQk/7VjE4EOPlP5Joh0o8LELQ5BtTcA12P65T/J7oww4J3NXzRpreKIXaZGJIaOfL9a4eNZlG5CZagMXjH6uFPKQ+ybcVWBwzGIReLD5LfU1aWXJA5fZ/59AQAk0mRhXOBvJbbcD6glW7WKNERVIH1brRP9Q2FJdQ/e/FVZ/SPaYoNyGLMKcIIhnGg==" SelloSAT="HPFocV6xmYuquGPxajEdwGKcxv4s0EExP4sF1M4fWzcjfeMGFJzhs9P24u7caaxMhM7g14Ta/s0pDnUXpX0M4wUoBe2sYLECt5Z7E9kRWTW1hC5L6Um+w8kIBRWu/uq8w05RXHWZE0bNVoo0JFvjR2f8GYG80RGUNG2Hb0D8EV6vr5k6P1rxntC8rna1Mt7IL1ENfLYCZ4WZyTFoVEbSecm2gBvJUg6IySqc4Iwy5McIQZyVcxj8eM/0kx0ex8y8cdS6hgwt8ZUSed90uXummypkCEDCfFh0h3Sr+Ug7E3w1hreMkDuDQDfG5Rcn7GZmld0FWnJh2CSvsFqmvsetJA==" UUID="22EEA652-C1B9-4317-A185-257B29A86576" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/></cfdi:Complemento><cfdi:Addenda>
+		<fa:Datos xmlns:fa="http://www.itcomplements.com/cfd/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.itcomplements.com/cfd/v1 http://www.itcomplements.com/cfd/v1/fav1.xsd" version="1.0" tipoDocumento="FACTURA" mail="ADRYCARRIZALES@GMAIL.COM" printer="" fechaFactura="2026-02-23" ordenCompra="" fechaOrdenCompra="" noContraRecibo="" fechaContraRecibo="" glnComprador="" glnVendedor="" glnEntregado="" totalPartidas="" cantidadConLetra="SIETE MIL QUINIENTOS OCHENTA Y OCHO PESOS 92/100 M.N." status="1" totalMx="" ivaMx="" noProveedor="" noCliente="" hora="10:41:09" leyendaUSD="" noPedido="" remision="" condicionPago="" ordenventa="1131245728/AYEP060023" notes="" comentario2="NOMBRE DE PACIENTE Nidia Adriana Carrizales Navarro GRADUACION LENTES OD 1.75 0.0 0.0 28.0 OI 2.0 -0.75 139.0 28.0" subTotalProductosConIva="7026.79" subTotalProductosSinIva="0.00" FolioSAP="0107332407" MetodoPago="PUE Pago en un sola exhibicion" FormaPago="04 Tarjeta de credito" LugarExpedicion="88275 Tamaulipas NUEVO LAREDO" TipoDeComprobante="I ingreso" RegimenFiscal="601 General de Ley Personas Morales" UsoCFDI="D02 Gastos médicos por incapacidad o discapacidad" Tasa="8" Sucursal="B040" RegimenFiscalReceptor="605 Sueldos y Salarios e Ingresos Asimilados a Salarios" uuidSus="" motivoCancel="">
+			<fa:Detalle>     
+			<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" unidad="Pieza" valorUnitario="1198.1500" importe="1198.15" impuesto="002 IVA" porcentaje="0.080000" totalimpuesto="95.85" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" unidad="Pieza" valorUnitario="1198.1500" importe="1198.15" impuesto="002 IVA" porcentaje="0.080000" totalimpuesto="95.85" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="12171500" cantidad="2" ClaveUnidad="ACT" descripcion="6898 AR PREMIUM" unidad="Unidad" valorUnitario="0.0100" importe="0.02" impuesto="002 IVA" porcentaje="0.080000" totalimpuesto="0.00" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142901" cantidad="1" ClaveUnidad="H87" descripcion="20128330 COACH 0HC6248U 5895 52 LILA" unidad="Pieza" valorUnitario="3991.6700" importe="3991.67" impuesto="002 IVA" porcentaje="0.080000" totalimpuesto="319.33" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="81111819" cantidad="1" ClaveUnidad="ACT" descripcion="PROTECCION PLUS" unidad="Unidad" valorUnitario="638.8000" importe="638.80" impuesto="002 IVA" porcentaje="0.080000" totalimpuesto="51.10" ObjetoImp="02"/>
+</fa:Detalle>
+			<fa:AddendaComercial>
+				<fa:Impuestos>
+					<fa:Traslados>
+					<fa:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="Total IVA 8%" Importe="562.13"/>
+</fa:Traslados>
+				</fa:Impuestos>
+				<fa:Totales tipoFactura="" subtotalSinDescuentos="" subTotalMx="" totalMx="" cantidadConLetra="" referencia=""/>  
+				<fa:EntregadoEn nombre="" calle="" noExterior="" noInterior="" colonia="" localidad="" referencia="" municipio="" estado="" pais="" codigoPostal=""/>
+				<fa:DireccionEmisor nombre="" calle="MIGUEL DE CERVANTES SAAVEDRA" noExterior="31" colonia="GRANADA, MEXICO" municipio="MIGUEL HIDALGO" estado="Ciudad de Mexico" pais="México" codigoPostal="11520"/><fa:EmisorExpedidoEn nombre="" calle="AV REFORMA" noExterior="5601" noInterior="LOC 24" colonia="LAS ALAMEDAS" localidad="TAMAULIPAS" municipio="NUEVO LAREDO" estado="Tamaulipas" pais="México" codigoPostal="88275"/><fa:DireccionReceptor nombre="" calle="TEREHUANOS #51" localidad="MIER Y TERAN" municipio="NUEVO LAREDO" estado="Tamaulipas" pais="México" codigoPostal="88240"/>
+				<fa:Traslados>
+				</fa:Traslados>
+				<fa:Retenciones>
+				</fa:Retenciones>
+			</fa:AddendaComercial>
+			<fa:hfd version="1.0">~|0| Z0 Xi
+~K1 = "Arial" 6
+~K2 = "Arial" n6
+~K3 = "Arial" 8
+~K4 = "Arial" n8
+~K5 = "Arial" 10
+~K6 = "Arial" n10
+~K7 = "Arial" 6 100.100.100
+~K8 = "Arial" n8 100.100.100
+~K9 = "Arial" 5
+~&lt;P'=1' A "Activa.jpg"
+~&gt;
+
+~H|0|
+
+~[3 30 40 30
+~#
+~[3
+~]
+
+
+~#D M280.280 "LOGO_ODE8604257UA.jpg";
+
+~#
+~[30
+~#|e+|M150.150 Jc Jv50 @6
+OPTICAS DEVLYN
+~#|e+|M150.150 Jc Jv50 @1
+R.F.C. ODE8604257UA
+
+MIGUEL DE CERVANTES SAAVEDRA  31 
+
+GRANADA, MEXICO   MIGUEL HIDALGO  
+
+Ciudad de Mexico  México 11520 
+
+
+
+
+
+~#|e+|M50.50 Jc Jv50 @4
+FACTURA
+~]
+
+~#
+~]
+
+
+~[2 20 30 10 20 22 3
+~#
+~[3
+~]
+
+
+~#|e+| Jl @2
+Régimen:
+
+Método de Pago:
+
+Lugar de Expedición:
+
+Moneda y Tipo de cambio:
+
+Orden de Venta
+
+Forma de Pago
+
+Exportación:
+
+Condiciones de Pago:
+
+~#|e+| Jl @1
+601 General de Ley Personas Morales
+
+PUE Pago en un sola exhibicion
+
+88275 Tamaulipas NUEVO LAREDO
+
+MXN   1
+
+1131245728/AYEP060023
+
+04 Tarjeta de credito
+
+01
+
+
+
+~#|e+|
+
+~#|e+| Jl @2
+Hoja:
+
+Serie y Folio:
+
+Tipo De Comprobante: 
+
+No. Serie Certificado:
+
+No Certificado SAT:
+
+Fecha y Hora de Certificación:
+
+Fecha y Hora Documento:
+
+Folio Fiscal:
+~#|e+| Jl @1
+@p de @P
+
+PAF 01291309
+
+I ingreso
+
+00001000000515790974
+
+00001000000700926429
+
+2026-02-23T10:45:43
+
+2026-02-23T10:41:09
+
+@922EEA652-C1B9-4317-A185-257B29A86576
+~#|e+|
+
+~]
+~&lt;Z20&gt;
+
+~[2 45 10 45
+
+~#
+~[3
+~]
+
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+CLIENTE
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+NIDIA ADRIANA CARRIZALES NAVARRO
+
+TEREHUANOS #51     
+
+  MIER Y TERAN  NUEVO LAREDO 
+
+Tamaulipas  México  88240  
+
+
+
+R.F.C. CANN820219HY2
+
+Uso CFDI:D02 Gastos médicos por incapacidad o discapacidad
+
+Régimen Fiscal:605 Sueldos y Salarios e Ingresos Asimilados a Salarios
+
+~]
+~#
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+LUGAR DE EXPEDICIÓN
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+
+
+AV REFORMA  5601  LOC 24  
+
+LAS ALAMEDAS  TAMAULIPAS  NUEVO LAREDO
+
+Tamaulipas  México  88275  
+~]
+~]
+
+~&lt;Z20&gt;
+
+~[2 10 9 40 15 10 10 10 10 10 10
+~#
+~[3
+~]
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CLAVE SAT
+~#|e+ 15.1f110.20|M50.50 Jc Jv50 @2
+CANTIDAD
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CONCEPTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+UNIDAD DE MEDIDA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+COSTO UNITARIO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOTAL
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+IMPUESTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+OBJ. IMP
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TASA O CUOTA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOT. IMP.
+~]
+
+~&gt;
+
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42001612 POLY VS ESFERICO BLUE LIGHT
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+1,198.1500
+~# Jr @3 |r20|
+1,198.15
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.080000
+~# Jr @3 |r20|
+95.85
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42001612 POLY VS ESFERICO BLUE LIGHT
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+1,198.1500
+~# Jr @3 |r20|
+1,198.15
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.080000
+~# Jr @3 |r20|
+95.85
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+12171500
+~# Jc @3 |r20|
+2
+~# Jl @3 |l30|
+6898 AR PREMIUM
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+0.0100
+~# Jr @3 |r20|
+0.02
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.080000
+~# Jr @3 |r20|
+0.00
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142901
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+20128330 COACH 0HC6248U 5895 52 LILA
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+3,991.6700
+~# Jr @3 |r20|
+3,991.67
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.080000
+~# Jr @3 |r20|
+319.33
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+81111819
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+PROTECCION PLUS
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+638.8000
+~# Jr @3 |r20|
+638.80
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.080000
+~# Jr @3 |r20|
+51.10
+~]
+
+~[2 40 60
+
+~#
+~[2
+~]
+
+
+~#
+~[40
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+CFDI RELACIONADOS
+~]
+
+~#
+~[60
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+Tipo de Relacion:
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|Jl @3
+~[ 
+~# Jl @3
+B80FEB2A-F27E-4F2F-A411-E67C8EE174DB
+~]
+~]
+~]
+
+
+~F|0|
+~[2 50 5 20 20
+
+~#
+~[2
+~]
+
+~#
+~[50
+~#|e+ 15.1 gudlrg|M80.80 Jl @4
+CANTIDAD CON LETRA:
+
+SIETE MIL QUINIENTOS OCHENTA Y OCHO PESOS 92/100 M.N.
+
+~]
+
+~#
+~[5
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. IVA 8%
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. SIN IVA 0%
+~#|e+| M60.60 Jr @4
+SUBTOTAL GENERAL
+~#|e+| M60.60 Jr @4
+Total IVA 8%
+~#|e+| M60.60 Jr @4
+
+TOTAL
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @3
+7,026.79
+~#|e+| M60.60 Jr @3
+0.00
+~#|e+| M60.60 Jr @3
+7,026.79
+~#|e+| M60.60 Jr @3
+
+562.13
+~#|e+| M60.60 Jr @3
+7,588.92
+~]
+
+~]
+
+~&lt;Z20
+~&gt;
+
+~[2 20 80
+
+~#
+~[2
+~]
+
+~#
+~[20
+~#D M420.420 "22EEA652-C1B9-4317-A185-257B29A86576.bmp";
+~]
+
+~#
+~[80
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+Observaciones
+
+@1NOMBRE DE PACIENTE Nidia Adriana Carrizales Navarro GRADUACION LENTES OD 1.75 0.0 0.0 28.0 OI 2.0 -0.75 139.0 28.0
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO DIGITAL DEL CFDI
+
+@1EGXbdavz7MleMngqgisGcrK96lS9lGbMiTp6TJ1u0qfha2gZoo1+HfuKp11SJy11sL4/Elx119HC8JE4lLHm513RgspC7wc/mKc+iU2crZoUGvIv5N584hNyJPgkT1Ct93PIzklUvhuPs6XqKwsYlHpllQwcWQk/7VjE4EOPlP5Joh0o8LELQ5BtTcA12P65T/J7oww4J3NXzRpreKIXaZGJIaOfL9a4eNZlG5CZagMXjH6uFPKQ+ybcVWBwzGIReLD5LfU1aWXJA5fZ/59AQAk0mRhXOBvJbbcD6glW7WKNERVIH1brRP9Q2FJdQ/e/FVZ/SPaYoNyGLMKcIIhnGg==
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO SAT
+
+@1HPFocV6xmYuquGPxajEdwGKcxv4s0EExP4sF1M4fWzcjfeMGFJzhs9P24u7caaxMhM7g14Ta/s0pDnUXpX0M4wUoBe2sYLECt5Z7E9kRWTW1hC5L6Um+w8kIBRWu/uq8w05RXHWZE0bNVoo0JFvjR2f8GYG80RGUNG2Hb0D8EV6vr5k6P1rxntC8rna1Mt7IL1ENfLYCZ4WZyTFoVEbSecm2gBvJUg6IySqc4Iwy5McIQZyVcxj8eM/0kx0ex8y8cdS6hgwt8ZUSed90uXummypkCEDCfFh0h3Sr+Ug7E3w1hreMkDuDQDfG5Rcn7GZmld0FWnJh2CSvsFqmvsetJA==
+
+~#|e+ 15.1 gudlrg| Jc @4
+CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT
+
+@1||1.1|22EEA652-C1B9-4317-A185-257B29A86576|2026-02-23T10:45:43|FAC100625MC0||EGXbdavz7MleMngqgisGcrK96lS9lGbMiTp6TJ1u0qfha2gZoo1+HfuKp11SJy11sL4/Elx119HC8JE4lLHm513RgspC7wc/mKc+iU2crZoUGvIv5N584hNyJPgkT1Ct93PIzklUvhuPs6XqKwsYlHpllQwcWQk/7VjE4EOPlP5Joh0o8LELQ5BtTcA12P65T/J7oww4J3NXzRpreKIXaZGJIaOfL9a4eNZlG5CZagMXjH6uFPKQ+ybcVWBwzGIReLD5LfU1aWXJA5fZ/59AQAk0mRhXOBvJbbcD6glW7WKNERVIH1brRP9Q2FJdQ/e/FVZ/SPaYoNyGLMKcIIhnGg==|00001000000700926429||
+~]
+
+~]
+
+~&lt;Z10
+~&gt;
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+ 15.1 gudlrg d0|M180.180 Jj @3 Jv50
+DEBO Y PAGARÉ INCONDICIONALMENTE A LA ORDEN DE OPTICAS DEVLYN EN MÉXICO, D.F. O EN CUALQUIER
+PLAZA QUE SE ME REQUIERA EN LA FECHA __________________________ LA CANTIDAD DE $ ________________________________________
+
+( _______________________________________________________________________________________________________________________ )
+
+VALOR RECIBIDO A MI ENTERA SATISFACCIÓN. DESDE LA FECHA DE VENCIMIENTO DE ESTE DOCUMENTO HASTA EL DÍA DE SU LIQUIDACIÓN
+CAUSARÁ INTERESES MORATORIOS AL TIPO DE _________ % MENSUAL, PAGADERO EN MÉXICO D.F. O EN CUALQUIER PLAZA QUE SE ME REQUIERA.
+
+~#|e+ 15.1 gudlrg u0 d0|M80.80 Jc @3 Jv100
+ACEPTO Y PAGARÉ A SU VENCIMIENTO.
+~#|e+ 15.1 gudlrg u0|M150.150 Jc @3 Jv100
+________________________________
+
+FIRMA
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|M80.80 Jc @2 Jv50
+Este documento es una representación impresa de un CFDI
+~]
+~]
+~&gt;</fa:hfd>
+		</fa:Datos>
+	</cfdi:Addenda></cfdi:Comprobante>

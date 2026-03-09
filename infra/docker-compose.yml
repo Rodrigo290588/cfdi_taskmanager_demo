@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:alpine3.23
+    container_name: dev-itc
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 'dev_itc_Admin_2026*!'
+      POSTGRES_DB: platfi_intelligence_demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Certificado="MIIF+DCCA+CgAwIBAgIUMDAwMDEwMDAwMDA1MTU3OTA5NzQwDQYJKoZIhvcNAQELBQAwggGEMSAwHgYDVQQDDBdBVVRPUklEQUQgQ0VSVElGSUNBRE9SQTEuMCwGA1UECgwlU0VSVklDSU8gREUgQURNSU5JU1RSQUNJT04gVFJJQlVUQVJJQTEaMBgGA1UECwwRU0FULUlFUyBBdXRob3JpdHkxKjAoBgkqhkiG9w0BCQEWG2NvbnRhY3RvLnRlY25pY29Ac2F0LmdvYi5teDEmMCQGA1UECQwdQVYuIEhJREFMR08gNzcsIENPTC4gR1VFUlJFUk8xDjAMBgNVBBEMBTA2MzAwMQswCQYDVQQGEwJNWDEZMBcGA1UECAwQQ0lVREFEIERFIE1FWElDTzETMBEGA1UEBwwKQ1VBVUhURU1PQzEVMBMGA1UELRMMU0FUOTcwNzAxTk4zMVwwWgYJKoZIhvcNAQkCE01yZXNwb25zYWJsZTogQURNSU5JU1RSQUNJT04gQ0VOVFJBTCBERSBTRVJWSUNJT1MgVFJJQlVUQVJJT1MgQUwgQ09OVFJJQlVZRU5URTAeFw0yMjEwMjQxNTQ1NDNaFw0yNjEwMjQxNTQ1NDNaMIHGMSAwHgYDVQQDExdPUFRJQ0FTIERFVkxZTiBTQSBERSBDVjEgMB4GA1UEKRMXT1BUSUNBUyBERVZMWU4gU0EgREUgQ1YxIDAeBgNVBAoTF09QVElDQVMgREVWTFlOIFNBIERFIENWMSUwIwYDVQQtExxPREU4NjA0MjU3VUEgLyBNT0dMODgxMTAyMksyMR4wHAYDVQQFExUgLyBNT0dMODgxMTAySERGTlJTMDAxFzAVBgNVBAsTDk9wdGljYXMgRGV2bHluMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmyyc01/uyZ+/onit9G8OU9oGVkQmprGZTEwFznnip4f0r0SxrdLPFNxbx/YFymjvj0ti3tCicoWkVnEwoHFwk30z84RMUenLn+U8USK0TM2CEAalUwYdynOhh/K2NhUBJcwYbv7zJb42CkRiV+Wiqb1MN5jiZojHqFz3B8iF1GBvracYLcnVbO4KPnkM2A4yAV+7hMOdhrWheBkxd+Vtvc3heqgc8rlIltMjOM7NfF4fzJB6LipavW67R93lbSrqGqRtkTvpAMy7wrETqgkva8rfHjBNnZ+k2c5dUqRAeUDWskUx00EDL6pj4o/A9db7RluyHdCUkSFuyVFRncnzLQIDAQABox0wGzAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIGwDANBgkqhkiG9w0BAQsFAAOCAgEAL4VyUBwBejQCfgn5okyl2q9kqOGiPmYJrMyOAhtYEEfc0ZEr4tYH8ZTjPbCv/jFO2XHowoYfxoPrponBwri5SJQyl+tBR22XsXLwCyxJjEIXtq+yfXsMJQi4t/pORNXBjAqWmpy+0wtcUg7P0o54KPK8/TzcAflEmzmJP/Yzr+koKN2qdZ5Iy5uBf7feAF7Qwq1YWhNq0ESHA3cxmUtFDEju9jiW1I4fkOfXEQItVCDg1+XF9Yn5Dk2jwVnwzZ4ihU8KIZiT5uKnnqSSvZJY68twOKEmzdnydnvSL2X+YhwnHiDYp285InVdFs+UUawF6gR09tj/va/Y4G0S9dFKIiP+P0HUo+S29JXbQV1jZetz1B22DCrIWMNwcqjpyLz74i6w5hgpq+UQLmGjG+b2jL8vx3hjsbcraTrH+ev03aOUccJGcRDVmZ2MTNZwBDwm+IrbyYkOQ0yC33XWtaiCNJBvEOyG2ZNvCNLerI1MCF6Zvv722bQ9LrlQIUB7RIY3IkpGHs7IeI2MAcybOrfpGlcKltVAuU1qAS9IsJ3kzrb2j8Pc55zzgaO0qmplNuBDCPvSNepcc0e2ct7326HSRTFvIjNzrVxgey4ExQy2Z6nwommgahdfyYVmX5utO910UqK0nZdK4PZdI2qB8SUoFp9BYYZx2jm9hdMJLygz7lo=" Exportacion="01" Fecha="2026-02-23T21:31:10" Folio="01291499" FormaPago="04" LugarExpedicion="76160" MetodoPago="PUE" Moneda="MXN" NoCertificado="00001000000515790974" Sello="J89ozvFCRvoY7jmv0nQDtctzj8Ql7KwQMK/SDN/S1InyoCkRw9TkXKhNqsWR5OQ5PgZUkzUL9EZSixrgtNms+lQSX5kqTHvWGV3HKGKp0tpIX0iJ6EBfrLJ49M+5IbrGuTuvCDKPE8sNIIK300XK+fl3ryeRJmdCS1eCV3bdGn8/dGALhEsuWr+WnQbXUlE/MFZek1q2eAb2tyPzmLSpUkiyjTLlNx23XdbxnF4zDlAHK4hMIHNVjuxzPFujEF9C4zTz8YWvLjovVRPOnHqsVhrHz6AH13+LOiw+nc5R3/EbT120hiI6SomdMx05R2H0+pKor9tH7eexOcEVaCrS/w==" Serie="PAF" SubTotal="6779.59" TipoCambio="1" TipoDeComprobante="I" Total="7864.32" Version="4.0" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd"><cfdi:Emisor Nombre="OPTICAS DEVLYN" RegimenFiscal="601" Rfc="ODE8604257UA"/><cfdi:Receptor DomicilioFiscalReceptor="76148" Nombre="JUAN MANUEL GIL MEZA" RegimenFiscalReceptor="605" Rfc="GIMJ680127MG6" UsoCFDI="D01"/><cfdi:Conceptos>
+	<cfdi:Concepto Cantidad="1" ClaveProdServ="42142901" ClaveUnidad="H87" Descripcion="ANTEOJOS COMPLETOS GRADUADOS" Importe="6779.59" ObjetoImp="02" Unidad="Pieza" ValorUnitario="6779.5900"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="6779.59" Importe="1084.73" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="1084.73"><cfdi:Traslados><cfdi:Traslado Base="6779.59" Importe="1084.73" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2026-02-23T21:37:06" NoCertificadoSAT="00001000000700926429" RfcProvCertif="FAC100625MC0" SelloCFD="J89ozvFCRvoY7jmv0nQDtctzj8Ql7KwQMK/SDN/S1InyoCkRw9TkXKhNqsWR5OQ5PgZUkzUL9EZSixrgtNms+lQSX5kqTHvWGV3HKGKp0tpIX0iJ6EBfrLJ49M+5IbrGuTuvCDKPE8sNIIK300XK+fl3ryeRJmdCS1eCV3bdGn8/dGALhEsuWr+WnQbXUlE/MFZek1q2eAb2tyPzmLSpUkiyjTLlNx23XdbxnF4zDlAHK4hMIHNVjuxzPFujEF9C4zTz8YWvLjovVRPOnHqsVhrHz6AH13+LOiw+nc5R3/EbT120hiI6SomdMx05R2H0+pKor9tH7eexOcEVaCrS/w==" SelloSAT="JGoWvPfhkNE3QFi4MYmnWU8GMMQDEDWuL0v8Tj5fK2zZmy//fKroqyRRgC9r9px4NIOJ6lzZ2HGTd4GI5s7OHn/R6fnoTS2V2rWEJuG5w8Q252VQRH1Z4EFTSyTbyz026v83BdkHbKK6MY0SEj7wvbiKpkSdv+BQWOO9tYAvQlKYpu47uoxbGrG6tVQw/TKQF3dcAhS9TUO0p4KquVps0+EPzLuQNkDBQkMygxo2v3e2daQtyLlMfQMVZgTYTn2Odhr4fRTqaXA40qY+J+D0lKbYRfzMyRi1gwb7ZJzOEC5AHjx27a7KHFYJEIJku4A8Aue2RT9z474jOf0SwE24vA==" UUID="AEFC6948-DEF0-4DE1-A806-2CBDFF1A0614" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/></cfdi:Complemento><cfdi:Addenda>
+		<fa:Datos xmlns:fa="http://www.itcomplements.com/cfd/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.itcomplements.com/cfd/v1 http://www.itcomplements.com/cfd/v1/fav1.xsd" version="1.0" tipoDocumento="FACTURA" mail="obautista@devlyn.com.mx" printer="" fechaFactura="2026-02-23" ordenCompra="" fechaOrdenCompra="" noContraRecibo="" fechaContraRecibo="" glnComprador="" glnVendedor="" glnEntregado="" totalPartidas="" cantidadConLetra="SIETE MIL OCHOCIENTOS SESENTA Y CUATRO PESOS 32/100 M.N." status="1" totalMx="" ivaMx="" noProveedor="" noCliente="" hora="21:31:10" leyendaUSD="" noPedido="" remision="" condicionPago="" ordenventa="0070071150/ACNP097521" notes="" subTotalProductosConIva="6779.59" subTotalProductosSinIva="0.00" FolioSAP="0107332887" MetodoPago="PUE Pago en un sola exhibicion" FormaPago="04 Tarjeta de credito" LugarExpedicion="76160 Querétaro SANTIAGO DE QUERÉTARO" TipoDeComprobante="I ingreso" RegimenFiscal="601 General de Ley Personas Morales" UsoCFDI="D01 Honorarios médicos dentales y gastos hospitalarios" Tasa="16" Sucursal="A707" RegimenFiscalReceptor="605 Sueldos y Salarios e Ingresos Asimilados a Salarios" uuidSus="" motivoCancel="">
+			<fa:Detalle>     
+			<fa:Detalle ClaveProdServ="42142901" cantidad="1" ClaveUnidad="H87" descripcion="ANTEOJOS COMPLETOS GRADUADOS" unidad="Pieza" valorUnitario="6779.5900" importe="6779.59" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="1084.73" ObjetoImp="02"/>
+</fa:Detalle>
+			<fa:AddendaComercial>
+				<fa:Impuestos>
+					<fa:Traslados>
+					<fa:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="Total IVA 16%" Importe="1084.73"/>
+</fa:Traslados>
+				</fa:Impuestos>
+				<fa:Totales tipoFactura="" subtotalSinDescuentos="" subTotalMx="" totalMx="" cantidadConLetra="" referencia=""/>  
+				<fa:EntregadoEn nombre="" calle="" noExterior="" noInterior="" colonia="" localidad="" referencia="" municipio="" estado="" pais="" codigoPostal=""/>
+				<fa:DireccionEmisor nombre="" calle="MIGUEL DE CERVANTES SAAVEDRA" noExterior="31" colonia="GRANADA, MEXICO" municipio="MIGUEL HIDALGO" estado="Ciudad de Mexico" pais="México" codigoPostal="11520"/>
+				<fa:EmisorExpedidoEn nombre="" calle="BLVD PROL. CORREGIDORA NTE" noExterior="691" noInterior="&quot;LOC 3, 4&quot;" colonia="ÁLAMOS 3A SECCIÓN" localidad="QUERÉTARO" municipio="SANTIAGO DE QUERÉTARO" estado="Querétaro" pais="México" codigoPostal="76160"/>
+				<fa:DireccionReceptor nombre="" calle="CANTORES 86" colonia="ELSABINO" municipio="QUERETARO" pais="México" codigoPostal="76148"/>
+				<fa:Traslados>
+				</fa:Traslados>
+				<fa:Retenciones>
+				</fa:Retenciones>
+			</fa:AddendaComercial>
+			<fa:hfd version="1.0">~|0| Z0 Xi
+~K1 = "Arial" 6
+~K2 = "Arial" n6
+~K3 = "Arial" 8
+~K4 = "Arial" n8
+~K5 = "Arial" 10
+~K6 = "Arial" n10
+~K7 = "Arial" 6 100.100.100
+~K8 = "Arial" n8 100.100.100
+~K9 = "Arial" 5
+~&lt;P'=1' A "Activa.jpg"
+~&gt;
+
+~H|0|
+
+~[3 30 40 30
+~#
+~[3
+~]
+
+
+~#D M280.280 "LOGO_ODE8604257UA.jpg";
+
+~#
+~[30
+~#|e+|M150.150 Jc Jv50 @6
+OPTICAS DEVLYN
+~#|e+|M150.150 Jc Jv50 @1
+R.F.C. ODE8604257UA
+
+MIGUEL DE CERVANTES SAAVEDRA  31 
+
+GRANADA, MEXICO   MIGUEL HIDALGO  
+
+Ciudad de Mexico  México 11520 
+
+
+
+
+
+~#|e+|M50.50 Jc Jv50 @4
+FACTURA
+~]
+
+~#
+~]
+
+
+~[2 20 30 10 20 22 3
+~#
+~[3
+~]
+
+
+~#|e+| Jl @2
+Régimen:
+
+Método de Pago:
+
+Lugar de Expedición:
+
+Moneda y Tipo de cambio:
+
+Orden de Venta
+
+Forma de Pago
+
+Exportación:
+
+Condiciones de Pago:
+
+~#|e+| Jl @1
+601 General de Ley Personas Morales
+
+PUE Pago en un sola exhibicion
+
+76160 Querétaro SANTIAGO DE QUERÉTARO
+
+MXN   1
+
+0070071150/ACNP097521
+
+04 Tarjeta de credito
+
+01
+
+
+
+~#|e+|
+
+~#|e+| Jl @2
+Hoja:
+
+Serie y Folio:
+
+Tipo De Comprobante: 
+
+No. Serie Certificado:
+
+No Certificado SAT:
+
+Fecha y Hora de Certificación:
+
+Fecha y Hora Documento:
+
+Folio Fiscal:
+~#|e+| Jl @1
+@p de @P
+
+PAF 01291499
+
+I ingreso
+
+00001000000515790974
+
+00001000000700926429
+
+2026-02-23T21:37:06
+
+2026-02-23T21:31:10
+
+@9AEFC6948-DEF0-4DE1-A806-2CBDFF1A0614
+~#|e+|
+
+~]
+~&lt;Z20&gt;
+
+~[2 45 10 45
+
+~#
+~[3
+~]
+
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+CLIENTE
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+JUAN MANUEL GIL MEZA
+
+CANTORES 86     
+
+ELSABINO    QUERETARO 
+
+  México  76148  
+
+
+
+R.F.C. GIMJ680127MG6
+
+Uso CFDI:D01 Honorarios médicos dentales y gastos hospitalarios
+
+Régimen Fiscal:605 Sueldos y Salarios e Ingresos Asimilados a Salarios
+
+~]
+~#
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+LUGAR DE EXPEDICIÓN
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+
+
+BLVD PROL. CORREGIDORA NTE  691  "LOC 3, 4"  
+
+ÁLAMOS 3A SECCIÓN  QUERÉTARO  SANTIAGO DE QUERÉTARO
+
+Querétaro  México  76160  
+~]
+~]
+
+~&lt;Z20&gt;
+
+~[2 10 9 40 15 10 10 10 10 10 10
+~#
+~[3
+~]
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CLAVE SAT
+~#|e+ 15.1f110.20|M50.50 Jc Jv50 @2
+CANTIDAD
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CONCEPTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+UNIDAD DE MEDIDA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+COSTO UNITARIO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOTAL
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+IMPUESTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+OBJ. IMP
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TASA O CUOTA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOT. IMP.
+~]
+
+~&gt;
+
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142901
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+ANTEOJOS COMPLETOS GRADUADOS
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+6,779.5900
+~# Jr @3 |r20|
+6,779.59
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+1084.73
+~]
+
+~[2 40 60
+
+~#
+~[2
+~]
+
+
+~#
+~[40
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+CFDI RELACIONADOS
+~]
+
+~#
+~[60
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+Tipo de Relacion:
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|Jl @3
+~]
+~]
+
+
+~F|0|
+~[2 50 5 20 20
+
+~#
+~[2
+~]
+
+~#
+~[50
+~#|e+ 15.1 gudlrg|M80.80 Jl @4
+CANTIDAD CON LETRA:
+
+SIETE MIL OCHOCIENTOS SESENTA Y CUATRO PESOS 32/100 M.N.
+
+~]
+
+~#
+~[5
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. IVA 16%
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. SIN IVA 0%
+~#|e+| M60.60 Jr @4
+SUBTOTAL GENERAL
+~#|e+| M60.60 Jr @4
+Total IVA 16%
+~#|e+| M60.60 Jr @4
+
+TOTAL
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @3
+6,779.59
+~#|e+| M60.60 Jr @3
+0.00
+~#|e+| M60.60 Jr @3
+6,779.59
+~#|e+| M60.60 Jr @3
+
+1,084.73
+~#|e+| M60.60 Jr @3
+7,864.32
+~]
+
+~]
+
+~&lt;Z20
+~&gt;
+
+~[2 20 80
+
+~#
+~[2
+~]
+
+~#
+~[20
+~#D M420.420 "AEFC6948-DEF0-4DE1-A806-2CBDFF1A0614.bmp";
+~]
+
+~#
+~[80
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+Observaciones
+
+@1
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO DIGITAL DEL CFDI
+
+@1J89ozvFCRvoY7jmv0nQDtctzj8Ql7KwQMK/SDN/S1InyoCkRw9TkXKhNqsWR5OQ5PgZUkzUL9EZSixrgtNms+lQSX5kqTHvWGV3HKGKp0tpIX0iJ6EBfrLJ49M+5IbrGuTuvCDKPE8sNIIK300XK+fl3ryeRJmdCS1eCV3bdGn8/dGALhEsuWr+WnQbXUlE/MFZek1q2eAb2tyPzmLSpUkiyjTLlNx23XdbxnF4zDlAHK4hMIHNVjuxzPFujEF9C4zTz8YWvLjovVRPOnHqsVhrHz6AH13+LOiw+nc5R3/EbT120hiI6SomdMx05R2H0+pKor9tH7eexOcEVaCrS/w==
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO SAT
+
+@1JGoWvPfhkNE3QFi4MYmnWU8GMMQDEDWuL0v8Tj5fK2zZmy//fKroqyRRgC9r9px4NIOJ6lzZ2HGTd4GI5s7OHn/R6fnoTS2V2rWEJuG5w8Q252VQRH1Z4EFTSyTbyz026v83BdkHbKK6MY0SEj7wvbiKpkSdv+BQWOO9tYAvQlKYpu47uoxbGrG6tVQw/TKQF3dcAhS9TUO0p4KquVps0+EPzLuQNkDBQkMygxo2v3e2daQtyLlMfQMVZgTYTn2Odhr4fRTqaXA40qY+J+D0lKbYRfzMyRi1gwb7ZJzOEC5AHjx27a7KHFYJEIJku4A8Aue2RT9z474jOf0SwE24vA==
+
+~#|e+ 15.1 gudlrg| Jc @4
+CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT
+
+@1||1.1|AEFC6948-DEF0-4DE1-A806-2CBDFF1A0614|2026-02-23T21:37:06|FAC100625MC0||J89ozvFCRvoY7jmv0nQDtctzj8Ql7KwQMK/SDN/S1InyoCkRw9TkXKhNqsWR5OQ5PgZUkzUL9EZSixrgtNms+lQSX5kqTHvWGV3HKGKp0tpIX0iJ6EBfrLJ49M+5IbrGuTuvCDKPE8sNIIK300XK+fl3ryeRJmdCS1eCV3bdGn8/dGALhEsuWr+WnQbXUlE/MFZek1q2eAb2tyPzmLSpUkiyjTLlNx23XdbxnF4zDlAHK4hMIHNVjuxzPFujEF9C4zTz8YWvLjovVRPOnHqsVhrHz6AH13+LOiw+nc5R3/EbT120hiI6SomdMx05R2H0+pKor9tH7eexOcEVaCrS/w==|00001000000700926429||
+~]
+
+~]
+
+~&lt;Z10
+~&gt;
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+ 15.1 gudlrg d0|M180.180 Jj @3 Jv50
+DEBO Y PAGARÉ INCONDICIONALMENTE A LA ORDEN DE OPTICAS DEVLYN EN MÉXICO, D.F. O EN CUALQUIER
+PLAZA QUE SE ME REQUIERA EN LA FECHA __________________________ LA CANTIDAD DE $ ________________________________________
+
+( _______________________________________________________________________________________________________________________ )
+
+VALOR RECIBIDO A MI ENTERA SATISFACCIÓN. DESDE LA FECHA DE VENCIMIENTO DE ESTE DOCUMENTO HASTA EL DÍA DE SU LIQUIDACIÓN
+CAUSARÁ INTERESES MORATORIOS AL TIPO DE _________ % MENSUAL, PAGADERO EN MÉXICO D.F. O EN CUALQUIER PLAZA QUE SE ME REQUIERA.
+
+~#|e+ 15.1 gudlrg u0 d0|M80.80 Jc @3 Jv100
+ACEPTO Y PAGARÉ A SU VENCIMIENTO.
+~#|e+ 15.1 gudlrg u0|M150.150 Jc @3 Jv100
+________________________________
+
+FIRMA
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|M80.80 Jc @2 Jv50
+Este documento es una representación impresa de un CFDI
+~]
+~]
+~&gt;</fa:hfd>
+		</fa:Datos>
+	</cfdi:Addenda></cfdi:Comprobante>
