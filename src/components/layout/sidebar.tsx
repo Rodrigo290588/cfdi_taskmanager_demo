@@ -47,8 +47,8 @@ import {
   Users,
   Scale,
   Activity,
-  BadgeCheck,
-  FileWarning
+  CheckCircle,
+  XCircle
 } from "lucide-react"
 
 type NavIcon = React.ComponentType<{ className?: string }>
@@ -453,7 +453,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               )}
             >
               <House className="h-5 w-5 mr-3" />
-              <span>Home</span>
+              <span>Tablero de ingresos</span>
             </Link>
             {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={cfdisEmittedOpen} onOpenChange={setCfdisEmittedOpen}>
@@ -487,13 +487,6 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   <span>Reporte de ingresos</span>
                 </Link>
                 <Link
-                  href="/dashboard_fiscal/ingresos-pagados"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <BadgeCheck className="h-4 w-4" />
-                  <span>Ingresos Pagados</span>
-                </Link>
-                <Link
                   href="/dashboard_fiscal/ingresos-parciales"
                   className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
                 >
@@ -501,10 +494,17 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   <span>Ingresos parcialmente pagados</span>
                 </Link>
                 <Link
+                  href="/dashboard_fiscal/ingresos-pagados"
+                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Ingresos pagados</span>
+                </Link>
+                <Link
                   href="/dashboard_fiscal/cancelaciones"
                   className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
                 >
-                  <FileWarning className="h-4 w-4" />
+                  <XCircle className="h-4 w-4" />
                   <span>Cancelaciones</span>
                 </Link>
               </CollapsibleContent>

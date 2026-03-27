@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
@@ -10,13 +11,6 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -25,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, CartesianGrid, LineChart, Line, Legend, AreaChart, Area } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, CartesianGrid, Legend } from 'recharts'
 import { ShoppingCart, FileText, XCircle, CheckCircle, ArrowDown, Search, SlidersHorizontal } from "lucide-react"
 
 type MetricsResponse = {
@@ -41,6 +35,12 @@ type MetricsResponse = {
       ivaRetenido: number;
       isrRetenido: number;
       iepsRetenido: number;
+      breakdown?: {
+        tasa16: { base: number; tax: number };
+        tasa8: { base: number; tax: number };
+        tasa0: { base: number; tax: number };
+        exento: { base: number; tax: number };
+      }
     }
   }
   byType: Array<{ type: string; count: number; total: number }>
@@ -61,10 +61,9 @@ const DASHBOARD_SECTIONS = [
   { id: 'sat_status', label: 'Estado SAT' },
   { id: 'cfdi_type', label: 'CFDI por Tipo' },
   { id: 'payment_methods', label: 'Formas de Pago' },
-  { id: 'avg_monthly', label: 'Monto Promedio por Mes' },
   { id: 'type_amount', label: 'Monto por Tipo de CFDI' },
   { id: 'top_clients', label: 'Top Clientes/Proveedores' },
-  { id: 'ytd_amount', label: 'Monto Acumulado YTD' },
+  // ytd_amount eliminado
 ]
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
@@ -76,7 +75,7 @@ export default function DashboardFiscalPage() {
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
-  const [origin, setOrigin] = useState<string>('issued')
+  // Force origin to 'issued' and remove the UI selector
   const [appliedFilters, setAppliedFilters] = useState<{start: string, end: string, origin: string}>({ start: '', end: '', origin: 'issued' })
   const [visibleSections, setVisibleSections] = useState<string[]>(DASHBOARD_SECTIONS.map(s => s.id))
  
@@ -132,7 +131,13 @@ export default function DashboardFiscalPage() {
           ivaTrasladado: 0,
           ivaRetenido: 0,
           isrRetenido: 0,
-          iepsRetenido: 0
+          iepsRetenido: 0,
+          breakdown: {
+            tasa16: { base: 0, tax: 0 },
+            tasa8: { base: 0, tax: 0 },
+            tasa0: { base: 0, tax: 0 },
+            exento: { base: 0, tax: 0 }
+          }
         }
       },
       byType: [
@@ -187,7 +192,7 @@ export default function DashboardFiscalPage() {
   }, [selectedCompanyId, buildZeroMetrics, selectedCompany, appliedFilters])
 
   const handleFilter = () => {
-    setAppliedFilters({ start: startDate, end: endDate, origin })
+    setAppliedFilters({ start: startDate, end: endDate, origin: 'issued' })
   }
 
   if (loading) {
@@ -236,7 +241,7 @@ export default function DashboardFiscalPage() {
     <ProtectedRoute>
       <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
         <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Ingresos</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard de Ingresos</h2>
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">
               {metrics?.company?.rfc || selectedCompany?.rfc || 'N/A'} · {metrics?.company?.name || selectedCompany?.businessName || selectedCompany?.name || 'Empresa'}
@@ -246,19 +251,7 @@ export default function DashboardFiscalPage() {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 py-4 items-end">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="origin">Origen</Label>
-            <Select value={origin} onValueChange={setOrigin}>
-              <SelectTrigger id="origin" className="w-[180px]">
-                <SelectValue placeholder="Seleccionar origen" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="issued">Emitidos</SelectItem>
-                <SelectItem value="received">Recibidos</SelectItem>
-                <SelectItem value="both">Ambos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="startDate">Fecha Inicio</Label>
             <Input 
@@ -381,6 +374,24 @@ export default function DashboardFiscalPage() {
                <span className="font-semibold text-muted-foreground">Imp Traslado IVA</span>
              </div>
              <div className="text-xl font-bold text-foreground">{formatMXN(impTrasladoIVA)}</div>
+             <div className="w-full mt-3 space-y-1 text-xs text-muted-foreground border-t pt-2 border-border/50">
+               <div className="flex justify-between items-center">
+                 <span>16%:</span>
+                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa16?.tax || 0)}</span>
+               </div>
+               <div className="flex justify-between items-center">
+                 <span>8%:</span>
+                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa8?.tax || 0)}</span>
+               </div>
+               <div className="flex justify-between items-center">
+                 <span>0% (Base):</span>
+                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa0?.base || 0)}</span>
+               </div>
+               <div className="flex justify-between items-center">
+                 <span>Exento (Base):</span>
+                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.exento?.base || 0)}</span>
+               </div>
+             </div>
           </Card>
 
           <Card className="p-4 flex flex-col justify-center items-center text-center shadow-sm border border-border bg-card">
@@ -422,17 +433,51 @@ export default function DashboardFiscalPage() {
         {visibleSections.includes('monthly_chart') && (
         <Card>
           <CardHeader>
-            <CardTitle>Ingresos por Mes</CardTitle>
+            <CardTitle>CFDI de ingresos por mes</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto scrollbar-visible">
             <div className="min-w-[800px]">
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={metrics?.monthly || []} margin={{ left: 60, right: 90 }}>
+                <BarChart data={metrics?.monthly || []} margin={{ top: 60, left: 100, right: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="label" />
-                  <YAxis yAxisId="left" width={50} />
-                  <YAxis yAxisId="right" orientation="right" width={90} tickFormatter={(val: number) => formatMXN(Number(val))} />
-                  <Tooltip formatter={(value: number | string, name: string) => (name === 'Monto' || name === 'total') ? formatMXN(Number(value)) : value} />
+                  <YAxis 
+                    yAxisId="left" 
+                    width={80} 
+                    label={{ 
+                      position: 'top', 
+                      content: (props: any) => {
+                        const vb = props?.viewBox || {}
+                        const x = (vb.x || 0) + (vb.width || 0) / 2
+                        const y = (vb.y || 0) - 20
+                        return (
+                          <text x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={600} fill="#4b5563">
+                            Cantidad de CFDIs
+                          </text>
+                        )
+                      } 
+                    }} 
+                  />
+                  <YAxis 
+                    yAxisId="right" 
+                    orientation="right" 
+                    width={120} 
+                    tickFormatter={(val: any) => formatMXN(Number(val))} 
+                    label={{ 
+                      position: 'top', 
+                      content: (props: any) => {
+                        const vb = props?.viewBox || {}
+                        const x = (vb.x || 0) + (vb.width || 0) / 2
+                        const y = (vb.y || 0) - 20
+                        return (
+                          <text x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={600} fill="#4b5563">
+                            Importe
+                          </text>
+                        )
+                      } 
+                    }} 
+                  />
+                  <Tooltip formatter={(value: any, name: any) => (name === 'Monto' || name === 'total') ? formatMXN(Number(value)) : value} />
                   <Legend />
                   <Bar yAxisId="left" dataKey="count" name="CFDIs" fill="#2b6cb0" />
                   <Bar yAxisId="right" dataKey="total" name="Monto" fill="#68d391" />
@@ -447,27 +492,56 @@ export default function DashboardFiscalPage() {
         <div className="grid gap-4 md:grid-cols-1">
           <Card>
             <CardHeader>
-              <CardTitle>Estado SAT</CardTitle>
+              <CardTitle>CFDI vigentes vs cancelados</CardTitle>
             </CardHeader>
             <CardContent className="overflow-x-auto scrollbar-visible">
-              <div className="min-w-[600px]">
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie data={metrics?.bySatStatus || []} dataKey="count" nameKey="status" outerRadius={100} label>
-                      {(metrics?.bySatStatus || []).map((_, i) => (
-                        <Cell key={`sat-${i}`} fill={["#2b6cb0", "#e53e3e", "#718096"][i % 3]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="min-w-[700px]">
+                {(() => {
+                  const satArr = metrics?.bySatStatus || []
+                  const pacArr = (metrics as any)?.pacStatus || []
+                  const erpArr = (metrics as any)?.erpStatus || []
+                  const getCounts = (arr: Array<{ status: string; count: number }>) => {
+                    const v = arr.find((x) => x.status === 'VIGENTE')?.count || 0
+                    const c = arr.find((x) => x.status === 'CANCELADO')?.count || 0
+                    return { vigentes: v, cancelados: c }
+                  }
+                  const sat = getCounts(satArr)
+                  const pac = getCounts(pacArr)
+                  const erp = getCounts(erpArr)
+                  const data = [
+                    { source: 'SAT', vigentes: sat.vigentes, cancelados: sat.cancelados, mismatch: false },
+                    { source: 'PAC', vigentes: pac.vigentes, cancelados: pac.cancelados, mismatch: pac.vigentes !== sat.vigentes || pac.cancelados !== sat.cancelados },
+                    { source: 'ERP', vigentes: erp.vigentes, cancelados: erp.cancelados, mismatch: erp.vigentes !== sat.vigentes || erp.cancelados !== sat.cancelados },
+                  ]
+                  return (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={data} margin={{ left: 40, right: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="source" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => [Number(value || 0), '']} />
+                        <Legend />
+                        <Bar dataKey="vigentes" name="Vigentes" fill="#1e3a8a">
+                          {data.map((entry, idx) => (
+                            <Cell key={`vig-${idx}`} fill={entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#1e3a8a'} />
+                          ))}
+                        </Bar>
+                        <Bar dataKey="cancelados" name="Cancelados" fill="#6b7280">
+                          {data.map((entry, idx) => (
+                            <Cell key={`can-${idx}`} fill={entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#6b7280'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )
+                })()}
               </div>
             </CardContent>
           </Card>
         </div>
         )}
 
-        <div className={getGridClass(['cfdi_type', 'payment_methods'])}>
+        <div className={getGridClass(['cfdi_type'])}>
           {visibleSections.includes('cfdi_type') && (
           <Card>
             <CardHeader>
@@ -478,9 +552,31 @@ export default function DashboardFiscalPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={metrics?.byType || []} margin={{ left: 40, right: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="type" />
+                    <XAxis 
+                      dataKey="type" 
+                      tickFormatter={(value) => {
+                        const map: Record<string, string> = {
+                          'INGRESO': 'I',
+                          'EGRESO': 'E',
+                          'PAGO': 'P',
+                          'TRASLADO': 'T'
+                        }
+                        return map[value] || value
+                      }}
+                    />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip 
+                      formatter={(value: any) => [value, 'CFDIs']}
+                      labelFormatter={(label) => {
+                        const map: Record<string, string> = {
+                          'INGRESO': 'I (Ingreso)',
+                          'EGRESO': 'E (Egreso)',
+                          'PAGO': 'P (Pago)',
+                          'TRASLADO': 'T (Traslado)'
+                        }
+                        return map[label] || label
+                      }}
+                    />
                     <Bar dataKey="count" name="CFDIs" fill="#805ad5" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -488,55 +584,59 @@ export default function DashboardFiscalPage() {
             </CardContent>
           </Card>
           )}
-          {visibleSections.includes('payment_methods') && (
+        </div>
+
+        {visibleSections.includes('payment_methods') && (
+        <div className="grid gap-4 md:grid-cols-1">
           <Card>
             <CardHeader>
-              <CardTitle>Formas de Pago</CardTitle>
+              <CardTitle>Métodos de Pago</CardTitle>
             </CardHeader>
             <CardContent className="overflow-x-auto scrollbar-visible">
               <div className="min-w-[600px]">
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
-                    <Pie data={metrics?.paymentMethods || []} dataKey="count" nameKey="method" outerRadius={100} label>
+                    <Pie 
+                      data={metrics?.paymentMethods || []} 
+                      dataKey="count" 
+                      nameKey="method" 
+                      outerRadius={110} 
+                      labelLine={false}
+                      label={(entry: any) => `${entry.name}: ${(entry.percent * 100).toFixed(1)}%`}
+                    >
                       {(metrics?.paymentMethods || []).map((_, i) => (
                         <Cell key={`pay-${i}`} fill={["#63b3ed", "#68d391", "#f6ad55", "#fc8181"][i % 4]} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip 
+                      content={(props: any) => {
+                        const p = props?.payload?.[0]
+                        if (!p) return null
+                        const name = p.name
+                        const count = Number(p.value || 0)
+                        const total = (metrics?.paymentMethods || []).reduce((s, x) => s + Number(x.count || 0), 0)
+                        const pct = total > 0 ? (count / total) * 100 : 0
+                        const amount = typeof p.payload?.total === 'number' ? p.payload.total : 0
+                        return (
+                          <div className="recharts-default-tooltip" style={{ margin: 0, padding: 10, background: '#fff', border: '1px solid #ccc', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 600 }}>{name}</div>
+                            <div>Cantidad: {count}</div>
+                            <div>Porcentaje: {pct.toFixed(1)}%</div>
+                            <div>Importe: {formatMXN(Number(amount))}</div>
+                          </div>
+                        )
+                      }}
+                    />
+                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
-          )}
         </div>
+        )}
 
-        <div className={getGridClass(['avg_monthly', 'type_amount'])}>
-          {visibleSections.includes('avg_monthly') && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Monto Promedio por Mes</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto scrollbar-visible">
-              <div className="min-w-[800px]">
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={(metrics?.monthly || []).map(m => ({
-                    label: m.label,
-                    avg: m.count ? m.total / m.count : 0,
-                  }))} margin={{ left: 90, right: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis width={90} tickFormatter={(val: number) => formatMXN(Number(val))} />
-                    <Tooltip formatter={(value: number | string) => formatMXN(Number(value))} />
-                    <Legend />
-                    <Line type="monotone" dataKey="avg" name="Monto Promedio" stroke="#63b3ed" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-          )}
-
+        <div className={getGridClass(['type_amount'])}>
           {visibleSections.includes('type_amount') && (
           <Card>
             <CardHeader>
@@ -547,9 +647,31 @@ export default function DashboardFiscalPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={metrics?.byType || []} margin={{ left: 60, right: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="type" />
-                    <YAxis width={60} tickFormatter={(val: number) => formatMXN(Number(val))} />
-                    <Tooltip formatter={(value: number | string) => formatMXN(Number(value))} />
+                    <XAxis 
+                      dataKey="type" 
+                      tickFormatter={(value) => {
+                        const map: Record<string, string> = {
+                          'INGRESO': 'I',
+                          'EGRESO': 'E',
+                          'PAGO': 'P',
+                          'TRASLADO': 'T'
+                        }
+                        return map[value] || value
+                      }}
+                    />
+                    <YAxis width={60} tickFormatter={(val: any) => formatMXN(Number(val))} />
+                    <Tooltip 
+                      formatter={(value: any) => formatMXN(Number(value))}
+                      labelFormatter={(label) => {
+                        const map: Record<string, string> = {
+                          'INGRESO': 'I (Ingreso)',
+                          'EGRESO': 'E (Egreso)',
+                          'PAGO': 'P (Pago)',
+                          'TRASLADO': 'T (Traslado)'
+                        }
+                        return map[label] || label
+                      }}
+                    />
                     <Legend />
                     <Bar dataKey="total" name="Monto" fill="#68d391" />
                   </BarChart>
@@ -560,7 +682,7 @@ export default function DashboardFiscalPage() {
           )}
         </div>
 
-        <div className={getGridClass(['top_clients', 'ytd_amount'])}>
+        <div className={getGridClass(['top_clients'])}>
           {visibleSections.includes('top_clients') && (
           <Card>
             <CardHeader>
@@ -569,47 +691,30 @@ export default function DashboardFiscalPage() {
             <CardContent className="overflow-x-auto scrollbar-visible">
               <div className="min-w-[800px]">
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={metrics?.topClients || []} margin={{ left: 90, right: 30 }}>
+                  <BarChart data={metrics?.topClients || []} margin={{ left: 60, right: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis width={90} tickFormatter={(val: number) => formatMXN(Number(val))} />
-                    <Tooltip formatter={(value: number | string) => formatMXN(Number(value))} />
+                    <XAxis dataKey="rfc" />
+                    <YAxis tickFormatter={(val: any) => formatMXN(Number(val))} />
+                    <Tooltip 
+                      formatter={(value: any) => formatMXN(Number(value))}
+                      labelFormatter={(label: any, payload: any) => {
+                        const p = payload?.[0]?.payload
+                        const rfc = p?.rfc || label
+                        const name = p?.name || ''
+                        return name ? `${rfc} - ${name}` : rfc
+                      }}
+                    />
                     <Legend />
-                    <Line type="monotone" dataKey="total" name="Monto" stroke="#805ad5" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-          )}
-          {visibleSections.includes('ytd_amount') && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Monto acumulado YTD</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto scrollbar-visible">
-              <div className="min-w-[800px]">
-                <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart
-                    data={(metrics?.monthly || []).map((m, i, arr) => ({
-                      label: m.label,
-                      cum: arr.slice(0, i + 1).reduce((s, x) => s + (x.total || 0), 0)
-                    }))}
-                    margin={{ left: 90, right: 30 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis width={90} tickFormatter={(val: number) => formatMXN(Number(val))} />
-                    <Tooltip formatter={(value: number | string) => formatMXN(Number(value))} />
-                    <Legend />
-                    <Area type="monotone" dataKey="cum" name="Acumulado" stroke="#2b6cb0" fill="#63b3ed" />
-                  </AreaChart>
+                    <Bar dataKey="total" name="Monto" fill="#68d391" />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
           )}
         </div>
+
+        
 
         
       </div>

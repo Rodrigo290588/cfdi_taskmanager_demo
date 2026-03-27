@@ -410,7 +410,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               )}
             >
               <House className="h-5 w-5" />
-              <span>Home</span>
+              <span>Tablero de ingresos</span>
             </Link>
             {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={cfdisEmittedOpen} onOpenChange={setCfdisEmittedOpen}>

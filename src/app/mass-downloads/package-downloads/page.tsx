@@ -8,9 +8,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+// Removed date-fns imports
 import { CloudDownload, RefreshCw } from 'lucide-react'
+
+// Dummy utility to format dates (to replace date-fns temporarily)
+const formatDate = (date: string | Date) => {
+  try {
+    const d = new Date(date)
+    return d.toLocaleDateString('es-MX')
+  } catch {
+    return String(date)
+  }
+}
 import { cn } from '@/lib/utils'
 
 interface PackageRequest {
@@ -202,7 +211,7 @@ export default function PackageDownloadsPage() {
                         <TableCell>{getStatusBadge(req.estado_code, req.estado_texto)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {req.estado_code === 3 && req.fecha_peticion
-                            ? format(new Date(req.fecha_peticion), 'dd/MM/yyyy HH:mm', { locale: es })
+                            ? formatDate(req.fecha_peticion)
                             : '-'}
                         </TableCell>
                         <TableCell className="w-48">
@@ -214,7 +223,7 @@ export default function PackageDownloadsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(req.fecha_vencimiento), 'dd/MM/yyyy HH:mm', { locale: es })}
+                          {formatDate(req.fecha_vencimiento)}
                         </TableCell>
                         <TableCell className="text-right">
                           {req.estado_code === 3 && (

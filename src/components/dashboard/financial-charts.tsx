@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts"
 import { ChartData } from "@/lib/mock-data"
@@ -20,7 +21,7 @@ export function FinancialCharts({ chartData }: FinancialChartsProps) {
               <XAxis dataKey="month" />
               <YAxis />
               <Tooltip 
-                formatter={(value: number) => [
+                formatter={(value: any) => [
                   new Intl.NumberFormat('es-MX', {
                     style: 'currency',
                     currency: 'MXN'
@@ -47,7 +48,7 @@ export function FinancialCharts({ chartData }: FinancialChartsProps) {
               <XAxis dataKey="month" />
               <YAxis />
               <Tooltip 
-                formatter={(value: number) => [
+                formatter={(value: any) => [
                   new Intl.NumberFormat('es-MX', {
                     style: 'currency',
                     currency: 'MXN'

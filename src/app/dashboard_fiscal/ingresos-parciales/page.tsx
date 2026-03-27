@@ -20,8 +20,18 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from '@/components/ui/badge'
-import { format } from 'date-fns'
-import { Loader2, ChevronDown, ChevronRight, FileText, Download } from 'lucide-react'
+// Removed date-fns imports
+import { Loader2, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+
+// Dummy utility to format dates (to replace date-fns temporarily)
+const formatDate = (date: string | Date) => {
+  try {
+    const d = new Date(date)
+    return d.toLocaleDateString('es-MX')
+  } catch {
+    return String(date)
+  }
+}
 
 type PaymentDetail = {
   paymentUuid: string
@@ -34,8 +44,6 @@ type PaymentDetail = {
   numParcialidad: number
   impSaldoAnt: number
   impSaldoInsoluto: number
-  formaDePagoP: string
-  monedaP: string
 }
 
 type PartialIncomeInvoice = {
@@ -84,104 +92,30 @@ export default function PartialIncomePage() {
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
   const [incomeCurrency, setIncomeCurrency] = useState<string>('ALL')
   const [paymentCurrency, setPaymentCurrency] = useState<string>('ALL')
-  const [cfdiClassification, setCfdiClassification] = useState<string>('issued')
 
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<PartialIncomeInvoice[]>([])
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [filters, setFilters] = useState({
-    date: '',
-    series: '',
-    uuid: '',
-    rfc: '',
-    client: '',
-    total: '',
-    paid: '',
-    balance: '',
-    currency: '',
-    status: ''
-  })
-
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }))
-  }
-
-  const getCounterparty = (invoice: PartialIncomeInvoice) => {
-    if (cfdiClassification === 'received') {
-      return { rfc: invoice.issuerRfc, name: invoice.issuerName }
-    }
-    if (cfdiClassification === 'issued') {
-      return { rfc: invoice.receiverRfc, name: invoice.receiverName }
-    }
-    // For both, if I am the issuer, show receiver. Else show issuer.
-    if (selectedCompany?.rfc === invoice.issuerRfc) {
-       return { rfc: invoice.receiverRfc, name: invoice.receiverName }
-    }
-    return { rfc: invoice.issuerRfc, name: invoice.issuerName }
-  }
-
-  const filteredData = data.filter(invoice => {
-    const match = (val: unknown, filter: string) => {
-      if (!filter) return true
-      return String(val).toLowerCase().includes(filter.toLowerCase())
-    }
-    
-    const formattedDate = format(new Date(invoice.issuanceDate), 'dd/MM/yyyy')
-    const fullSeries = `${invoice.series || ''}-${invoice.folio || ''}`
-    const statusText = invoice.isPaid ? "Pagado" : "Pendiente"
-    const counterparty = getCounterparty(invoice)
-
-    return (
-      match(formattedDate, filters.date) &&
-      match(fullSeries, filters.series) &&
-      match(invoice.uuid, filters.uuid) &&
-      match(counterparty.rfc, filters.rfc) &&
-      match(counterparty.name, filters.client) &&
-      match(invoice.total, filters.total) &&
-      match(invoice.totalPaid, filters.paid) &&
-      match(invoice.saldoInsoluto, filters.balance) &&
-      match(invoice.currency, filters.currency) &&
-      match(statusText, filters.status)
-    )
-  })
 
   // Initialize dates to current month if empty
   useEffect(() => {
     const now = new Date()
-    // Set to 2 months ago to include recent history by default
-    const firstDay = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
     setDateFrom(firstDay.toISOString().split('T')[0])
     setDateTo(lastDay.toISOString().split('T')[0])
   }, [])
 
-  // Load selected company from localStorage and listen for changes
+  // Load selected company from localStorage
   useEffect(() => {
-    const loadCompany = () => {
-      const stored = localStorage.getItem('selectedCompany')
-      if (stored) {
-        try {
-          const company = JSON.parse(stored)
-          setSelectedCompany(company)
-        } catch (e) {
-          console.error('Error parsing selectedCompany', e)
-        }
+    const stored = localStorage.getItem('selectedCompany')
+    if (stored) {
+      try {
+        setSelectedCompany(JSON.parse(stored))
+      } catch (e) {
+        console.error('Error parsing selectedCompany', e)
       }
-    }
-
-    loadCompany()
-
-    const handleCompanyChange = () => {
-      loadCompany()
-    }
-
-    window.addEventListener('company-selected', handleCompanyChange)
-    document.addEventListener('company-selected', handleCompanyChange)
-
-    return () => {
-      window.removeEventListener('company-selected', handleCompanyChange)
-      document.removeEventListener('company-selected', handleCompanyChange)
     }
   }, [])
 
@@ -197,8 +131,7 @@ export default function PartialIncomePage() {
         paymentDateStart: paymentDateFrom,
         paymentDateEnd: paymentDateTo,
         incomeCurrency,
-        paymentCurrency,
-        classification: cfdiClassification
+        paymentCurrency
       })
       
       const res = await fetch(`/api/dashboard_fiscal/ingresos-parciales?${params}`)
@@ -212,7 +145,7 @@ export default function PartialIncomePage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency, cfdiClassification])
+  }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
 
   useEffect(() => {
     fetchData()
@@ -223,74 +156,6 @@ export default function PartialIncomePage() {
       ...prev,
       [uuid]: !prev[uuid]
     }))
-  }
-
-  const handleDownload = (uuid: string) => {
-    window.open(`/api/dashboard_fiscal/ingresos-parciales/download?uuid=${uuid}`, '_blank')
-  }
-
-  const handleExportCSV = () => {
-    if (data.length === 0) return
-  
-    const headers = [
-      'UUID Factura', 'Fecha', 'Serie', 'Folio', 
-      cfdiClassification === 'received' ? 'RFC Emisor' : (cfdiClassification === 'both' ? 'RFC Contraparte' : 'RFC Receptor'),
-      cfdiClassification === 'received' ? 'Proveedor' : (cfdiClassification === 'both' ? 'Contraparte' : 'Cliente'),
-      'Total Original', 'Total Pagado', 'Saldo Insoluto', 'Moneda', 'Estatus',
-      'UUID Pago', 'Fecha Pago', 'Monto Pagado', 'Moneda Pago', 'Tipo Cambio', 'Saldo Anterior', 'Saldo Insoluto Pago', 'Parcialidad', 'Metodo Pago'
-    ]
-  
-    const rows: string[][] = []
-    
-    data.forEach(inv => {
-      const counterparty = getCounterparty(inv)
-      const invData = [
-        inv.uuid,
-        format(new Date(inv.issuanceDate), 'dd/MM/yyyy'),
-        inv.series || '',
-        inv.folio || '',
-        counterparty.rfc,
-        counterparty.name,
-        inv.total.toFixed(2),
-        inv.totalPaid.toFixed(2),
-        inv.saldoInsoluto.toFixed(2),
-        inv.currency,
-        inv.isPaid ? 'Pagado' : 'Pendiente'
-      ]
-  
-      if (inv.payments.length === 0) {
-        rows.push([...invData, '', '', '', '', '', '', '', '', ''])
-      } else {
-        inv.payments.forEach(pay => {
-          const payData = [
-            pay.paymentUuid,
-            format(new Date(pay.paymentDate), 'dd/MM/yyyy'),
-            pay.impPagado.toFixed(2),
-            pay.monedaP || pay.monedaDR, // Fallback if missing
-            pay.equivalenciaDR.toString(),
-            pay.impSaldoAnt.toFixed(2),
-            pay.impSaldoInsoluto.toFixed(2),
-            pay.numParcialidad.toString(),
-            pay.formaDePagoP || ''
-          ]
-          rows.push([...invData, ...payData])
-        })
-      }
-    })
-  
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.map(c => `"${c}"`).join(','))
-    ].join('\n')
-  
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.setAttribute('href', url)
-    link.setAttribute('download', `reporte_ppd_${format(new Date(), 'yyyyMMdd')}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
   return (
@@ -311,22 +176,7 @@ export default function PartialIncomePage() {
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 border rounded-lg bg-card shadow-sm">
-          {/* CFDI Classification */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Clasificación de CFDI</label>
-            <Select value={cfdiClassification} onValueChange={setCfdiClassification}>
-              <SelectTrigger className="h-8 w-full">
-                <SelectValue placeholder="Seleccionar" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="issued">Emitidos</SelectItem>
-                <SelectItem value="received">Recibidos</SelectItem>
-                <SelectItem value="both">Ambos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
           {/* Invoice Date */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Fecha Emisión (Factura)</label>
@@ -461,15 +311,11 @@ export default function PartialIncomePage() {
 
       {/* Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>Detalle de Facturas PPD</CardTitle>
-          <Button onClick={handleExportCSV} variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Descargar reporte
-          </Button>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border overflow-x-auto">
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -477,45 +323,29 @@ export default function PartialIncomePage() {
                   <TableHead>Fecha</TableHead>
                   <TableHead>Serie/Folio</TableHead>
                   <TableHead>UUID</TableHead>
-                  <TableHead>{cfdiClassification === 'received' ? 'RFC Emisor' : (cfdiClassification === 'both' ? 'RFC Contraparte' : 'RFC Receptor')}</TableHead>
-                  <TableHead>{cfdiClassification === 'received' ? 'Proveedor' : (cfdiClassification === 'both' ? 'Contraparte' : 'Cliente')}</TableHead>
+                  <TableHead>Cliente</TableHead>
                   <TableHead className="text-right">Total Original</TableHead>
                   <TableHead className="text-right">Total Pagado</TableHead>
                   <TableHead className="text-right">Saldo Insoluto</TableHead>
                   <TableHead>Moneda</TableHead>
                   <TableHead>Estatus</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-                <TableRow>
-                  <TableHead></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.date} onChange={e => handleFilterChange('date', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.series} onChange={e => handleFilterChange('series', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.uuid} onChange={e => handleFilterChange('uuid', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.rfc} onChange={e => handleFilterChange('rfc', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.client} onChange={e => handleFilterChange('client', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.total} onChange={e => handleFilterChange('total', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.paid} onChange={e => handleFilterChange('paid', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.balance} onChange={e => handleFilterChange('balance', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.currency} onChange={e => handleFilterChange('currency', e.target.value)} className="h-8 w-full min-w-[60px]" /></TableHead>
-                  <TableHead><Input placeholder="Filtrar..." value={filters.status} onChange={e => handleFilterChange('status', e.target.value)} className="h-8 w-full min-w-[80px]" /></TableHead>
-                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-24 text-center">
+                    <TableCell colSpan={10} className="h-24 text-center">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : filteredData.length === 0 ? (
+                ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-24 text-center">
+                    <TableCell colSpan={10} className="h-24 text-center">
                       No se encontraron resultados
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredData.map((invoice) => (
+                  data.map((invoice) => (
                     <React.Fragment key={invoice.uuid}>
                       <TableRow className={expandedRows[invoice.uuid] ? "bg-muted/50" : ""}>
                         <TableCell>
@@ -527,16 +357,13 @@ export default function PartialIncomePage() {
                             )}
                           </Button>
                         </TableCell>
-                        <TableCell>{format(new Date(invoice.issuanceDate), 'dd/MM/yyyy')}</TableCell>
+                        <TableCell>{formatDate(invoice.issuanceDate)}</TableCell>
                         <TableCell>{invoice.series}-{invoice.folio}</TableCell>
-                        <TableCell className="font-mono text-xs whitespace-nowrap" title={invoice.uuid}>
-                          {invoice.uuid}
+                        <TableCell className="font-mono text-xs" title={invoice.uuid}>
+                          {invoice.uuid.substring(0, 8)}...
                         </TableCell>
-                        <TableCell className="text-xs font-mono">
-                          {getCounterparty(invoice).rfc}
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate" title={getCounterparty(invoice).name}>
-                          {getCounterparty(invoice).name}
+                        <TableCell className="max-w-[200px] truncate" title={invoice.receiverName}>
+                          {invoice.receiverName}
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCurrency(invoice.total, invoice.currency)}
@@ -553,43 +380,34 @@ export default function PartialIncomePage() {
                             {invoice.isPaid ? "Pagado" : "Pendiente"}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="icon" title="Descargar XMLs" onClick={() => handleDownload(invoice.uuid)}>
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
                       </TableRow>
                       {expandedRows[invoice.uuid] && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={12} className="p-0">
-                            <div className="p-4 pl-12 space-y-2 overflow-x-auto">
+                          <TableCell colSpan={10} className="p-0">
+                            <div className="p-4 pl-12 space-y-2">
                               <h4 className="text-sm font-semibold mb-2">Desglose de Pagos (REPs)</h4>
                               {invoice.payments.length > 0 ? (
                                 <Table>
                                   <TableHeader>
                                     <TableRow className="h-8">
-                                      <TableHead className="text-xs whitespace-nowrap">Fecha Pago</TableHead>
-                                      <TableHead className="text-xs whitespace-nowrap">UUID Pago</TableHead>
-                                      <TableHead className="text-xs whitespace-nowrap">Método Pago</TableHead>
-                                      <TableHead className="text-xs text-right whitespace-nowrap">Monto Pagado</TableHead>
-                                      <TableHead className="text-xs whitespace-nowrap">Moneda Pago</TableHead>
-                                      <TableHead className="text-xs text-right whitespace-nowrap">T. Cambio (DR)</TableHead>
-                                      <TableHead className="text-xs text-right whitespace-nowrap">Saldo Anterior</TableHead>
-                                      <TableHead className="text-xs text-right whitespace-nowrap">Saldo Insoluto (REP)</TableHead>
-                                      <TableHead className="text-xs text-center whitespace-nowrap">Parcialidad</TableHead>
+                                      <TableHead className="text-xs">Fecha Pago</TableHead>
+                                      <TableHead className="text-xs">UUID Pago</TableHead>
+                                      <TableHead className="text-xs text-right">Monto Pagado</TableHead>
+                                      <TableHead className="text-xs">Moneda Pago</TableHead>
+                                      <TableHead className="text-xs text-right">T. Cambio (DR)</TableHead>
+                                      <TableHead className="text-xs text-right">Saldo Anterior</TableHead>
+                                      <TableHead className="text-xs text-right">Saldo Insoluto (REP)</TableHead>
+                                      <TableHead className="text-xs text-center">Parcialidad</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {invoice.payments.map((payment, idx) => (
                                       <TableRow key={`${invoice.uuid}-pay-${idx}`} className="h-8">
-                                        <TableCell className="text-xs py-1 whitespace-nowrap">
-                                          {format(new Date(payment.paymentDate), 'dd/MM/yyyy')}
-                                        </TableCell>
-                                        <TableCell className="text-xs py-1 font-mono whitespace-nowrap">
-                                          {payment.paymentUuid}
-                                        </TableCell>
-                                        <TableCell className="text-xs py-1 text-center">
-                                          {payment.formaDePagoP}
+                                          <TableCell className="text-xs py-1">
+                                            {formatDate(payment.paymentDate)}
+                                          </TableCell>
+                                        <TableCell className="text-xs py-1 font-mono">
+                                          {payment.paymentUuid.substring(0, 8)}...
                                         </TableCell>
                                         <TableCell className="text-xs py-1 text-right font-medium">
                                           {formatCurrency(payment.impPagado, payment.monedaDR)}

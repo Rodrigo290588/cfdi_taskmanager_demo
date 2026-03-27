@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react'
 import { ProtectedRoute } from '@/components/protected-route'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Calendar, Eye, Download } from 'lucide-react'
+import { Calendar, Eye, FileText, FileCode, ChevronRight, ChevronDown } from 'lucide-react'
 import JSZip from 'jszip'
+import { toast } from 'sonner'
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
 
@@ -53,6 +54,199 @@ type InvoiceRow = {
   updatedAt: string | Date
 }
 
+function getXmlAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const comprobanteMatch = xml.match(/<[^:]+:Comprobante([^>]+)>/)
+  if (comprobanteMatch) {
+    const attrs = comprobanteMatch[1]
+    const regex = new RegExp(`${attr}="([^"]+)"`)
+    const match = attrs.match(regex)
+    if (match) return match[1]
+  }
+  return ''
+}
+
+function getReceptorAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const receptorMatch = xml.match(/<[^:]+:Receptor([^>]+)>/)
+  if (receptorMatch) {
+    const attrs = receptorMatch[1]
+    const regex = new RegExp(`${attr}="([^"]+)"`)
+    const match = attrs.match(regex)
+    if (match) return match[1]
+  }
+  return ''
+}
+
+function getGlobalImpuestosAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const regex = new RegExp(`<[^:]+:Impuestos[^>]*?\\b${attr}="([^"]+)"`)
+  const match = xml.match(regex)
+  if (match) return match[1]
+  return ''
+}
+
+function getCfdiRelacionadosAttribute(xml: string, type: 'TipoRelacion' | 'UUID'): string {
+  if (!xml) return ''
+  if (type === 'TipoRelacion') {
+    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionados[^>]*?\bTipoRelacion="([^"]+)"/g))
+    return matches.map(m => m[1]).join(', ')
+  } else {
+    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionado[^>]*?\bUUID="([^"]+)"/g))
+    return matches.map(m => m[1]).join(', ')
+  }
+}
+
+function ConceptosTable({ xml }: { xml: string }) {
+  const conceptos = useMemo(() => {
+    if (!xml) return []
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(xml, 'text/xml')
+      
+      const getElementsByTagName = (node: Element | Document, name: string) => {
+        const withPrefix = node.getElementsByTagName(`cfdi:${name}`)
+        if (withPrefix.length > 0) return Array.from(withPrefix)
+        const withoutPrefix = node.getElementsByTagName(name)
+        return Array.from(withoutPrefix)
+      }
+      
+      const conceptosNode = getElementsByTagName(doc, 'Conceptos')[0]
+      if (!conceptosNode) return []
+      
+      const conceptoNodes = getElementsByTagName(conceptosNode, 'Concepto')
+      
+      return conceptoNodes.map(node => {
+        const concepto = {
+          ClaveProdServ: node.getAttribute('ClaveProdServ') || '',
+          NoIdentificacion: node.getAttribute('NoIdentificacion') || '',
+          Cantidad: node.getAttribute('Cantidad') || '',
+          Unidad: node.getAttribute('Unidad') || '',
+          ClaveUnidad: node.getAttribute('ClaveUnidad') || '',
+          Descripcion: node.getAttribute('Descripcion') || '',
+          ValorUnitario: node.getAttribute('ValorUnitario') || '',
+          Descuento: node.getAttribute('Descuento') || '',
+          Importe: node.getAttribute('Importe') || '',
+          ObjetoImp: node.getAttribute('ObjetoImp') || '',
+          Traslados: [] as Array<{ Base: string; Impuesto: string; TipoFactor: string; TasaOCuota: string; Importe: string }>,
+          Retenciones: [] as Array<{ Base: string; Impuesto: string; TipoFactor: string; TasaOCuota: string; Importe: string }>
+        }
+        
+        const impuestosNode = getElementsByTagName(node, 'Impuestos')[0]
+        if (impuestosNode) {
+          const trasladosNode = getElementsByTagName(impuestosNode, 'Traslados')[0]
+          if (trasladosNode) {
+            const traslados = getElementsByTagName(trasladosNode, 'Traslado')
+            concepto.Traslados = traslados.map(t => ({
+              Base: t.getAttribute('Base') || '',
+              Impuesto: t.getAttribute('Impuesto') || '',
+              TipoFactor: t.getAttribute('TipoFactor') || '',
+              TasaOCuota: t.getAttribute('TasaOCuota') || '',
+              Importe: t.getAttribute('Importe') || ''
+            }))
+          }
+          const retencionesNode = getElementsByTagName(impuestosNode, 'Retenciones')[0]
+          if (retencionesNode) {
+            const retenciones = getElementsByTagName(retencionesNode, 'Retencion')
+            concepto.Retenciones = retenciones.map(r => ({
+              Base: r.getAttribute('Base') || '',
+              Impuesto: r.getAttribute('Impuesto') || '',
+              TipoFactor: r.getAttribute('TipoFactor') || '',
+              TasaOCuota: r.getAttribute('TasaOCuota') || '',
+              Importe: r.getAttribute('Importe') || ''
+            }))
+          }
+        }
+        return concepto
+      })
+    } catch {
+      return []
+    }
+  }, [xml])
+
+  if (conceptos.length === 0) return <div className="text-sm text-muted-foreground p-4">No se encontraron conceptos.</div>
+
+  return (
+    <div className="p-4 bg-muted/30">
+      <h5 className="font-semibold text-sm mb-2 text-primary">Detalle de Conceptos</h5>
+      <div className="overflow-x-auto scrollbar-visible">
+        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="p-2 font-medium">ClaveProdServ</th>
+              <th className="p-2 font-medium">NoIdentificacion</th>
+              <th className="p-2 font-medium">Cantidad</th>
+              <th className="p-2 font-medium">ClaveUnidad</th>
+              <th className="p-2 font-medium">Unidad</th>
+              <th className="p-2 font-medium">Descripción</th>
+              <th className="p-2 font-medium">ValorUnitario</th>
+              <th className="p-2 font-medium">Descuento</th>
+              <th className="p-2 font-medium">Importe</th>
+              <th className="p-2 font-medium">ObjetoImp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {conceptos.map((c, i) => (
+              <Fragment key={i}>
+                <tr className="border-b hover:bg-muted/20">
+                  <td className="p-2">{c.ClaveProdServ}</td>
+                  <td className="p-2">{c.NoIdentificacion}</td>
+                  <td className="p-2">{c.Cantidad}</td>
+                  <td className="p-2">{c.ClaveUnidad}</td>
+                  <td className="p-2">{c.Unidad}</td>
+                  <td className="p-2 max-w-[200px] truncate" title={c.Descripcion}>{c.Descripcion}</td>
+                  <td className="p-2">{c.ValorUnitario ? `$${Number(c.ValorUnitario).toFixed(2)}` : ''}</td>
+                  <td className="p-2">{c.Descuento ? `$${Number(c.Descuento).toFixed(2)}` : ''}</td>
+                  <td className="p-2">{c.Importe ? `$${Number(c.Importe).toFixed(2)}` : ''}</td>
+                  <td className="p-2">{c.ObjetoImp}</td>
+                </tr>
+                {(c.Traslados.length > 0 || c.Retenciones.length > 0) && (
+                  <tr className="border-b bg-muted/10">
+                    <td colSpan={10} className="p-2 pl-6">
+                      <div className="flex gap-6">
+                        {c.Traslados.length > 0 && (
+                          <div>
+                            <span className="font-semibold text-[11px] text-primary block mb-1">Traslados:</span>
+                            <div className="flex flex-col gap-1">
+                              {c.Traslados.map((t, j) => (
+                                <div key={j} className="text-[11px] text-muted-foreground flex gap-3">
+                                  <span><span className="font-medium">Imp:</span> {t.Impuesto}</span>
+                                  <span><span className="font-medium">Base:</span> {t.Base ? `$${Number(t.Base).toFixed(2)}` : ''}</span>
+                                  <span><span className="font-medium">Tasa:</span> {t.TasaOCuota}</span>
+                                  <span><span className="font-medium">Importe:</span> {t.Importe ? `$${Number(t.Importe).toFixed(2)}` : ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {c.Retenciones.length > 0 && (
+                          <div>
+                            <span className="font-semibold text-[11px] text-primary block mb-1">Retenciones:</span>
+                            <div className="flex flex-col gap-1">
+                              {c.Retenciones.map((r, j) => (
+                                <div key={j} className="text-[11px] text-muted-foreground flex gap-3">
+                                  <span><span className="font-medium">Imp:</span> {r.Impuesto}</span>
+                                  <span><span className="font-medium">Base:</span> {r.Base ? `$${Number(r.Base).toFixed(2)}` : ''}</span>
+                                  <span><span className="font-medium">Tasa:</span> {r.TasaOCuota}</span>
+                                  <span><span className="font-medium">Importe:</span> {r.Importe ? `$${Number(r.Importe).toFixed(2)}` : ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function WorkpaperRecibidosPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
@@ -73,70 +267,91 @@ export default function WorkpaperRecibidosPage() {
   const [uploading, setUploading] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewItems, setPreviewItems] = useState<Array<{ name: string; size: number; xml?: string; selected: boolean; valid: boolean; error?: string }>>([])
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [selectedInvoices, setSelectedInvoices] = useState<Map<string, { uuid: string, xmlContent: string }>>(new Map())
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const columnDefs = useMemo(() => [
-    { key: 'id', label: 'ID', render: (r: InvoiceRow) => r.id },
-    { key: 'userId', label: 'Usuario', render: (r: InvoiceRow) => r.userId },
-    { key: 'issuerFiscalEntityId', label: 'Entidad Fiscal', render: (r: InvoiceRow) => r.issuerFiscalEntityId },
-    { key: 'uuid', label: 'UUID', render: (r: InvoiceRow) => r.uuid },
-    { key: 'cfdiType', label: 'Tipo CFDI', render: (r: InvoiceRow) => r.cfdiType },
-    { key: 'series', label: 'Serie', render: (r: InvoiceRow) => r.series ?? '' },
-    { key: 'folio', label: 'Folio', render: (r: InvoiceRow) => r.folio ?? '' },
-    { key: 'currency', label: 'Moneda', render: (r: InvoiceRow) => r.currency ?? '' },
-    { key: 'exchangeRate', label: 'Tipo Cambio', render: (r: InvoiceRow) => r.exchangeRate ?? '' },
-    { key: 'status', label: 'Estatus', render: (r: InvoiceRow) => r.status },
-    { key: 'satStatus', label: 'SAT', render: (r: InvoiceRow) => r.satStatus },
-    { key: 'issuerRfc', label: 'RFC Emisor', render: (r: InvoiceRow) => r.issuerRfc },
-    { key: 'issuerName', label: 'Emisor', render: (r: InvoiceRow) => r.issuerName },
-    { key: 'receiverRfc', label: 'RFC Receptor', render: (r: InvoiceRow) => r.receiverRfc },
-    { key: 'receiverName', label: 'Receptor', render: (r: InvoiceRow) => r.receiverName },
-    { key: 'subtotal', label: 'Subtotal', render: (r: InvoiceRow) => formatMXN(r.subtotal) },
-    { key: 'discount', label: 'Descuento', render: (r: InvoiceRow) => formatMXN(r.discount) },
-    { key: 'total', label: 'Total', render: (r: InvoiceRow) => formatMXN(r.total) },
-    { key: 'ivaTransferred', label: 'IVA Trasladado', render: (r: InvoiceRow) => formatMXN(r.ivaTransferred) },
-    { key: 'ivaWithheld', label: 'IVA Retenido', render: (r: InvoiceRow) => formatMXN(r.ivaWithheld) },
-    { key: 'isrWithheld', label: 'ISR Retenido', render: (r: InvoiceRow) => formatMXN(r.isrWithheld) },
-    { key: 'iepsWithheld', label: 'IEPS Retenido', render: (r: InvoiceRow) => formatMXN(r.iepsWithheld) },
-    { key: 'xmlContent', label: 'XML', render: (r: InvoiceRow) => {
-      const xml = String(r.xmlContent || '')
-      if (!xml) return ''
-      return (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `cfdi_${r.uuid || 'cfdi'}.xml`
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-            URL.revokeObjectURL(url)
-          }}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Descargar XML
-        </Button>
-      )
+    { key: 'id', label: 'ID', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.id },
+    { key: 'userId', label: 'Usuario', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.userId },
+    { key: 'issuerFiscalEntityId', label: 'Entidad Fiscal', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.issuerFiscalEntityId },
+    { key: 'uuid', label: 'UUID', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => <span className="whitespace-nowrap">{r.uuid}</span> },
+    { key: 'version', label: 'Versión', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => getXmlAttribute(r.xmlContent, 'Version') },
+    { key: 'noCertificado', label: 'No. Certificado', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => getXmlAttribute(r.xmlContent, 'NoCertificado') },
+    { key: 'certificado', label: 'Certificado', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => {
+      const val = getXmlAttribute(r.xmlContent, 'Certificado')
+      return <div className="max-w-[150px] truncate" title={val}>{val}</div>
     } },
-    { key: 'pdfUrl', label: 'PDF', render: (r: InvoiceRow) => r.pdfUrl ?? '' },
-    { key: 'issuanceDate', label: 'Fecha', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
-    { key: 'certificationDate', label: 'Fecha Certificación', render: (r: InvoiceRow) => r.certificationDate ? new Date(r.certificationDate).toLocaleDateString('es-MX') : '' },
-    { key: 'certificationPac', label: 'PAC', render: (r: InvoiceRow) => r.certificationPac },
-    { key: 'paymentMethod', label: 'Método Pago', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
-    { key: 'paymentForm', label: 'Forma Pago', render: (r: InvoiceRow) => r.paymentForm ?? '' },
-    { key: 'cfdiUsage', label: 'Uso CFDI', render: (r: InvoiceRow) => r.cfdiUsage ?? '' },
-    { key: 'placeOfExpedition', label: 'Lugar Expedición', render: (r: InvoiceRow) => r.placeOfExpedition ?? '' },
-    { key: 'exportKey', label: 'Clave Exportación', render: (r: InvoiceRow) => r.exportKey ?? '' },
-    { key: 'objectTaxComprobante', label: 'Objeto Impuesto Comp.', render: (r: InvoiceRow) => r.objectTaxComprobante ?? '' },
-    { key: 'paymentConditions', label: 'Condiciones de Pago', render: (r: InvoiceRow) => r.paymentConditions ?? '' },
-    { key: 'createdAt', label: 'Creado', render: (r: InvoiceRow) => new Date(r.createdAt).toLocaleString('es-MX') },
-    { key: 'updatedAt', label: 'Actualizado', render: (r: InvoiceRow) => new Date(r.updatedAt).toLocaleString('es-MX') },
+    { key: 'cfdiType', label: 'Tipo De Comprobante', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.cfdiType },
+    { key: 'series', label: 'Serie', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.series ?? '' },
+    { key: 'folio', label: 'Folio', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.folio ?? '' },
+    { key: 'currency', label: 'Moneda', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.currency ?? '' },
+    { key: 'exchangeRate', label: 'Tipo Cambio', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.exchangeRate ?? '' },
+    { key: 'status', label: 'Estatus', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.status },
+    { key: 'satStatus', label: 'SAT', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.satStatus },
+    { key: 'tipoRelacion', label: 'Tipo Relación', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'TipoRelacion') },
+    { key: 'cfdiRelacionado', label: 'CFDIRelacionado', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'UUID') },
+    { key: 'issuerRfc', label: 'RFC Emisor', group: '<cfdi:Emisor>', render: (r: InvoiceRow) => r.issuerRfc },
+    { key: 'issuerName', label: 'Emisor', group: '<cfdi:Emisor>', render: (r: InvoiceRow) => r.issuerName },
+    { key: 'receiverRfc', label: 'RFC Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => r.receiverRfc },
+    { key: 'receiverName', label: 'Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => r.receiverName },
+    { key: 'domicilioFiscalReceptor', label: 'Domicilio Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'DomicilioFiscalReceptor') },
+    { key: 'residenciaFiscal', label: 'Residencia Fiscal', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'ResidenciaFiscal') },
+    { key: 'numRegIdTrib', label: 'Num Reg Id Trib', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'NumRegIdTrib') },
+    { key: 'regimenFiscalReceptor', label: 'Régimen Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'RegimenFiscalReceptor') },
+    { key: 'subtotal', label: 'SubTotal', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.subtotal) },
+    { key: 'discount', label: 'Descuento', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.discount) },
+    { key: 'total', label: 'Total', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.total) },
+    { key: 'totalImpuestosTrasladados', label: 'Total Impuestos Trasladados', group: '<cfdi:Impuestos>', render: (r: InvoiceRow) => {
+      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados')
+      return val ? formatMXN(Number(val)) : ''
+    } },
+    { key: 'totalImpuestosRetenidos', label: 'Total Impuestos Retenidos', group: '<cfdi:Impuestos>', render: (r: InvoiceRow) => {
+      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos')
+      return val ? formatMXN(Number(val)) : ''
+    } },
+    { key: 'issuanceDate', label: 'Fecha', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
+    { key: 'certificationDate', label: 'Fecha Certificación', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => r.certificationDate ? new Date(r.certificationDate).toLocaleDateString('es-MX') : '' },
+    { key: 'certificationPac', label: 'PAC', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => r.certificationPac },
+    { key: 'paymentMethod', label: 'Método Pago', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
+    { key: 'paymentForm', label: 'Forma Pago', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.paymentForm ?? '' },
+    { key: 'cfdiUsage', label: 'Uso CFDI', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => r.cfdiUsage ?? '' },
+    { key: 'placeOfExpedition', label: 'Lugar Expedición', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.placeOfExpedition ?? '' },
+    { key: 'exportKey', label: 'Exportación', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.exportKey ?? '' },
+    { key: 'objectTaxComprobante', label: 'Objeto Impuesto Comp.', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.objectTaxComprobante ?? '' },
+    { key: 'paymentConditions', label: 'Condiciones de Pago', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.paymentConditions ?? '' },
+    { key: 'createdAt', label: 'Creado', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => new Date(r.createdAt).toLocaleString('es-MX') },
+    { key: 'updatedAt', label: 'Actualizado', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => new Date(r.updatedAt).toLocaleString('es-MX') },
   ] as const, [])
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(columnDefs.map(c => c.key)))
-  const [columnOrder, setColumnOrder] = useState<string[]>(columnDefs.map(c => c.key))
+
+  const groupedColumns = useMemo(() => {
+    const groups: Record<string, typeof columnDefs[number][]> = {}
+    groups['<cfdi:Conceptos>'] = []
+    columnDefs.forEach(c => {
+      const g = c.group || 'Otros'
+      if (!groups[g]) groups[g] = []
+      groups[g].push(c)
+    })
+    return groups
+  }, [columnDefs])
+
+  const basicColumnsKeys = ['issuerRfc', 'receiverRfc', 'receiverName', 'series', 'folio', 'uuid', 'subtotal', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos', 'discount', 'total']
+
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(basicColumnsKeys))
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const known = columnDefs.map(c => c.key)
+    const missing = known.filter(k => !basicColumnsKeys.includes(k))
+    return [...basicColumnsKeys, ...missing]
+  })
   const [dragCol, setDragCol] = useState<string | null>(null)
   const persistVisibleColumns = useCallback(async (cols: string[]) => {
     try {
@@ -191,9 +406,21 @@ export default function WorkpaperRecibidosPage() {
 
   const [showColumnPanel, setShowColumnPanel] = useState(false)
 
-  const exportValue = (r: InvoiceRow, key: keyof InvoiceRow): string | number => {
-    const v = r[key] as unknown
-    const dateKeys: Array<keyof InvoiceRow> = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']
+  const exportValue = (r: InvoiceRow, key: string): string | number => {
+    if (key === 'version') return getXmlAttribute(r.xmlContent, 'Version')
+    if (key === 'noCertificado') return getXmlAttribute(r.xmlContent, 'NoCertificado')
+    if (key === 'certificado') return getXmlAttribute(r.xmlContent, 'Certificado')
+    if (key === 'domicilioFiscalReceptor') return getReceptorAttribute(r.xmlContent, 'DomicilioFiscalReceptor')
+    if (key === 'residenciaFiscal') return getReceptorAttribute(r.xmlContent, 'ResidenciaFiscal')
+    if (key === 'numRegIdTrib') return getReceptorAttribute(r.xmlContent, 'NumRegIdTrib')
+    if (key === 'regimenFiscalReceptor') return getReceptorAttribute(r.xmlContent, 'RegimenFiscalReceptor')
+    if (key === 'tipoRelacion') return getCfdiRelacionadosAttribute(r.xmlContent, 'TipoRelacion')
+    if (key === 'cfdiRelacionado') return getCfdiRelacionadosAttribute(r.xmlContent, 'UUID')
+    if (key === 'totalImpuestosTrasladados') return getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados') || '0'
+    if (key === 'totalImpuestosRetenidos') return getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos') || '0'
+    
+    const v = r[key as keyof InvoiceRow] as unknown
+    const dateKeys = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']
     if (v === null || v === undefined) return ''
     if (dateKeys.includes(key)) {
       try {
@@ -577,9 +804,16 @@ export default function WorkpaperRecibidosPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const basic = new Set(['issuanceDate', 'uuid', 'cfdiType', 'issuerName', 'issuerRfc', 'receiverName', 'receiverRfc', 'total'])
+                        const basic = new Set(['issuerRfc', 'receiverRfc', 'receiverName', 'series', 'folio', 'uuid', 'subtotal', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos', 'discount', 'total'])
                         setVisibleCols(basic)
                         persistVisibleColumns(Array.from(basic))
+                        
+                        const order = ['issuerRfc', 'receiverRfc', 'receiverName', 'series', 'folio', 'uuid', 'subtotal', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos', 'discount', 'total']
+                        const known = columnDefs.map(c => c.key)
+                        const missing = known.filter(k => !order.includes(k))
+                        const newOrder = [...order, ...missing]
+                        setColumnOrder(newOrder)
+                        persistColumnOrder(newOrder)
                       }}
                     >
                       Vista básica
@@ -597,27 +831,67 @@ export default function WorkpaperRecibidosPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {columnDefs.map(col => {
-                    const checked = visibleCols.has(col.key)
-                    return (
-                      <label key={col.key} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const next = new Set(visibleCols)
-                            if (e.target.checked) next.add(col.key)
-                            else next.delete(col.key)
-                            const arr = Array.from(next)
-                            setVisibleCols(next)
-                            persistVisibleColumns(arr)
-                          }}
-                        />
-                        {col.label}
-                      </label>
-                    )
-                  })}
+                <div className="space-y-4">
+                  {Object.entries(groupedColumns)
+                    .sort(([a], [b]) => {
+                      const order = ['<cfdi:Comprobante>', '<cfdi:CfdiRelacionados>', '<cfdi:Emisor>', '<cfdi:Receptor>', '<cfdi:Conceptos>', '<cfdi:Impuestos>', '<tfd:TimbreFiscalDigital>', 'Sistema / Metadatos']
+                      const posA = order.indexOf(a)
+                      const posB = order.indexOf(b)
+                      return (posA === -1 ? 999 : posA) - (posB === -1 ? 999 : posB)
+                    })
+                    .map(([groupName, cols]) => {
+                      if (groupName === '<cfdi:Conceptos>') {
+                        const isChecked = visibleCols.has('show_conceptos')
+                        return (
+                          <div key={groupName} className="space-y-2">
+                            <h4 className="text-xs font-semibold text-primary tracking-wider border-b pb-1 flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const next = new Set(visibleCols)
+                                  if (e.target.checked) {
+                                    next.add('show_conceptos')
+                                  } else {
+                                    next.delete('show_conceptos')
+                                  }
+                                  const arr = Array.from(next)
+                                  setVisibleCols(next)
+                                  persistVisibleColumns(arr)
+                                }}
+                              />
+                              {groupName}
+                            </h4>
+                          </div>
+                        )
+                      }
+                      return (
+                      <div key={groupName} className="space-y-2">
+                        <h4 className="text-xs font-semibold text-primary tracking-wider border-b pb-1">{groupName}</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {cols.map(col => {
+                          const checked = visibleCols.has(col.key)
+                          return (
+                            <label key={col.key} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const next = new Set(visibleCols)
+                                  if (e.target.checked) next.add(col.key)
+                                  else next.delete(col.key)
+                                  const arr = Array.from(next)
+                                  setVisibleCols(next)
+                                  persistVisibleColumns(arr)
+                                }}
+                              />
+                              {col.label}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )})}
                 </div>
               </div>
             )}
@@ -627,52 +901,204 @@ export default function WorkpaperRecibidosPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left">
+                      <th className="px-2 py-2 w-[40px] text-center">
+                        <input
+                          type="checkbox"
+                          checked={invRows.length > 0 && selectedInvoices.size === invRows.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const next = new Map(selectedInvoices)
+                              invRows.forEach(r => next.set(r.id, { uuid: r.uuid, xmlContent: r.xmlContent }))
+                              setSelectedInvoices(next)
+                            } else {
+                              const next = new Map(selectedInvoices)
+                              invRows.forEach(r => next.delete(r.id))
+                              setSelectedInvoices(next)
+                            }
+                          }}
+                        />
+                      </th>
                       {columnDefs
                         .filter(c => visibleCols.has(c.key))
                         .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
                         .map((c) => (
-                          <th
-                            key={c.key}
-                            className="px-2 py-2 cursor-move select-none"
-                            draggable
-                            onDragStart={() => setDragCol(c.key)}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={() => {
-                              if (!dragCol || dragCol === c.key) return
-                              const order = [...columnOrder]
-                              const from = order.indexOf(dragCol)
-                              const to = order.indexOf(c.key)
-                              if (from < 0 || to < 0) return
-                              order.splice(from, 1)
-                              order.splice(to, 0, dragCol)
-                              setColumnOrder(order)
-                              persistColumnOrder(order)
-                              setDragCol(null)
-                            }}
-                          >
-                            {c.label}
+                          <th key={c.key} className="px-2 py-2">
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className="cursor-move select-none whitespace-nowrap"
+                                draggable
+                                onDragStart={() => setDragCol(c.key)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => {
+                                  if (!dragCol || dragCol === c.key) return
+                                  const order = [...columnOrder]
+                                  const from = order.indexOf(dragCol)
+                                  const to = order.indexOf(c.key)
+                                  if (from < 0 || to < 0) return
+                                  order.splice(from, 1)
+                                  order.splice(to, 0, dragCol)
+                                  setColumnOrder(order)
+                                  persistColumnOrder(order)
+                                  setDragCol(null)
+                                }}
+                              >
+                                {c.label}
+                              </span>
+                              {['uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName', 'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm', 'cfdiUsage', 'placeOfExpedition', 'exportKey', 'objectTaxComprobante', 'paymentConditions', 'certificationPac'].includes(c.key) && (
+                                <Input
+                                  className="h-7 text-xs px-2 w-full min-w-[100px]"
+                                  placeholder={`Buscar...`}
+                                  value={columnFilters[c.key] || ''}
+                                  onChange={(e) => {
+                                    setColumnFilters(prev => ({ ...prev, [c.key]: e.target.value }))
+                                    setInvPage(1)
+                                  }}
+                                />
+                              )}
+                            </div>
                           </th>
                         ))}
+                      <th className="px-2 py-2 align-top text-center w-24 sticky right-0 bg-background z-10 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold text-xs uppercase text-muted-foreground whitespace-nowrap">
+                            Acciones
+                          </span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {invLoading ? (
-                      <tr><td className="px-2 py-3" colSpan={8}>Cargando...</td></tr>
+                      <tr><td className="px-2 py-3 text-center" colSpan={visibleCols.size + 2}>Cargando...</td></tr>
                     ) : invRows.length === 0 ? (
-                      <tr><td className="px-2 py-3" colSpan={8}>Sin resultados</td></tr>
+                      <tr><td className="px-2 py-3 text-center" colSpan={visibleCols.size + 2}>Sin resultados</td></tr>
                     ) : (
                       invRows.map((r) => (
-                        <tr key={r.id} className="border-t">
-                          {columnDefs
-                            .filter(c => visibleCols.has(c.key))
-                            .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
-                            .map((c) => (
-                              <td key={c.key} className="px-2 py-2">{c.render(r)}</td>
-                            ))}
-                        </tr>
+                        <Fragment key={r.id}>
+                          <tr className="border-t">
+                            <td className="px-2 py-2 text-center align-middle whitespace-nowrap">
+                              <input 
+                                type="checkbox"
+                                checked={selectedInvoices.has(r.id)}
+                                onChange={(e) => {
+                                  const next = new Map(selectedInvoices)
+                                  if (e.target.checked) {
+                                    next.set(r.id, { uuid: r.uuid, xmlContent: r.xmlContent })
+                                  } else {
+                                    next.delete(r.id)
+                                  }
+                                  setSelectedInvoices(next)
+                                }}
+                              />
+                              {visibleCols.has('show_conceptos') && (
+                                <Button variant="ghost" size="sm" onClick={() => toggleRow(r.id)} className="h-6 w-6 p-0 ml-2">
+                                  {expandedRows.has(r.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </Button>
+                              )}
+                            </td>
+                            {columnDefs
+                              .filter(c => visibleCols.has(c.key))
+                              .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
+                              .map((c) => (
+                                <td key={c.key} className="px-2 py-2">{c.render(r)}</td>
+                              ))}
+                            <td className="px-2 py-2 text-center align-middle whitespace-nowrap sticky right-0 bg-background z-10 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                              <div className="flex justify-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  title="XML"
+                                  onClick={() => {
+                                    const xml = String(r.xmlContent || '')
+                                    if (!xml) return
+                                    const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
+                                    const url = URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = url
+                                    a.download = `cfdi_${r.uuid || 'cfdi'}.xml`
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    document.body.removeChild(a)
+                                    URL.revokeObjectURL(url)
+                                  }}
+                                >
+                                  <FileCode className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  title="PDF"
+                                  onClick={() => {
+                                    try {
+                                      toast.info('Generando PDF...')
+                                      const a = document.createElement('a')
+                                      a.href = `/api/invoices/${r.id}/pdf`
+                                      a.target = '_blank'
+                                      document.body.appendChild(a)
+                                      a.click()
+                                      document.body.removeChild(a)
+                                    } catch (error) {
+                                      console.error('Error generating PDF:', error)
+                                      toast.error('Ocurrió un error al generar el PDF')
+                                    }
+                                  }}
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                          {expandedRows.has(r.id) && visibleCols.has('show_conceptos') && (
+                            <tr className="bg-muted/10 border-b">
+                              <td colSpan={Array.from(visibleCols).filter(k => k !== 'show_conceptos').length + 2}>
+                                <ConceptosTable xml={r.xmlContent} />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))
                     )}
                   </tbody>
+                  {invRows.length > 0 && !invLoading && (
+                    <tfoot className="bg-muted/50 border-t font-bold">
+                      <tr>
+                        <td></td>
+                        {columnDefs
+                          .filter(c => visibleCols.has(c.key))
+                          .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
+                          .map((c, idx) => {
+                            const sumKeys = ['subtotal', 'discount', 'total', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos']
+                            if (sumKeys.includes(c.key)) {
+                              const sum = invRows.reduce((acc, r) => {
+                                let val = 0
+                                if (c.key === 'totalImpuestosTrasladados') {
+                                  val = Number(getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados')) || 0
+                                } else if (c.key === 'totalImpuestosRetenidos') {
+                                  val = Number(getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos')) || 0
+                                } else {
+                                  val = Number(r[c.key as keyof InvoiceRow]) || 0
+                                }
+                                return acc + val
+                              }, 0)
+                              return (
+                                <td key={c.key} className="px-2 py-2">
+                                  {formatMXN(sum)}
+                                </td>
+                              )
+                            }
+                            if (idx === 0) {
+                              return (
+                                <td key={c.key} className="px-2 py-2">
+                                  Totales:
+                                </td>
+                              )
+                            }
+                            return <td key={c.key} className="px-2 py-2" />
+                          })}
+                        <td className="px-2 py-2 sticky right-0 bg-background z-10 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]"></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>

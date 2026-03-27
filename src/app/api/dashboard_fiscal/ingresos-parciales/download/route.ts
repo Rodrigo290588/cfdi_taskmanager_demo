@@ -101,11 +101,8 @@ export async function GET(req: NextRequest) {
     const content = await zip.generateAsync({ type: 'uint8array' })
     
     // Convert to Blob to satisfy BodyInit type
-    // Note: TypeScript might complain about Uint8Array vs ArrayBuffer compatibility issues with SharedArrayBuffer
-    // but at runtime a Uint8Array is valid. We cast to unknown then BlobPart to avoid the build error without using any.
-    const blob = new Blob([content as unknown as BlobPart], { type: 'application/zip' })
-
-    return new NextResponse(blob, {
+    // Next.js response works better with array buffer
+    return new NextResponse(Buffer.from(content), {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="factura_${invoice.folio || 'docs'}.zip"`

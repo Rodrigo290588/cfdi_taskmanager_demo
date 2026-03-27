@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
@@ -246,7 +247,7 @@ export default function DashboardRecibidosPage() {
                       <BarChart layout="vertical" data={metrics?.topSuppliers || []} margin={{ left: 0, right: 30, top: 10, bottom: 10 }}>
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 10}} interval={0} />
-                        <Tooltip formatter={(value: number) => formatMXN(Number(value))} cursor={{fill: 'transparent'}} />
+                        <Tooltip formatter={(value: any) => formatMXN(Number(value))} cursor={{fill: 'transparent'}} />
                         <Bar dataKey="total" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
                       </BarChart>
                     </ResponsiveContainer>

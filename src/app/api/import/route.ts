@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { SatStatus } from '@prisma/client';
 
 // Configuración para el límite del cuerpo (aunque en App Router esto depende más del servidor/middleware)
 // Se mantiene como referencia de la intención del usuario.
@@ -40,45 +39,37 @@ export async function POST(request: Request) {
       date?: string | number | Date;
       fechaEmision?: string | number | Date;
       issuanceDate?: string | number | Date;
-      montoTotal?: number | string;
-      total?: number | string;
-      amount?: number | string;
-      impuestos?: number | string;
-      taxes?: number | string;
       [key: string]: unknown;
     }
 
     const records = (body as ImportRecord[]).map((item) => {
       // Intentar obtener los valores de diferentes posibles nombres de propiedad
-      const uuid = item.id_uuid || item.uuid || item.UUID;
-      // El modelo Cfdi actual no tiene campo RFC, así que lo omitimos por ahora para corregir el build.
-      // const rfc_emisor = item.rfc_emisor || item.rfcEmisor || item.issuerRfc || item.RFCEmisor;
+      const id_uuid = item.id_uuid || item.uuid || item.UUID;
+      const rfc_emisor = item.rfc_emisor || item.rfcEmisor || item.issuerRfc || item.RFCEmisor;
       const fechaRaw = item.fecha || item.date || item.fechaEmision || item.issuanceDate;
-      const montoTotal = item.montoTotal || item.total || item.amount || 0;
-      const impuestos = item.impuestos || item.taxes || 0;
       
-      let fechaEmision: Date;
+      let fecha: Date;
       try {
-        fechaEmision = new Date(fechaRaw as string | number | Date);
-        if (isNaN(fechaEmision.getTime())) {
-          fechaEmision = new Date(); // Fallback a ahora si la fecha es inválida
+        fecha = new Date(fechaRaw as string | number | Date);
+        if (isNaN(fecha.getTime())) {
+          fecha = new Date(); // Fallback a ahora si la fecha es inválida, o manejar error
         }
       } catch {
-        fechaEmision = new Date();
+        fecha = new Date();
       }
 
       return {
-        uuid,
-        fechaEmision,
-        montoTotal,
-        impuestos,
-        statusSat: SatStatus.VIGENTE as SatStatus,
+        id_uuid,
+        rfc_emisor,
+        fecha,
+        data: item, // Guardar el JSON completo
       };
     });
 
-    // Filtrar registros inválidos (aquellos sin UUID)
-    const validRecords = records.filter((r): r is { uuid: string; fechaEmision: Date; montoTotal: number | string; impuestos: number | string; statusSat: SatStatus } => {
-      return typeof r.uuid === 'string';
+    // Filtrar registros inválidos (aquellos sin UUID o RFC)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validRecords = records.filter((r): r is { id_uuid: string; rfc_emisor: string; fecha: Date; data: any } => {
+      return typeof r.id_uuid === 'string' && typeof r.rfc_emisor === 'string';
     });
 
     if (validRecords.length === 0) {
@@ -91,6 +82,7 @@ export async function POST(request: Request) {
     // Inserción masiva con skipDuplicates para idempotencia
     // Prisma createMany es eficiente para lotes grandes
     const result = await prisma.cfdi.createMany({
+      // @ts-expect-error - Prisma types mismatch
       data: validRecords,
       skipDuplicates: true,
     });

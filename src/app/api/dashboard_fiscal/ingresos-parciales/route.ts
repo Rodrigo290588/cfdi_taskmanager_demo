@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
     const paymentDateEnd = searchParams.get('paymentDateEnd')
     const incomeCurrency = searchParams.get('incomeCurrency')
     const paymentCurrency = searchParams.get('paymentCurrency')
-    const classification = searchParams.get('classification') || 'issued'
 
     if (!startDate || !endDate || !rfc) {
       return NextResponse.json({ error: 'Faltan parámetros requeridos' }, { status: 400 })
@@ -31,6 +30,7 @@ export async function GET(req: NextRequest) {
 
     // Build invoice filter
     const invoiceWhere: Record<string, unknown> = {
+      issuerRfc: rfc,
       cfdiType: 'INGRESO',
       paymentMethod: 'PPD',
       satStatus: 'VIGENTE',
@@ -38,18 +38,6 @@ export async function GET(req: NextRequest) {
         gte: start,
         lte: end,
       },
-    }
-
-    if (classification === 'received') {
-      invoiceWhere.receiverRfc = rfc
-    } else if (classification === 'both') {
-      invoiceWhere.OR = [
-        { issuerRfc: rfc },
-        { receiverRfc: rfc }
-      ]
-    } else {
-      // Default to issued
-      invoiceWhere.issuerRfc = rfc
     }
 
     if (incomeCurrency && incomeCurrency !== 'ALL') {
@@ -149,14 +137,8 @@ export async function GET(req: NextRequest) {
       impSaldoAnt: number
       impSaldoInsoluto: number
       monedaP: string
-      formaDePagoP: string
     }
-
-    // We need two maps:
-    // 1. All payments (to calculate correct balance and status)
-    // 2. Filtered payments (to show in the report detail)
-    const allPaymentsMap: Record<string, PaymentInfo[]> = {}
-    const filteredPaymentsMap: Record<string, PaymentInfo[]> = {}
+    const paymentsMap: Record<string, PaymentInfo[]> = {}
     
     // Use DOMParser for XML parsing
     const parser = new DOMParser()
@@ -180,25 +162,23 @@ export async function GET(req: NextRequest) {
         pagos.forEach(pagoNode => {
           const monedaP = getAttr(pagoNode, 'MonedaP')
           const fechaPagoStr = getAttr(pagoNode, 'FechaPago')
-          const formaDePagoP = getAttr(pagoNode, 'FormaDePagoP')
-          const fechaPago = new Date(fechaPagoStr)
           
-          // Determine if this payment matches filters
-          let matchesFilter = true
-
+          // Apply filters
           // 1. Payment Currency
           if (paymentCurrency && paymentCurrency !== 'ALL' && monedaP !== paymentCurrency) {
-            matchesFilter = false
+            return
           }
 
           // 2. Payment Date Range
           if (paymentDateStart && paymentDateEnd) {
+             // FechaPago format: YYYY-MM-DDTHH:mm:ss
+             const fechaPago = new Date(fechaPagoStr)
              const pStart = new Date(paymentDateStart)
              const pEnd = new Date(paymentDateEnd)
              pEnd.setHours(23, 59, 59, 999)
 
              if (fechaPago < pStart || fechaPago > pEnd) {
-               matchesFilter = false
+               return
              }
           }
 
@@ -225,9 +205,13 @@ export async function GET(req: NextRequest) {
             const impSaldoInsolutoStr = getAttr(doctoNode, 'ImpSaldoInsoluto')
             const impSaldoInsoluto = parseFloat(impSaldoInsolutoStr) || 0
 
-            const paymentInfo: PaymentInfo = {
+            if (!paymentsMap[ppdUuid]) {
+              paymentsMap[ppdUuid] = []
+            }
+            
+            paymentsMap[ppdUuid].push({
               paymentUuid: paymentInvoice.uuid,
-              paymentDate: fechaPago, // Use XML date which is more accurate for the payment itself
+              paymentDate: paymentInvoice.issuanceDate, // Or use fechaPagoStr? issuanceDate is safer if XML date is weird
               paymentSeries: paymentInvoice.series,
               paymentFolio: paymentInvoice.folio,
               impPagado,
@@ -236,23 +220,8 @@ export async function GET(req: NextRequest) {
               numParcialidad,
               impSaldoAnt,
               impSaldoInsoluto,
-              monedaP,
-              formaDePagoP
-            }
-
-            // Add to ALL payments map
-            if (!allPaymentsMap[ppdUuid]) {
-              allPaymentsMap[ppdUuid] = []
-            }
-            allPaymentsMap[ppdUuid].push(paymentInfo)
-
-            // Add to FILTERED payments map only if matches
-            if (matchesFilter) {
-              if (!filteredPaymentsMap[ppdUuid]) {
-                filteredPaymentsMap[ppdUuid] = []
-              }
-              filteredPaymentsMap[ppdUuid].push(paymentInfo)
-            }
+              monedaP
+            })
           })
         })
 
@@ -263,47 +232,89 @@ export async function GET(req: NextRequest) {
 
     // 4. Final Aggregation
     const results = ppdInvoices.map((inv) => {
-      const allPayments = allPaymentsMap[inv.uuid] || []
-      const filteredPayments = filteredPaymentsMap[inv.uuid] || []
+      const payments = paymentsMap[inv.uuid] || []
+      
+      // Calculate total paid
+      // We need to be careful with currencies.
+      // The PPD total is in inv.currency.
+      // The Payment details have ImpPagado (Amount Paid assigned to this doc).
+      // ImpPagado is usually expressed in the currency of the *Payment* (MonedaP), 
+      // BUT in CFDI 4.0 / 2.0 complement, it might be different.
+      // Wait, let's check SAT rules.
+      // In REP 1.0: ImpPagado is in the currency of the *Payment* (MonedaP).
+      // In REP 2.0: ImpPagado is in the currency of the *Related Document* (MonedaDR)? 
+      // NO. ImpPagado is the amount *of the payment* applied to the document.
+      // If Payment is USD and Doc is MXN:
+      //   ImpPagado is in USD.
+      //   EquivalenciaDR is the rate to convert USD to MXN.
+      //   Amount Credited to Doc (in Doc Currency) = ImpPagado * EquivalenciaDR.
+      //   Wait, usually: ImpPagado * EquivalenciaDR = Amount in Doc Currency.
+      // Let's verify standard:
+      // "El importe pagado corresponde a la cantidad que se abona al documento relacionado expresada en la moneda del pago."
+      // So yes, ImpPagado is in Payment Currency.
+      // To get the amount reduced from the Debt (in Doc Currency):
+      //   AmountInDocCurrency = ImpPagado * EquivalenciaDR (if currencies differ)
+      //   If currencies are same, EquivalenciaDR is 1.
+      
+      // However, there is a nuance. Sometimes EquivalenciaDR is defined as DocCurrency / PaymentCurrency or vice versa.
+      // SAT Guide: "EquivalenciaDR: Es el tipo de cambio conforme con la moneda registrada en el documento relacionado."
+      // Formula: ImportePagado * EquivalenciaDR = Importe en moneda del documento relacionado.
+      // So yes, we multiply.
       
       const totalOriginal = Number(inv.total)
       
-      // Calculate Total Paid based on ALL payments to determine status correctly
-      const totalPaidAll = allPayments.reduce((acc, p) => {
+      const totalPaidInDocCurrency = payments.reduce((acc, p) => {
+        // If currencies are the same, EquivalenciaDR might be 1 or undefined (default 1).
+        // If different, use EquivalenciaDR.
+        
+        // Note: Sometimes users mess up and put 1 even if currencies differ (bad data), 
+        // but we assume valid CFDI.
+        
+        // Robustness check:
+        // If p.monedaDR (Doc Currency) === inv.currency (Expected Doc Currency)
+        // And p.monedaP (Payment Currency) is... wait, we didn't extract MonedaP from XML yet, 
+        // but we have paymentInvoice.currency.
+        
         let amountInDocCurrency = 0
+        
+        // If EquivalenciaDR is present and valid (>0), use it.
         if (p.equivalenciaDR && p.equivalenciaDR > 0) {
+           // For REP 1.0/2.0 logic:
+           // Amount in Doc Currency = ImpPagado * EquivalenciaDR
            amountInDocCurrency = p.impPagado * p.equivalenciaDR
         } else {
+           // Fallback if no equivalence (Assume 1:1)
            amountInDocCurrency = p.impPagado
         }
+        
         return acc + amountInDocCurrency
       }, 0)
 
-      const saldoInsolutoAll = totalOriginal - totalPaidAll
-      const isPaid = saldoInsolutoAll < 0.01
+      // Saldo Insoluto
+      // Ideally, we should use the 'ImpSaldoInsoluto' from the LATEST payment if available,
+      // because it's the official remaining balance declared to SAT.
+      // Calculating it manually (Total - Sum(Payments)) is good for validation,
+      // but 'ImpSaldoInsoluto' from the last payment is the "official" state at that moment.
+      // However, if there are payments *after* the ones we found (unlikely if we search all),
+      // manual calculation is safer if we trust our sum.
+      // Let's use Manual Calculation for consistency with the "Sumatoria" logic requested.
+      // The user prompt says: "Saldo Insoluto (Pendiente): Resultado de Total Ingreso - Sumatoria(Montos de REPs aplicados)."
+      
+      const saldoInsoluto = totalOriginal - totalPaidInDocCurrency
+      
+      // Determine status
+      // Use a small epsilon for float comparison
+      const isPaid = saldoInsoluto < 0.01
 
-      // If we have active payment filters, we should only include invoices that have matching payments
-      const hasPaymentFilters = (paymentCurrency && paymentCurrency !== 'ALL') || (paymentDateStart && paymentDateEnd)
-      
-      if (hasPaymentFilters && filteredPayments.length === 0) {
-        return null // Skip this invoice as it doesn't match the payment filters
-      }
-      
-      // If no payment filters, we typically show all invoices that match the invoice filters (already done in step 1)
-      // But usually this report is "Ingresos Pagados" or "Ingresos Parciales".
-      // If the intention is to show status, we keep them even if no payments (e.g. unpaid invoices).
-      // The frontend filters by isPaid? Yes.
-      
       return {
         ...inv,
         total: totalOriginal,
-        totalPaid: totalPaidAll, // Show the REAL total paid amount
-        saldoInsoluto: saldoInsolutoAll, // Show the REAL balance
+        totalPaid: totalPaidInDocCurrency,
+        saldoInsoluto,
         isPaid,
-        payments: filteredPayments // Show only matching payments in the detail
+        payments
       }
-    }).filter((item): item is NonNullable<typeof item> => item !== null)
-
+    })
 
     // 5. KPIs
     // Total Saldo Insoluto (Converted to MXN)

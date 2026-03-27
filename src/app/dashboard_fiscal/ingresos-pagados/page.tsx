@@ -20,7 +20,23 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from '@/components/ui/badge'
-import { format } from 'date-fns'
+// Removed date-fns imports
+
+// Dummy utility to format dates
+const format = (date: string | Date, formatStr?: string) => {
+  try {
+    const d = new Date(date)
+    if (formatStr === 'yyyyMMdd') {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}${month}${day}`
+    }
+    return d.toLocaleDateString('es-MX')
+  } catch {
+    return String(date)
+  }
+}
 import { Loader2, ChevronDown, ChevronRight, FileText, Download, AlertTriangle, CheckCircle, XCircle, TrendingUp } from 'lucide-react'
 
 type PaymentDetail = {
@@ -115,7 +131,6 @@ export default function PaidIncomePage() {
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
   const [incomeCurrency, setIncomeCurrency] = useState<string>('ALL')
   const [paymentCurrency, setPaymentCurrency] = useState<string>('ALL')
-  const [classification, setClassification] = useState<string>('issued')
 
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<PartialIncomeInvoice[]>([])
@@ -236,32 +251,15 @@ export default function PaidIncomePage() {
     setDateTo(lastDay.toISOString().split('T')[0])
   }, [])
 
-  // Load selected company from localStorage and listen for changes
+  // Load selected company from localStorage
   useEffect(() => {
-    const loadCompany = () => {
-      const stored = localStorage.getItem('selectedCompany')
-      if (stored) {
-        try {
-          const company = JSON.parse(stored)
-          setSelectedCompany(company)
-        } catch (e) {
-          console.error('Error parsing selectedCompany', e)
-        }
+    const stored = localStorage.getItem('selectedCompany')
+    if (stored) {
+      try {
+        setSelectedCompany(JSON.parse(stored))
+      } catch (e) {
+        console.error('Error parsing selectedCompany', e)
       }
-    }
-
-    loadCompany()
-
-    const handleCompanyChange = () => {
-      loadCompany()
-    }
-
-    window.addEventListener('company-selected', handleCompanyChange)
-    document.addEventListener('company-selected', handleCompanyChange)
-
-    return () => {
-      window.removeEventListener('company-selected', handleCompanyChange)
-      document.removeEventListener('company-selected', handleCompanyChange)
     }
   }, [])
 
@@ -277,8 +275,7 @@ export default function PaidIncomePage() {
         paymentDateStart: paymentDateFrom,
         paymentDateEnd: paymentDateTo,
         incomeCurrency,
-        paymentCurrency,
-        classification
+        paymentCurrency
       })
       
       const res = await fetch(`/api/dashboard_fiscal/ingresos-parciales?${params}`)
@@ -294,7 +291,7 @@ export default function PaidIncomePage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency, classification])
+  }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
 
   useEffect(() => {
     fetchData()
@@ -389,22 +386,7 @@ export default function PaidIncomePage() {
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 p-4 border rounded-lg bg-card shadow-sm">
-          {/* Classification */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Clasificación de CFDI</label>
-            <Select value={classification} onValueChange={setClassification}>
-              <SelectTrigger className="h-8 w-full">
-                <SelectValue placeholder="Seleccionar" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="issued">Emitidos</SelectItem>
-                <SelectItem value="received">Recibidos</SelectItem>
-                <SelectItem value="both">Ambos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
           {/* Invoice Date */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Fecha Emisión (Factura)</label>

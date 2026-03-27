@@ -1,0 +1,8 @@
+-- Add module visibility flags to members table
+ALTER TABLE "members"
+  ADD COLUMN IF NOT EXISTS "can_view_emission" BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS "can_view_reception" BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS "can_view_payroll" BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS "can_view_sat_portal" BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS "can_manage_org" BOOLEAN NOT NULL DEFAULT FALSE;
+

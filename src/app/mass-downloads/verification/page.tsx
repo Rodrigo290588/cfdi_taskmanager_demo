@@ -1,8 +1,25 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+// Removed date-fns imports
+// Dummy utility to format dates
+const format = (date: string | Date, fmt?: string) => {
+  try {
+    const d = new Date(date)
+    if (fmt && fmt.includes('HH:mm')) {
+      return d.toLocaleString('es-MX', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    return d.toLocaleDateString('es-MX')
+  } catch {
+    return String(date)
+  }
+}
 import { RefreshCw, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -234,14 +251,14 @@ export default function VerificationMonitorPage() {
                       filteredRequests.map((request) => (
                         <TableRow key={request.id}>
                           <TableCell className="whitespace-nowrap">
-                            {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm', { locale: es })}
+                            {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
                           </TableCell>
                           <TableCell>{request.requestingRfc}</TableCell>
                           <TableCell className="font-mono text-xs">{request.satPackageId}</TableCell>
                           <TableCell>{getStatusBadge(request.requestStatus)}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {request.requestStatus === 'TERMINADO'
-                              ? format(new Date(request.updatedAt), 'dd/MM/yyyy HH:mm', { locale: es })
+                              ? format(new Date(request.updatedAt), 'dd/MM/yyyy HH:mm')
                               : '-'}
                           </TableCell>
                           <TableCell className="text-center">{request.verificationAttempts}</TableCell>
@@ -250,7 +267,7 @@ export default function VerificationMonitorPage() {
                               <div className="flex items-center space-x-1">
                                 <Clock className="h-3 w-3" />
                                 <span>
-                                  {format(new Date(request.nextCheck), 'dd/MM/yyyy HH:mm', { locale: es })}
+                                  {format(new Date(request.nextCheck), 'dd/MM/yyyy HH:mm')}
                                 </span>
                               </div>
                             ) : '-'}

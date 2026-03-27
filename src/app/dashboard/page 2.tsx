@@ -16,44 +16,38 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  PieChart,
-  Pie,
   Cell,
 } from 'recharts'
-import { ArrowUp } from 'lucide-react'
 
 interface MetricsResponse {
   company?: { id: string; rfc: string; name: string }
-  kpis: { totalCfdis: number; totalMonto: number; tasaCancelacion: number }
+  kpis: { 
+    totalCfdis: number; 
+    totalMonto: number; 
+    tasaCancelacion: number;
+    montoCobrado?: number;
+    montoPorCobrar?: number;
+    carteraVencida?: number;
+    montoNotasCredito?: number;
+    montoCancelado?: number;
+    taxes?: {
+      ivaTrasladado: number;
+      ivaRetenido: number;
+      isrRetenido: number;
+      iepsRetenido: number;
+    };
+  }
   byType: Array<{ type: string; count: number; total: number }>
   bySatStatus: Array<{ status: string; count: number }>
   monthly: Array<{ label: string; count: number; total: number }>
-  topClients?: Array<{ rfc: string; name: string; total: number }>
+  topClients?: Array<{ rfc: string; name: string; total: number; cobrado?: number; pendiente?: number }>
   paymentMethods?: Array<{ method: string; count: number }>
+  topProducts?: Array<{ name: string; value: number }>
 }
 
-// Mock Data for UI Matching
-const mockTopProducts = [
-  { name: 'Producto A', value: 45, displayValue: '$45k' },
-  { name: 'Producto B', value: 22, displayValue: '$22k' },
-  { name: 'Producto C', value: 20, displayValue: '$20k' },
-  { name: 'Producto D', value: 10, displayValue: '$10k' },
-  { name: 'Producto E', value: 12, displayValue: '$12k' },
-]
 
-// Updated to match reference image colors and labels
-const mockCosts = [
-  { name: 'Costos', value: 40, fill: '#f59e0b', label: 'Costos 40%' }, // Orange
-  { name: 'Servicios', value: 25, fill: '#3b82f6', label: '25%' }, // Blue
-  { name: 'Gastos Admin', value: 20, fill: '#22c55e', label: 'Gastos Admin 20%' }, // Green
-  { name: 'Otros', value: 20, fill: '#ef4444', label: '20%' }, // Red
-]
 
-const mockTaxes = [
-  { name: 'Jul', trasladado: 40, acreditable: 24, isr: 24 },
-  { name: 'Sep', trasladado: 30, acreditable: 13, isr: 22 },
-  { name: 'Dic', trasladado: 20, acreditable: 98, isr: 22 },
-]
+// Impuestos chart removed
 
 const mockNetIncome = [
   { name: 'Mes Anterior', value: 90, fill: '#3b82f6', displayValue: '$90K' },
@@ -167,13 +161,64 @@ export default function DashboardHome() {
     return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
   }, [metrics])
 
+  const montoCobradoMXN = useMemo(() => {
+    const v = metrics?.kpis.montoCobrado || 0
+    return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+  }, [metrics])
+
+  const montoPorCobrarMXN = useMemo(() => {
+    const v = metrics?.kpis.montoPorCobrar || 0
+    return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+  }, [metrics])
+
+  const carteraVencidaMXN = useMemo(() => {
+    const v = metrics?.kpis?.carteraVencida || 0
+    return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+  }, [metrics])
+
+  const montoEgresosMXN = useMemo(() => {
+    const v = metrics?.kpis.montoNotasCredito || 0
+    return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+  }, [metrics])
+
+  const montoCanceladoMXN = useMemo(() => {
+    const v = metrics?.kpis.montoCancelado || 0
+    return `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+  }, [metrics])
+
+  const impuestos = useMemo(() => {
+    const iva = Number(metrics?.kpis.taxes?.ivaTrasladado || 0)
+    const isr = Number(metrics?.kpis.taxes?.isrRetenido || 0)
+    const ieps = Number(metrics?.kpis.taxes?.iepsRetenido || 0)
+    const total = iva + isr + ieps
+    return {
+      iva: `$${iva.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+      isr: `$${isr.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+      ieps: `$${ieps.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+      total: `$${total.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+    }
+  }, [metrics])
+
   // Derived Data for Charts
+  const topProductsData = useMemo(() => {
+    if (!metrics?.topProducts) return []
+    return metrics.topProducts.map(p => ({
+      name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
+      fullName: p.name,
+      value: p.value,
+      displayValue: `$${(p.value / 1000).toFixed(1)}k`
+    }))
+  }, [metrics])
+
+  // Top Clients Data
   const topClientsData = useMemo(() => {
     if (!metrics?.topClients) return []
-    return metrics.topClients.slice(0, 5).map(c => ({
-      name: c.name.substring(0, 15),
-      cobrado: c.total * 0.7, // Mock split
-      pendiente: c.total * 0.3, // Mock split
+    return metrics.topClients.slice(0, 10).map(c => ({
+      name: c.name.length > 15 ? c.name.substring(0, 15) + '...' : c.name,
+      fullName: c.name,
+      cobrado: c.cobrado !== undefined ? c.cobrado : c.total * 0.7, // Fallback if old api
+      pendiente: c.pendiente !== undefined ? c.pendiente : c.total * 0.3, // Fallback if old api
+      total: c.total
     }))
   }, [metrics])
 
@@ -190,29 +235,6 @@ export default function DashboardHome() {
     return <DashboardSkeleton />
   }
 
-  const renderCustomizedLabel = (props: { cx?: number; cy?: number; midAngle?: number; innerRadius?: number; outerRadius?: number; index?: number }) => {
-    const { cx = 0, cy = 0, midAngle = 0, innerRadius = 0, outerRadius = 0, index = 0 } = props
-    const RADIAN = Math.PI / 180
-    // Position label slightly outside the center of the slice or inside depending on size
-    // For this design, we want them visible on top.
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5
-    const x = cx + radius * Math.cos(-midAngle * RADIAN)
-    const y = cy + radius * Math.sin(-midAngle * RADIAN)
-
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="white"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-[10px] font-bold"
-        style={{ pointerEvents: 'none' }}
-      >
-        {mockCosts[index].label}
-      </text>
-    )
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const formatBarLabel = (val: any) => `$${val}K`
@@ -258,13 +280,18 @@ export default function DashboardHome() {
           </Card>
           <Card className="border-l-4 border-l-green-500 shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Margen EBITDA</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Monto cobrado</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-center gap-2">
-                <div className="text-2xl font-bold text-green-600">24.5%</div>
-                <ArrowUp className="h-6 w-6 text-green-600" />
-              </div>
+              <div className="text-2xl font-bold text-center text-green-600">{montoCobradoMXN}</div>
+            </CardContent>
+          </Card>
+          <Card className="border-l-4 border-l-yellow-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Monto por cobrar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-center text-yellow-600">{montoPorCobrarMXN}</div>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-orange-500 shadow-sm">
@@ -272,15 +299,56 @@ export default function DashboardHome() {
               <CardTitle className="text-sm font-medium text-muted-foreground text-center">Cartera Vencida</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-center text-orange-600">$120,000</div>
+              <div className="text-2xl font-bold text-center text-orange-600">{carteraVencidaMXN}</div>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-red-500 shadow-sm">
+          <Card className="border-l-4 border-l-purple-500 shadow-sm flex flex-col justify-center">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Impuestos por Pagar</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Total Egresos</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-center text-red-600">$65,000</div>
+              <div className="text-2xl font-bold text-center text-purple-600">{montoEgresosMXN}</div>
+            </CardContent>
+          </Card>
+          <Card className="border-l-4 border-l-gray-500 shadow-sm flex flex-col justify-center">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Total Cancelaciones</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-center text-gray-600">{montoCanceladoMXN}</div>
+            </CardContent>
+          </Card>
+          <Card className="border-l-4 border-l-red-500 shadow-sm lg:col-span-2">
+            <CardHeader className="pb-0">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-center">Impuestos por Pagar</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="text-2xl font-bold text-center text-red-600 mb-4">{impuestos.total}</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="flex flex-col sm:border-r sm:pr-2">
+                  <div className="flex justify-between items-center border-b pb-1 mb-2">
+                    <span className="font-bold text-foreground">IVA</span>
+                    <span className="font-bold text-foreground">{impuestos.iva}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground mb-1"><span>16%:</span><span>{impuestos.iva}</span></div>
+                  <div className="flex justify-between text-muted-foreground mb-1"><span>8%:</span><span>$0.00</span></div>
+                  <div className="flex justify-between text-muted-foreground"><span>0% / Exento:</span><span>$0.00</span></div>
+                </div>
+                <div className="flex flex-col sm:border-r sm:px-2">
+                  <div className="flex justify-between items-center border-b pb-1 mb-2">
+                    <span className="font-bold text-foreground">ISR</span>
+                    <span className="font-bold text-foreground">{impuestos.isr}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground"><span>Retenido:</span><span>{impuestos.isr}</span></div>
+                </div>
+                <div className="flex flex-col sm:pl-2">
+                  <div className="flex justify-between items-center border-b pb-1 mb-2">
+                    <span className="font-bold text-foreground">IEPS</span>
+                    <span className="font-bold text-foreground">{impuestos.ieps}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground"><span>Retenido:</span><span>{impuestos.ieps}</span></div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -290,16 +358,23 @@ export default function DashboardHome() {
           {/* Top 10 Productos */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base font-semibold">Top 10 Productos</CardTitle>
+              <CardTitle className="text-base font-semibold">Top 10 de productos más vendidos</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={mockTopProducts} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                  <BarChart 
+                    layout="vertical" 
+                    data={topProductsData.length > 0 ? topProductsData : [{name: 'Sin datos', fullName: 'Sin datos', value: 0, displayValue: '$0'}]} 
+                    margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-                    <Tooltip />
+                    <Tooltip 
+                      formatter={(value) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`, 'Ventas']}
+                      labelFormatter={(label, payload) => payload[0]?.payload?.fullName || label}
+                    />
                     <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -315,11 +390,18 @@ export default function DashboardHome() {
             <CardContent>
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={topClientsData.length > 0 ? topClientsData : [{name: 'Sin datos', cobrado: 0, pendiente: 0}]} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                  <BarChart 
+                    layout="vertical" 
+                    data={topClientsData.length > 0 ? topClientsData : [{name: 'Sin datos', fullName: 'Sin datos', cobrado: 0, pendiente: 0, total: 0}]} 
+                    margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-                    <Tooltip />
+                    <Tooltip 
+                      formatter={(value) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`]}
+                      labelFormatter={(label, payload) => payload[0]?.payload?.fullName || label}
+                    />
                     <Legend />
                     <Bar dataKey="cobrado" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} barSize={20} name="Cobrado" />
                     <Bar dataKey="pendiente" stackId="a" fill="#f97316" radius={[0, 4, 4, 0]} barSize={20} name="Pendiente" />
@@ -353,105 +435,10 @@ export default function DashboardHome() {
         </Card>
 
         {/* Row 4: Bottom Charts */}
-        <div className="grid gap-4 md:grid-cols-3">
-          {/* Costos & Gastos */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Costos & Gastos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[200px] w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={mockCosts}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={80}
-                      paddingAngle={0}
-                      dataKey="value"
-                      labelLine={false}
-                      label={renderCustomizedLabel}
-                    >
-                      {mockCosts.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* EBITDA Gauge */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold text-center">EBITDA</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[200px] w-full flex flex-col items-center justify-center relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={[{ value: 100 }]}
-                      cx="50%"
-                      cy="70%"
-                      startAngle={180}
-                      endAngle={0}
-                      innerRadius={60}
-                      outerRadius={80}
-                      fill="#e5e7eb"
-                      dataKey="value"
-                      stroke="none"
-                    />
-                    <Pie
-                      data={[{ value: 70 }, { value: 30 }]}
-                      cx="50%"
-                      cy="70%"
-                      startAngle={180}
-                      endAngle={0}
-                      innerRadius={60}
-                      outerRadius={80}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      <Cell fill="#22c55e" />
-                      <Cell fill="transparent" />
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute bottom-10 text-center">
-                  <div className="text-2xl font-bold text-foreground">$180K</div>
-                  <div className="text-sm font-medium text-green-600">Margen 24.5%</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Impuestos / Utilidad (Split into two separate cards inside one container) */}
+        <div className="grid gap-4 md:grid-cols-1">
+          {/* Utilidad (single card; Impuestos chart removed) */}
           <Card className="overflow-hidden">
-             <div className="grid grid-cols-2 divide-x h-full">
-                {/* Impuestos Column */}
-                <div className="p-4 flex flex-col h-full">
-                  <div className="text-base font-semibold mb-2">Impuestos</div>
-                  <div className="flex-1 min-h-[160px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={mockTaxes}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" fontSize={10} />
-                        <Tooltip cursor={{fill: 'transparent'}} />
-                        <Legend wrapperStyle={{fontSize: '10px'}} />
-                        <Bar dataKey="trasladado" stackId="a" fill="#3b82f6" name="IVA Trasladado" />
-                        <Bar dataKey="acreditable" stackId="a" fill="#22c55e" name="IVA Acreditable" />
-                        <Bar dataKey="isr" stackId="a" fill="#ef4444" name="ISR" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Utilidad Neta Column */}
+             <div className="grid grid-cols-1 h-full">
                 <div className="p-4 flex flex-col h-full">
                   <div className="text-base font-semibold mb-2">Utilidad Neta</div>
                   <div className="flex-1 min-h-[160px] relative">

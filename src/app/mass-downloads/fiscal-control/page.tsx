@@ -19,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Eye } from "lucide-react"
@@ -668,7 +669,7 @@ export default function MassDownloadsFiscalControlPage() {
                           
                           if (['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido'].includes(col.key)) {
                             return (
-                              <TableCell key={col.key} className="text-sm font-medium text-right">
+                              <TableCell key={col.key} className="text-sm font-medium">
                                 {formatCurrency(val as number)}
                               </TableCell>
                             )
@@ -698,7 +699,7 @@ export default function MassDownloadsFiscalControlPage() {
 
                           if (['uuid', 'issuerRfc', 'receiverRfc', 'certificationPac'].includes(col.key)) {
                             return (
-                              <TableCell key={col.key} className="font-mono text-xs">
+                              <TableCell key={col.key} className="font-mono text-xs whitespace-nowrap">
                                 {val as string}
                               </TableCell>
                             )
@@ -720,6 +721,33 @@ export default function MassDownloadsFiscalControlPage() {
                     </TableRow>
                   )}
                 </TableBody>
+                {data?.table?.rows?.length ? (
+                  <TableFooter>
+                    <TableRow>
+                      {columnDefs.map((col) => {
+                        if (!visibleCols.has(col.key)) return null
+                        if (['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido'].includes(col.key)) {
+                          const sum = data.table.rows.reduce((acc, row) => acc + (Number(row[col.key as keyof FiscalControlRow]) || 0), 0)
+                          return (
+                            <TableCell key={col.key} className="text-sm font-bold">
+                              {formatCurrency(sum)}
+                            </TableCell>
+                          )
+                        }
+                        // Solo mostrar la etiqueta "Totales" en la primera columna visible
+                        const firstVisibleKey = columnDefs.find(c => visibleCols.has(c.key))?.key
+                        if (col.key === firstVisibleKey) {
+                          return (
+                            <TableCell key={col.key} className="text-sm font-bold">
+                              Totales:
+                            </TableCell>
+                          )
+                        }
+                        return <TableCell key={col.key} />
+                      })}
+                    </TableRow>
+                  </TableFooter>
+                ) : null}
               </Table>
             </div>
             {totalPages > 1 && (

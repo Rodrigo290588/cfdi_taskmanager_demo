@@ -43,11 +43,3 @@ next-env.d.ts
 /src/generated/prisma
 
 /tools/
-
-# backups
-/BackUp
-*.backup
-*.sql
-
-# java
-/java-client/target

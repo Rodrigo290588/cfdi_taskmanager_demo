@@ -1,7 +1,5 @@
 import { PrismaClient } from '@prisma/client'
 
-console.log("Running updated seed-dev.mjs")
-
 const prisma = new PrismaClient({ log: ['query'] })
 
 function rand(min, max) {
@@ -31,21 +29,14 @@ async function seedCompany({ user, org, member, rfc, businessName, targetCount =
     create: { organizationId: org.id, memberId: member.id, companyId: company.id, role: 'ADMIN' }
   })
 
-  let fiscal = await prisma.fiscalEntity.findUnique({ where: { rfc } })
+  let fiscal = await prisma.fiscalEntity.findFirst({ where: { organizationId: org.id, rfc } })
   if (!fiscal) {
     fiscal = await prisma.fiscalEntity.create({
       data: { organizationId: org.id, rfc, businessName, taxRegime: '601', postalCode: '04120', isActive: true }
     })
-  } else if (fiscal.organizationId !== org.id) {
-    // If it exists but belongs to another org, move it to the demo org (optional, but ensures demo user sees it)
-    console.log(`Moving FiscalEntity ${rfc} from org ${fiscal.organizationId} to ${org.id}`)
-    fiscal = await prisma.fiscalEntity.update({
-      where: { id: fiscal.id },
-      data: { organizationId: org.id }
-    })
   }
 
-  const existing = await prisma.invoice.count({ where: { issuerFiscalEntityId: fiscal.id } })
+  const existing = await prisma.invoice.count({ where: { fiscalEntityId: fiscal.id } })
   const toCreate = Math.max(0, targetCount - existing)
 
   const suppliers = [
@@ -81,7 +72,7 @@ async function seedCompany({ user, org, member, rfc, businessName, targetCount =
       const receiver = issued ? clients[rand(0, clients.length - 1)] : { rfc, name: businessName }
       return {
         userId: user.id,
-        issuerFiscalEntityId: fiscal.id,
+        fiscalEntityId: fiscal.id,
         uuid: crypto.randomUUID(),
         cfdiType,
         series: issued ? 'S' : 'R',
@@ -96,10 +87,10 @@ async function seedCompany({ user, org, member, rfc, businessName, targetCount =
         receiverName: receiver.name,
         subtotal,
         total,
-        ivaTransferred: Number((subtotal * 0.16).toFixed(2)),
-        ivaWithheld: rand(0, 1) ? Number((subtotal * 0.04).toFixed(2)) : 0,
-        isrWithheld: rand(0, 1) ? Number((subtotal * 0.10).toFixed(2)) : 0,
-        iepsWithheld: 0,
+        ivaTrasladado: Number((subtotal * 0.16).toFixed(2)),
+        ivaRetenido: rand(0, 1) ? Number((subtotal * 0.04).toFixed(2)) : 0,
+        isrRetenido: rand(0, 1) ? Number((subtotal * 0.10).toFixed(2)) : 0,
+        iepsRetenido: 0,
         xmlContent: '<xml>demo</xml>',
         pdfUrl: null,
         issuanceDate: date,
@@ -107,8 +98,8 @@ async function seedCompany({ user, org, member, rfc, businessName, targetCount =
         certificationPac: 'PAC DEMO',
         paymentMethod: payMethod,
         paymentForm: payForm,
-        cfdiUsage: 'G03',
-        placeOfExpedition: '04120',
+        usageCfdi: 'G03',
+        expeditionPlace: '04120',
       }
     })
     await prisma.invoice.createMany({ data: invoicesData })

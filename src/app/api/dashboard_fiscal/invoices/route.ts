@@ -52,35 +52,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ invoices: [], pagination: { total: 0, page, limit, totalPages: 0 } })
     }
 
-    const classification = searchParams.get('classification') || 'issued'
-    const where: Prisma.InvoiceWhereInput = {}
-
-    const queryFilters: Prisma.InvoiceWhereInput[] = query ? [
-      { uuid: { contains: query, mode: 'insensitive' } },
-      { issuerRfc: { contains: query, mode: 'insensitive' } },
-      { issuerName: { contains: query, mode: 'insensitive' } },
-      { receiverRfc: { contains: query, mode: 'insensitive' } },
-      { receiverName: { contains: query, mode: 'insensitive' } },
-      { folio: { contains: query, mode: 'insensitive' } },
-    ] : []
-
-    if (classification === 'received') {
-      where.receiverRfc = company.rfc
-      if (queryFilters.length > 0) where.OR = queryFilters
-    } else if (classification === 'both') {
-      const accessOr = [{ issuerRfc: company.rfc }, { receiverRfc: company.rfc }]
-      if (queryFilters.length > 0) {
-        where.AND = [
-          { OR: accessOr },
-          { OR: queryFilters }
-        ]
-      } else {
-        where.OR = accessOr
-      }
-    } else {
-      where.issuerFiscalEntityId = fiscalEntity.id
-      where.issuerRfc = company.rfc
-      if (queryFilters.length > 0) where.OR = queryFilters
+    const where: Prisma.InvoiceWhereInput = { issuerFiscalEntityId: fiscalEntity.id, issuerRfc: company.rfc }
+    if (query) {
+      where.OR = [
+        { uuid: { contains: query, mode: 'insensitive' } },
+        { issuerRfc: { contains: query, mode: 'insensitive' } },
+        { issuerName: { contains: query, mode: 'insensitive' } },
+        { receiverRfc: { contains: query, mode: 'insensitive' } },
+        { receiverName: { contains: query, mode: 'insensitive' } },
+        { folio: { contains: query, mode: 'insensitive' } },
+      ]
     }
     if (cfdiType && CfdiType[cfdiType]) {
       where.cfdiType = CfdiType[cfdiType]

@@ -1,8 +1,25 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+// Removed date-fns imports
+// Dummy utility to format dates
+const format = (date: string | Date, fmt?: string) => {
+  try {
+    const d = new Date(date)
+    if (fmt && fmt.includes('HH:mm')) {
+      return d.toLocaleString('es-MX', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    return d.toLocaleDateString('es-MX')
+  } catch {
+    return String(date)
+  }
+}
 import { Search, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -297,7 +314,7 @@ export default function MonitorPage() {
                     requests.map((request) => (
                       <TableRow key={request.id}>
                         <TableCell className="font-medium">
-                          {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm', { locale: es })}
+                          {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">
@@ -309,8 +326,8 @@ export default function MonitorPage() {
                             <span className="font-mono text-xs text-muted-foreground">{request.folio}</span>
                           ) : (
                             <div className="flex flex-col text-xs text-muted-foreground">
-                              <span>Del: {request.startDate ? format(new Date(request.startDate), 'dd/MM/yyyy', { locale: es }) : '-'}</span>
-                              <span>Al: {request.endDate ? format(new Date(request.endDate), 'dd/MM/yyyy', { locale: es }) : '-'}</span>
+                              <span>Del: {request.startDate ? format(new Date(request.startDate), 'dd/MM/yyyy') : '-'}</span>
+                              <span>Al: {request.endDate ? format(new Date(request.endDate), 'dd/MM/yyyy') : '-'}</span>
                             </div>
                           )}
                         </TableCell>
