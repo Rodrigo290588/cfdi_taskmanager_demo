@@ -24,7 +24,7 @@ import java.util.stream.Stream;
 public class App {
 
     private static final String API_URL = "http://localhost:3000/api/import";
-    private static final int BATCH_SIZE = 1000;
+    private static final int BATCH_SIZE = 25;
     private static final String PROGRESS_FILE = "progress.log";
     
     // Cliente HTTP/1.1 para evitar problemas de upgrade
@@ -45,6 +45,7 @@ public class App {
 
     // Set concurrente para seguimiento de archivos procesados
     private static final Set<String> processedFiles = ConcurrentHashMap.newKeySet();
+    private static final Path progressFilePath = resolveProgressFilePath();
 
     // Semáforo para limitar la concurrencia de operaciones de E/S (evitar "Too many open files")
     private static final java.util.concurrent.Semaphore ioSemaphore = new java.util.concurrent.Semaphore(100);
@@ -53,6 +54,12 @@ public class App {
         String dirPath = args.length > 0 ? args[0] : "xml-data";
         System.out.println("Iniciando cliente de ingesta CFDI (Java 21 + Virtual Threads)...");
         System.out.println("Directorio objetivo: " + dirPath);
+        System.out.println("Endpoint API: " + API_URL);
+
+        if (!isApiAvailable()) {
+            System.err.println("No fue posible conectar con " + API_URL + ". Inicia la app web antes de ejecutar la ingesta.");
+            return;
+        }
 
         // 1. Cargar progreso previo
         loadProgress();
@@ -128,6 +135,34 @@ public class App {
         System.out.println("Errores de lectura/parseo: " + errorCount.get());
     }
 
+    private static Path resolveProgressFilePath() {
+        try {
+            URI codeSource = App.class.getProtectionDomain().getCodeSource().getLocation().toURI();
+            Path location = Paths.get(codeSource);
+            Path baseDir = Files.isDirectory(location) ? location : location.getParent();
+            return baseDir.resolve(PROGRESS_FILE).toAbsolutePath().normalize();
+        } catch (Exception e) {
+            return Paths.get(PROGRESS_FILE).toAbsolutePath().normalize();
+        }
+    }
+
+    private static boolean isApiAvailable() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(API_URL))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(5))
+                    .POST(HttpRequest.BodyPublishers.ofString("[]"))
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() >= 200 && response.statusCode() < 500;
+        } catch (Exception e) {
+            String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            System.err.println("API no disponible: " + detail);
+            return false;
+        }
+    }
+
     // Estructura auxiliar para mantener relación archivo-datos
     record FileRecord(Path path, ObjectNode data) {}
 
@@ -150,9 +185,9 @@ public class App {
     }
 
     private static ObjectNode parseXml(Path path) throws Exception {
-        try (InputStream is = new FileInputStream(path.toFile())) {
-            // Leer todo el XML a un árbol JSON
-            JsonNode root = xmlMapper.readTree(is);
+        String xmlContent = Files.readString(path);
+        try {
+            JsonNode root = xmlMapper.readTree(xmlContent);
             
             // Buscar campos clave recursivamente si no están en la raíz
             String uuid = findValue(root, "UUID");
@@ -179,9 +214,13 @@ public class App {
                 result.put("rfc_emisor", rfcEmisor);
                 result.put("fecha", fecha);
                 result.put("source_file", path.getFileName().toString());
+                result.put("xmlContent", xmlContent);
                 
                 return result;
             }
+        } catch (Exception e) {
+            System.err.println("Error parseando XML " + path.getFileName() + ": " + e.getMessage());
+            throw e;
         }
         return null;
     }
@@ -225,7 +264,11 @@ public class App {
                     System.out.println("Error HTTP " + response.statusCode() + ": " + response.body());
                 }
             } catch (Exception e) {
-                System.out.println("Error de red enviando lote: " + e.getMessage());
+                String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                if (e.getCause() != null && e.getCause().getMessage() != null) {
+                    detail += " | causa: " + e.getCause().getMessage();
+                }
+                System.out.println("Error de red enviando lote a " + API_URL + ": " + detail);
             }
             
             retries--;
@@ -239,10 +282,9 @@ public class App {
     }
 
     private static void loadProgress() {
-        Path path = Paths.get(PROGRESS_FILE);
-        if (Files.exists(path)) {
-            System.out.println("Cargando progreso desde: " + path.toAbsolutePath());
-            try (Stream<String> lines = Files.lines(path)) {
+        if (Files.exists(progressFilePath)) {
+            System.out.println("Cargando progreso desde: " + progressFilePath);
+            try (Stream<String> lines = Files.lines(progressFilePath)) {
                 lines.forEach(processedFiles::add);
             } catch (IOException e) {
                 System.err.println("Error leyendo archivo de progreso: " + e.getMessage());
@@ -254,7 +296,11 @@ public class App {
 
     private static void saveProgress(List<FileRecord> records) {
         // Escribir de forma segura (append)
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(PROGRESS_FILE, true))) {
+        try (BufferedWriter writer = Files.newBufferedWriter(
+                progressFilePath,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND
+        )) {
             for (FileRecord record : records) {
                 String absPath = record.path().toAbsolutePath().toString();
                 writer.write(absPath);

@@ -3,9 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { XMLParser } from 'fast-xml-parser';
 import QRCode from 'qrcode';
 import puppeteer from 'puppeteer';
+import type { Browser } from 'puppeteer';
 import { generateTemplateClassicHtml } from '@/components/pdf-templates/TemplateClassic';
 import { readFile } from 'fs/promises';
 import path from 'path';
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 120
 
 export async function GET(
   request: NextRequest,
@@ -73,33 +78,46 @@ export async function GET(
       brandConfig: { primaryColor: '#0f172a' }
     });
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-    
-    const page = await browser.newPage();
-    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+    let browser: Browser | null = null
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      });
+      
+      const page = await browser.newPage();
+      page.setDefaultNavigationTimeout(45000)
+      page.setDefaultTimeout(45000)
+      await page.setContent(fullHtml, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      try {
+        // Pequeña espera para permitir aplicar estilos de CDN si están disponibles
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: 3000 });
+      } catch {}
 
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20px',
-        right: '20px',
-        bottom: '20px',
-        left: '20px'
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20px',
+          right: '20px',
+          bottom: '20px',
+          left: '20px'
+        }
+      });
+
+      await page.close()
+
+      return new NextResponse(Buffer.from(pdfBuffer), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="cfdi_${timbre['@_UUID'] || id}.pdf"`,
+        }
+      });
+    } finally {
+      if (browser) {
+        try { await browser.close() } catch {}
       }
-    });
-
-    await browser.close();
-
-    return new NextResponse(Buffer.from(pdfBuffer), {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="cfdi_${timbre['@_UUID'] || id}.pdf"`,
-      }
-    });
+    }
 
   } catch (error) {
     console.error('Error generating PDF:', error);

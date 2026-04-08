@@ -28,8 +28,22 @@ const systemSettingsSchema = z.object({
   }).optional()
 }).optional().nullable()
 
+const optionalNullableUrlSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().url('URL inválida').optional().nullable()
+)
+
+const optionalNullableYearSchema = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined
+    return val
+  },
+  z.number().int().min(1800).max(new Date().getFullYear()).optional().nullable()
+)
+
 const tenantDetailsSchema = z.object({
-  name: z.string().min(1, 'El nombre del tenant es obligatorio').max(100),
+  name: z.string().trim().min(1, 'El nombre del tenant es obligatorio').max(100),
   description: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -45,10 +59,10 @@ const tenantDetailsSchema = z.object({
     return val
   }, z.string().email('Email inválido').optional().nullable()),
   businessDescription: z.string().optional().nullable(),
-  website: z.string().url('URL inválida').optional().nullable(),
+  website: optionalNullableUrlSchema,
   industry: z.string().optional().nullable(),
   companySize: z.string().optional().nullable(),
-  foundedYear: z.number().int().min(1800).max(new Date().getFullYear()).optional().nullable(),
+  foundedYear: optionalNullableYearSchema,
   taxId: z.string().optional().nullable(),
   businessType: z.string().optional().nullable(),
   operationalAccessEnabled: z.boolean().optional().nullable(),

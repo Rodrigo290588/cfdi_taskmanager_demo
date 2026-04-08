@@ -4,6 +4,20 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { hasPermission, Permission } from '@/lib/permissions'
 
+const optionalUrlSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().url('URL inválida').optional()
+)
+
+const optionalPositiveIntSchema = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined
+    return val
+  },
+  z.number().int().positive().optional()
+)
+
 const registerCompanySchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),
   rfc: z.string().regex(/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/, 'RFC inválido'),
@@ -17,9 +31,9 @@ const registerCompanySchema = z.object({
   country: z.string().default('México'),
   phone: z.string().optional(),
   email: z.string().email('Email inválido').optional(),
-  website: z.string().url('URL inválida').optional(),
+  website: optionalUrlSchema,
   industry: z.string().optional(),
-  employeesCount: z.number().int().positive().optional(),
+  employeesCount: optionalPositiveIntSchema,
   incorporationDate: z.string().datetime().optional(),
 })
 

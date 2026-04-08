@@ -213,19 +213,12 @@ export async function GET(request: NextRequest) {
             take: 10
           })
       ),
-      // Payment method usage (INGRESO only). If no date range, restrict to last calendar month.
+      // Payment method usage (INGRESO only).
       (() => {
         const where: Prisma.InvoiceWhereInput = {
           ...baseWhere,
           cfdiType: CfdiType.INGRESO,
           paymentMethod: { in: ['PUE', 'PPD'] },
-        }
-        if (!startDateParam || !endDateParam) {
-          const now = new Date()
-          const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-          const end = new Date(now.getFullYear(), now.getMonth(), 0)
-          end.setHours(23, 59, 59, 999)
-          where.issuanceDate = { gte: start, lte: end }
         }
         return prisma.invoice.groupBy({
           by: ['paymentMethod'],

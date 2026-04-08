@@ -17,9 +17,23 @@ import { toast } from 'sonner'
 import { RegisteredCompaniesTable } from './registered-companies-table'
 import { useRouter } from 'next/navigation'
 
+const optionalNullableUrlSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().url('URL inválida').optional().nullable()
+)
+
+const optionalNullableYearSchema = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined
+    return val
+  },
+  z.number().int().min(1800).max(new Date().getFullYear()).optional().nullable()
+)
+
 // Validation schema for tenant registration
 const tenantFormSchema = z.object({
-  name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres').max(100),
+  name: z.string().trim().min(3, 'El nombre debe tener al menos 3 caracteres').max(100),
   description: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -35,10 +49,10 @@ const tenantFormSchema = z.object({
     return val
   }, z.string().email({ message: 'Email inválido' }).optional().nullable()),
   businessDescription: z.string().optional().nullable(),
-  website: z.string().url('URL inválida').optional().nullable(),
+  website: optionalNullableUrlSchema,
   industry: z.string().optional().nullable(),
   companySize: z.string().optional().nullable(),
-  foundedYear: z.number().int().min(1800).max(new Date().getFullYear()).optional().nullable(),
+  foundedYear: optionalNullableYearSchema,
   taxId: z.string().optional().nullable(),
   businessType: z.string().optional().nullable(),
 })
@@ -111,7 +125,7 @@ export function TenantRegistrationForm({
   const {
     register,
     handleSubmit,
-    formState: { errors, isValid, isSubmitted },
+    formState: { errors, isSubmitted },
     setValue,
     trigger,
     watch
@@ -407,7 +421,9 @@ export function TenantRegistrationForm({
                 </Label>
                 <Input
                   type="url"
-                  {...register('website')}
+                  {...register('website', {
+                    setValueAs: (value) => typeof value === 'string' && value.trim() === '' ? undefined : value
+                  })}
                   placeholder="https://www.empresa.com"
                   className={attemptedSubmit && errors.website ? 'border-red-500' : ''}
                 />
@@ -464,7 +480,9 @@ export function TenantRegistrationForm({
                 </Label>
                 <Input
                   type="number"
-                  {...register('foundedYear', { valueAsNumber: true })}
+                  {...register('foundedYear', {
+                    setValueAs: (value) => value === '' ? undefined : Number(value)
+                  })}
                   placeholder="2024"
                   min={1800}
                   max={new Date().getFullYear()}
@@ -572,7 +590,7 @@ export function TenantRegistrationForm({
               <Button 
                 type="submit" 
                 disabled={isLoading}
-                className={attemptedSubmit && !isValid ? 'border-red-500' : ''}
+                className={attemptedSubmit && Object.keys(errors).length > 0 ? 'border-red-500' : ''}
               >
                 {isLoading ? (
                   <>

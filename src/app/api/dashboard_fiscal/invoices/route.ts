@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const companyId = searchParams.get('companyId')
     const page = Number(searchParams.get('page') || 1)
-    const limit = Math.min(Number(searchParams.get('limit') || 20), 100)
+    const isExport = searchParams.get('export') === 'true'
+    const defaultLimit = Number(searchParams.get('limit') || 20)
+    const limit = isExport ? defaultLimit : Math.min(defaultLimit, 100)
     const query = searchParams.get('query') || ''
     const cfdiType = searchParams.get('cfdiType') as keyof typeof CfdiType | null
     const status = searchParams.get('status') as keyof typeof InvoiceStatus | null

@@ -1,0 +1,550 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Certificado="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" Exportacion="01" Fecha="2026-02-01T08:30:50" Folio="01287893" FormaPago="04" LugarExpedicion="36250" MetodoPago="PUE" Moneda="MXN" NoCertificado="00001000000515790974" Sello="Yb9a4nEgbAzyu443NPU+hGy2sH2E+cqUfKU5MUYP87eAVo53zjm6PvSih8xIgP3wGZxUceUoElS15cfummRtOrFeBvdZgeQh4VP8utdSxqahPN8Z345TUeuNmc1n/McsiaddxpXS9Ys3Cn/omlHxpC/N9yus2tOfA0fzdIb8eayvCrILR2q5O9EELo4/Y17QpxFGEp7HCVW9mlPs8Z/3d/JE5CCNH3CHnKcE1y6zmXPTOuhIu4jCjJizh5B3FJWanTN+hOL33XucrL0HgHPlj6WY15v1NQhtWj3hkwls7NqtmPz8dQ7QBluiBU4GAww6vXREoV4HFKDBkRh0IU55ng==" Serie="PAF" SubTotal="7063.20" TipoCambio="1" TipoDeComprobante="I" Total="8193.32" Version="4.0" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd"><cfdi:CfdiRelacionados TipoRelacion="04"><cfdi:CfdiRelacionado UUID="16BD3CE7-EF96-445F-B389-D5137055B106"/></cfdi:CfdiRelacionados><cfdi:Emisor Nombre="OPTICAS DEVLYN" RegimenFiscal="601" Rfc="ODE8604257UA"/><cfdi:Receptor DomicilioFiscalReceptor="36260" Nombre="JOSE FONSECA LOPEZ" RegimenFiscalReceptor="612" Rfc="FOLJ770319SA9" UsoCFDI="G03"/><cfdi:Conceptos>
+	<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42003200 POLY VS EYEZEN START BLUE UV" Importe="1206.59" ObjetoImp="02" Unidad="Pieza" ValorUnitario="1206.5900"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="1206.59" Importe="193.06" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42003200 POLY VS EYEZEN START BLUE UV" Importe="1206.59" ObjetoImp="02" Unidad="Pieza" ValorUnitario="1206.5900"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="1206.59" Importe="193.06" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="2" ClaveProdServ="12171500" ClaveUnidad="ACT" Descripcion="6783 CRIZAL PREVENCIA" Importe="2443.97" ObjetoImp="02" Unidad="Unidad" ValorUnitario="1221.9850"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="2443.97" Importe="391.03" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142901" ClaveUnidad="H87" Descripcion="20117152 VOGUE 0VO4209 5141 MORADO" Importe="2206.03" ObjetoImp="02" Unidad="Pieza" ValorUnitario="2206.0300"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="2206.03" Importe="352.97" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="85121610" ClaveUnidad="ACT" Descripcion="EXAMEN DE LA VISTA DE PROMOCION" Importe="0.02" ObjetoImp="02" Unidad="Unidad" ValorUnitario="0.0200"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="0.02" Importe="0.00" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="1130.12"><cfdi:Traslados><cfdi:Traslado Base="7063.20" Importe="1130.12" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2026-02-01T08:35:18" NoCertificadoSAT="00001000000700926429" RfcProvCertif="FAC100625MC0" SelloCFD="Yb9a4nEgbAzyu443NPU+hGy2sH2E+cqUfKU5MUYP87eAVo53zjm6PvSih8xIgP3wGZxUceUoElS15cfummRtOrFeBvdZgeQh4VP8utdSxqahPN8Z345TUeuNmc1n/McsiaddxpXS9Ys3Cn/omlHxpC/N9yus2tOfA0fzdIb8eayvCrILR2q5O9EELo4/Y17QpxFGEp7HCVW9mlPs8Z/3d/JE5CCNH3CHnKcE1y6zmXPTOuhIu4jCjJizh5B3FJWanTN+hOL33XucrL0HgHPlj6WY15v1NQhtWj3hkwls7NqtmPz8dQ7QBluiBU4GAww6vXREoV4HFKDBkRh0IU55ng==" SelloSAT="fCK7ZbM2Oi+Tv9C52mojMJM/W8XoUpE6lm5nu1VGd4wYmLH2gHE82tJvcDHigSw/PmPqLH8JHKoIFAYOWtT7HpbCRhssxO1zYL0Jprsn710CTLIpSkG/iwm9ktinhYVxL8AVw3sTdPHkbEOna1VIVUymKJnXZcasCn2pvi89rw/ByNSnod/rNBpPvSGrSJpMvSOBrIBMq3V4DBEz+yz8qDv5OyAn0qiHCY8hDelNHRkxq/ZQbE2ZS2hmAVXVejU9bRC7E+rnECEy7Yo2IUSs3KcK795excw7WXSWJcMdhzGrKQJbAV5n2lNDsfSMjh5r906hetfFv8k0aAN63ltirA==" UUID="7CACFB7A-A21A-4072-9A1F-5A6A95C68D25" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/></cfdi:Complemento><cfdi:Addenda>
+		<fa:Datos xmlns:fa="http://www.itcomplements.com/cfd/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.itcomplements.com/cfd/v1 http://www.itcomplements.com/cfd/v1/fav1.xsd" version="1.0" tipoDocumento="FACTURA" mail="facturasfonseca77@gmail.com" printer="" fechaFactura="2026-02-01" ordenCompra="" fechaOrdenCompra="" noContraRecibo="" fechaContraRecibo="" glnComprador="" glnVendedor="" glnEntregado="" totalPartidas="" cantidadConLetra="OCHO MIL CIENTO NOVENTA Y TRES PESOS 32/100 M.N." status="1" totalMx="" ivaMx="" noProveedor="" noCliente="" hora="08:30:50" leyendaUSD="" noPedido="" remision="" condicionPago="" ordenventa="1131148535/BJUP013189" notes="" subTotalProductosConIva="7063.20" subTotalProductosSinIva="0.00" FolioSAP="0107277382" MetodoPago="PUE Pago en un sola exhibicion" FormaPago="04 Tarjeta de credito" LugarExpedicion="36250 Guanajuato MARFIL" TipoDeComprobante="I ingreso" RegimenFiscal="601 General de Ley Personas Morales" UsoCFDI="G03 Gastos en general" Tasa="16" Sucursal="B820" RegimenFiscalReceptor="612 Personas Físicas con Actividades Empresariales y Profesionales" uuidSus="" motivoCancel="">
+			<fa:Detalle>     
+			<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42003200 POLY VS EYEZEN START BLUE UV" unidad="Pieza" valorUnitario="1206.5900" importe="1206.59" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="193.06" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42003200 POLY VS EYEZEN START BLUE UV" unidad="Pieza" valorUnitario="1206.5900" importe="1206.59" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="193.06" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="12171500" cantidad="2" ClaveUnidad="ACT" descripcion="6783 CRIZAL PREVENCIA" unidad="Unidad" valorUnitario="1221.9850" importe="2443.97" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="391.03" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142901" cantidad="1" ClaveUnidad="H87" descripcion="20117152 VOGUE 0VO4209 5141 MORADO" unidad="Pieza" valorUnitario="2206.0300" importe="2206.03" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="352.97" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="85121610" cantidad="1" ClaveUnidad="ACT" descripcion="EXAMEN DE LA VISTA DE PROMOCION" unidad="Unidad" valorUnitario="0.0200" importe="0.02" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="0.00" ObjetoImp="02"/>
+</fa:Detalle>
+			<fa:AddendaComercial>
+				<fa:Impuestos><fa:Traslados>
+					<fa:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="Total IVA 16%" Importe="1130.12"/>
+</fa:Traslados></fa:Impuestos>
+				<fa:Totales tipoFactura="" subtotalSinDescuentos="" subTotalMx="" totalMx="" cantidadConLetra="" referencia=""/>  
+				<fa:EntregadoEn nombre="" calle="" noExterior="" noInterior="" colonia="" localidad="" referencia="" municipio="" estado="" pais="" codigoPostal=""/>
+				<fa:DireccionEmisor nombre="" calle="MIGUEL DE CERVANTES SAAVEDRA" noExterior="31" colonia="GRANADA, MEXICO" municipio="MIGUEL HIDALGO" estado="Ciudad de Mexico" pais="México" codigoPostal="11520"/><fa:EmisorExpedidoEn nombre="" calle="BLVD EUQUERIO GUERRERO" noExterior="139" noInterior="LA13" colonia="MARFIL CENTRO" localidad="GUANAJUATO" municipio="MARFIL" estado="Guanajuato" pais="México" codigoPostal="36250"/><fa:DireccionReceptor nombre="" municipio="." estado="Guanajuato" pais="México" codigoPostal="36260"/>
+				<fa:Traslados>
+				</fa:Traslados>
+				<fa:Retenciones>
+				</fa:Retenciones>
+			</fa:AddendaComercial>
+			<fa:hfd version="1.0">~|0| Z0 Xi
+~K1 = "Arial" 6
+~K2 = "Arial" n6
+~K3 = "Arial" 8
+~K4 = "Arial" n8
+~K5 = "Arial" 10
+~K6 = "Arial" n10
+~K7 = "Arial" 6 100.100.100
+~K8 = "Arial" n8 100.100.100
+~K9 = "Arial" 5
+~&lt;P'=1' A "Activa.jpg"
+~&gt;
+
+~H|0|
+
+~[3 30 40 30
+~#
+~[3
+~]
+
+
+~#D M280.280 "LOGO_ODE8604257UA.jpg";
+
+~#
+~[30
+~#|e+|M150.150 Jc Jv50 @6
+OPTICAS DEVLYN
+~#|e+|M150.150 Jc Jv50 @1
+R.F.C. ODE8604257UA
+
+MIGUEL DE CERVANTES SAAVEDRA  31 
+
+GRANADA, MEXICO   MIGUEL HIDALGO  
+
+Ciudad de Mexico  México 11520 
+
+
+
+
+
+~#|e+|M50.50 Jc Jv50 @4
+FACTURA
+~]
+
+~#
+~]
+
+
+~[2 20 30 10 20 22 3
+~#
+~[3
+~]
+
+
+~#|e+| Jl @2
+Régimen:
+
+Método de Pago:
+
+Lugar de Expedición:
+
+Moneda y Tipo de cambio:
+
+Orden de Venta
+
+Forma de Pago
+
+Exportación:
+
+Condiciones de Pago:
+
+~#|e+| Jl @1
+601 General de Ley Personas Morales
+
+PUE Pago en un sola exhibicion
+
+36250 Guanajuato MARFIL
+
+MXN   1
+
+1131148535/BJUP013189
+
+04 Tarjeta de credito
+
+01
+
+
+
+~#|e+|
+
+~#|e+| Jl @2
+Hoja:
+
+Serie y Folio:
+
+Tipo De Comprobante: 
+
+No. Serie Certificado:
+
+No Certificado SAT:
+
+Fecha y Hora de Certificación:
+
+Fecha y Hora Documento:
+
+Folio Fiscal:
+~#|e+| Jl @1
+@p de @P
+
+PAF 01287893
+
+I ingreso
+
+00001000000515790974
+
+00001000000700926429
+
+2026-02-01T08:35:18
+
+2026-02-01T08:30:50
+
+@97CACFB7A-A21A-4072-9A1F-5A6A95C68D25
+~#|e+|
+
+~]
+~&lt;Z20&gt;
+
+~[2 45 10 45
+
+~#
+~[3
+~]
+
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+CLIENTE
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+JOSE FONSECA LOPEZ
+
+     
+
+    . 
+
+Guanajuato  México  36260  
+
+
+
+R.F.C. FOLJ770319SA9
+
+Uso CFDI:G03 Gastos en general
+
+Régimen Fiscal:612 Personas Físicas con Actividades Empresariales y Profesionales
+
+~]
+~#
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+LUGAR DE EXPEDICIÓN
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+
+
+BLVD EUQUERIO GUERRERO  139  LA13  
+
+MARFIL CENTRO  GUANAJUATO  MARFIL
+
+Guanajuato  México  36250  
+~]
+~]
+
+~&lt;Z20&gt;
+
+~[2 10 9 40 15 10 10 10 10 10 10
+~#
+~[3
+~]
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CLAVE SAT
+~#|e+ 15.1f110.20|M50.50 Jc Jv50 @2
+CANTIDAD
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CONCEPTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+UNIDAD DE MEDIDA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+COSTO UNITARIO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOTAL
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+IMPUESTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+OBJ. IMP
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TASA O CUOTA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOT. IMP.
+~]
+
+~&gt;
+
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42003200 POLY VS EYEZEN START BLUE UV
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+1,206.5900
+~# Jr @3 |r20|
+1,206.59
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+193.06
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42003200 POLY VS EYEZEN START BLUE UV
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+1,206.5900
+~# Jr @3 |r20|
+1,206.59
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+193.06
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+12171500
+~# Jc @3 |r20|
+2
+~# Jl @3 |l30|
+6783 CRIZAL PREVENCIA
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+1,221.9850
+~# Jr @3 |r20|
+2,443.97
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+391.03
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142901
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+20117152 VOGUE 0VO4209 5141 MORADO
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+2,206.0300
+~# Jr @3 |r20|
+2,206.03
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+352.97
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+85121610
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+EXAMEN DE LA VISTA DE PROMOCION
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+0.0200
+~# Jr @3 |r20|
+0.02
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+0.00
+~]
+
+~[2 40 60
+
+~#
+~[2
+~]
+
+
+~#
+~[40
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+CFDI RELACIONADOS
+~]
+
+~#
+~[60
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+Tipo de Relacion:
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|Jl @3
+~[ 
+~# Jl @3
+16BD3CE7-EF96-445F-B389-D5137055B106
+~]
+~]
+~]
+
+
+~F|0|
+~[2 50 5 20 20
+
+~#
+~[2
+~]
+
+~#
+~[50
+~#|e+ 15.1 gudlrg|M80.80 Jl @4
+CANTIDAD CON LETRA:
+
+OCHO MIL CIENTO NOVENTA Y TRES PESOS 32/100 M.N.
+
+~]
+
+~#
+~[5
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. IVA 16%
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. SIN IVA 0%
+~#|e+| M60.60 Jr @4
+SUBTOTAL GENERAL
+~#|e+| M60.60 Jr @4
+Total IVA 16%
+~#|e+| M60.60 Jr @4
+
+TOTAL
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @3
+7,063.20
+~#|e+| M60.60 Jr @3
+0.00
+~#|e+| M60.60 Jr @3
+7,063.20
+~#|e+| M60.60 Jr @3
+
+1,130.12
+~#|e+| M60.60 Jr @3
+8,193.32
+~]
+
+~]
+
+~&lt;Z20
+~&gt;
+
+~[2 20 80
+
+~#
+~[2
+~]
+
+~#
+~[20
+~#D M420.420 "7CACFB7A-A21A-4072-9A1F-5A6A95C68D25.bmp";
+~]
+
+~#
+~[80
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+Observaciones
+
+@1
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO DIGITAL DEL CFDI
+
+@1Yb9a4nEgbAzyu443NPU+hGy2sH2E+cqUfKU5MUYP87eAVo53zjm6PvSih8xIgP3wGZxUceUoElS15cfummRtOrFeBvdZgeQh4VP8utdSxqahPN8Z345TUeuNmc1n/McsiaddxpXS9Ys3Cn/omlHxpC/N9yus2tOfA0fzdIb8eayvCrILR2q5O9EELo4/Y17QpxFGEp7HCVW9mlPs8Z/3d/JE5CCNH3CHnKcE1y6zmXPTOuhIu4jCjJizh5B3FJWanTN+hOL33XucrL0HgHPlj6WY15v1NQhtWj3hkwls7NqtmPz8dQ7QBluiBU4GAww6vXREoV4HFKDBkRh0IU55ng==
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO SAT
+
+@1fCK7ZbM2Oi+Tv9C52mojMJM/W8XoUpE6lm5nu1VGd4wYmLH2gHE82tJvcDHigSw/PmPqLH8JHKoIFAYOWtT7HpbCRhssxO1zYL0Jprsn710CTLIpSkG/iwm9ktinhYVxL8AVw3sTdPHkbEOna1VIVUymKJnXZcasCn2pvi89rw/ByNSnod/rNBpPvSGrSJpMvSOBrIBMq3V4DBEz+yz8qDv5OyAn0qiHCY8hDelNHRkxq/ZQbE2ZS2hmAVXVejU9bRC7E+rnECEy7Yo2IUSs3KcK795excw7WXSWJcMdhzGrKQJbAV5n2lNDsfSMjh5r906hetfFv8k0aAN63ltirA==
+
+~#|e+ 15.1 gudlrg| Jc @4
+CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT
+
+@1||1.1|7CACFB7A-A21A-4072-9A1F-5A6A95C68D25|2026-02-01T08:35:18|FAC100625MC0||Yb9a4nEgbAzyu443NPU+hGy2sH2E+cqUfKU5MUYP87eAVo53zjm6PvSih8xIgP3wGZxUceUoElS15cfummRtOrFeBvdZgeQh4VP8utdSxqahPN8Z345TUeuNmc1n/McsiaddxpXS9Ys3Cn/omlHxpC/N9yus2tOfA0fzdIb8eayvCrILR2q5O9EELo4/Y17QpxFGEp7HCVW9mlPs8Z/3d/JE5CCNH3CHnKcE1y6zmXPTOuhIu4jCjJizh5B3FJWanTN+hOL33XucrL0HgHPlj6WY15v1NQhtWj3hkwls7NqtmPz8dQ7QBluiBU4GAww6vXREoV4HFKDBkRh0IU55ng==|00001000000700926429||
+~]
+
+~]
+
+~&lt;Z10
+~&gt;
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+ 15.1 gudlrg d0|M180.180 Jj @3 Jv50
+DEBO Y PAGARÉ INCONDICIONALMENTE A LA ORDEN DE OPTICAS DEVLYN EN MÉXICO, D.F. O EN CUALQUIER
+PLAZA QUE SE ME REQUIERA EN LA FECHA __________________________ LA CANTIDAD DE $ ________________________________________
+
+( _______________________________________________________________________________________________________________________ )
+
+VALOR RECIBIDO A MI ENTERA SATISFACCIÓN. DESDE LA FECHA DE VENCIMIENTO DE ESTE DOCUMENTO HASTA EL DÍA DE SU LIQUIDACIÓN
+CAUSARÁ INTERESES MORATORIOS AL TIPO DE _________ % MENSUAL, PAGADERO EN MÉXICO D.F. O EN CUALQUIER PLAZA QUE SE ME REQUIERA.
+
+~#|e+ 15.1 gudlrg u0 d0|M80.80 Jc @3 Jv100
+ACEPTO Y PAGARÉ A SU VENCIMIENTO.
+~#|e+ 15.1 gudlrg u0|M150.150 Jc @3 Jv100
+________________________________
+
+FIRMA
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|M80.80 Jc @2 Jv50
+Este documento es una representación impresa de un CFDI
+~]
+~]
+~&gt;</fa:hfd>
+		</fa:Datos>
+	</cfdi:Addenda></cfdi:Comprobante>

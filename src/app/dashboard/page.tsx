@@ -252,7 +252,7 @@ export default function DashboardHome() {
       <div className="flex-1 space-y-6 p-6 pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-heading font-bold text-foreground">Home</h2>
+            <h2 className="text-3xl font-heading font-bold text-foreground">Tablero de ingresos</h2>
             {selectedCompany && canSeeCompany && (
               <div className="mt-4 flex items-center gap-4">
                 <Avatar className="h-10 w-10 border border-primary/20">
@@ -362,14 +362,14 @@ export default function DashboardHome() {
         </div>
 
         {/* Row 2: Top Charts */}
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 grid-cols-1">
           {/* Top 10 Productos */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-semibold">Top 10 de productos más vendidos</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px] w-full">
+              <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
                     layout="vertical" 
@@ -378,7 +378,7 @@ export default function DashboardHome() {
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 12 }} />
                     <Tooltip 
                       formatter={(value) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`, 'Ventas']}
                       labelFormatter={(label, payload) => payload[0]?.payload?.fullName || label}
@@ -396,7 +396,7 @@ export default function DashboardHome() {
               <CardTitle className="text-base font-semibold">Top 10 Clientes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px] w-full">
+              <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
                     layout="vertical" 
@@ -405,7 +405,7 @@ export default function DashboardHome() {
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 12 }} />
                     <Tooltip 
                       formatter={(value) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`]}
                       labelFormatter={(label, payload) => payload[0]?.payload?.fullName || label}

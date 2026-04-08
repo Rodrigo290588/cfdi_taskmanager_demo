@@ -11,6 +11,20 @@ const approveCompanySchema = z.object({
   rejectionReason: z.string().optional(),
 })
 
+const optionalNullableUrlSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().url().optional().nullable()
+)
+
+const optionalNullablePositiveIntSchema = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined
+    return val
+  },
+  z.number().int().positive().optional().nullable()
+)
+
 const updateCompanySchema = z.object({
   name: z.string().min(1),
   rfc: z.string().regex(/^[A-ZÑ&]{3,4}[0-9]{6}[A-V1-9]{3}$/),
@@ -24,9 +38,9 @@ const updateCompanySchema = z.object({
   country: z.string().optional().default('México'),
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
-  website: z.string().url().optional().nullable(),
+  website: optionalNullableUrlSchema,
   industry: z.string().optional().nullable(),
-  employeesCount: z.number().int().positive().optional().nullable(),
+  employeesCount: optionalNullablePositiveIntSchema,
   incorporationDate: z.string().optional().nullable()
 })
 

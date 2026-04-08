@@ -261,9 +261,6 @@ export default function WorkpaperEmitidosPage() {
   const [invRows, setInvRows] = useState<InvoiceRow[]>([])
   const [invTotalPages, setInvTotalPages] = useState(0)
   const [invTotal, setInvTotal] = useState(0)
-  const [uploading, setUploading] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewItems, setPreviewItems] = useState<Array<{ name: string; size: number; xml?: string; selected: boolean; valid: boolean; error?: string }>>([])
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [selectedInvoices, setSelectedInvoices] = useState<Map<string, { uuid: string, xmlContent: string }>>(new Map())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -450,6 +447,33 @@ export default function WorkpaperEmitidosPage() {
     setInvLoading(false)
   }, [selectedCompanyId, invPage, invLimit, invQuery, invSatStatus, invDateFrom, invDateTo, columnFilters])
 
+  const fetchAllInvoicesForExport = async () => {
+    if (!selectedCompanyId) return []
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      page: '1',
+      limit: '999999',
+      export: 'true',
+      cfdiType: 'INGRESO',
+      origin: 'issued'
+    })
+    if (invQuery) params.set('query', invQuery)
+    if (invSatStatus) params.set('satStatus', invSatStatus)
+    if (invDateFrom) params.set('dateFrom', invDateFrom)
+    if (invDateTo) params.set('dateTo', invDateTo)
+    Object.entries(columnFilters).forEach(([key, value]) => {
+      if (value) params.set(key, value)
+    })
+    try {
+      const res = await fetch(`/api/dashboard_fiscal/invoices?${params.toString()}`)
+      const data = await res.json()
+      return data?.invoices || []
+    } catch (err) {
+      console.error('Error fetching all invoices for export', err)
+      return []
+    }
+  }
+
   useEffect(() => {
     const id = setTimeout(() => {
       fetchInvoices()
@@ -566,20 +590,37 @@ export default function WorkpaperEmitidosPage() {
             <div className="flex gap-3 mt-3 flex-wrap">
               <Button 
                 variant="outline" 
-                onClick={() => {
+                onClick={async () => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
                     .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
                   const headers = selectedCols.map(c => c.label)
-                  const rows = invRows.map(r =>
+                  
+                  const allData = await fetchAllInvoicesForExport()
+                  const rows = allData.map((r: InvoiceRow) =>
                     selectedCols.map(c => exportValue(r, c.key))
                   )
+                  
+                  // Totales
+                  const numCols = ['subtotal', 'discount', 'total', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos']
+                  const totalsRow = selectedCols.map((c, idx) => {
+                    if (idx === 0) return 'TOTAL'
+                    if (numCols.includes(c.key)) {
+                      const sum = allData.reduce((acc: number, curr: InvoiceRow) => {
+                        const val = exportValue(curr, c.key)
+                        return acc + (typeof val === 'number' ? val : 0)
+                      }, 0)
+                      return sum
+                    }
+                    return ''
+                  })
+
                   const escape = (val: string) => {
                     const needsQuotes = /[",\n]/.test(val)
                     const v = val.replace(/"/g, '""')
                     return needsQuotes ? `"${v}"` : v
                   }
-                  const csv = [headers, ...rows].map(r => r.map(x => escape(String(x))).join(',')).join('\n')
+                  const csv = [headers, ...rows, totalsRow].map(r => r.map((x: unknown) => escape(String(x))).join(',')).join('\n')
                   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
                   const url = URL.createObjectURL(blob)
                   const a = document.createElement('a')
@@ -596,17 +637,21 @@ export default function WorkpaperEmitidosPage() {
               </Button>
               <Button 
                 variant="outline" 
-                onClick={() => {
+                onClick={async () => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
                     .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
                   const headers = selectedCols.map(c => c.label)
+                  
+                  const allData = await fetchAllInvoicesForExport()
+                  
                   const escapeXml = (s: string) =>
                     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;')
                   const toCell = (value: string, type: 'String' | 'Number' = 'String') =>
                     `<Cell><Data ss:Type="${type}">${escapeXml(value)}</Data></Cell>`
                   const headerRow = `<Row>${headers.map(h => toCell(h, 'String')).join('')}</Row>`
-                  const dataRows = invRows.map(r => {
+                  
+                  const dataRows = allData.map((r: InvoiceRow) => {
                     const cells = selectedCols.map(c => {
                       const val = exportValue(r, c.key)
                       const type = typeof val === 'number' ? 'Number' : 'String'
@@ -614,6 +659,22 @@ export default function WorkpaperEmitidosPage() {
                     })
                     return `<Row>${cells.join('')}</Row>`
                   }).join('')
+                  
+                  // Totales
+                  const numCols = ['subtotal', 'discount', 'total', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos']
+                  const totalsCells = selectedCols.map((c, idx) => {
+                    if (idx === 0) return toCell('TOTAL', 'String')
+                    if (numCols.includes(c.key)) {
+                      const sum = allData.reduce((acc: number, curr: InvoiceRow) => {
+                        const val = exportValue(curr, c.key)
+                        return acc + (typeof val === 'number' ? val : 0)
+                      }, 0)
+                      return toCell(String(sum), 'Number')
+                    }
+                    return toCell('', 'String')
+                  }).join('')
+                  const totalsRowXml = `<Row>${totalsCells}</Row>`
+
                   const xml =
                     `<?xml version="1.0"?>` +
                     `<?mso-application progid="Excel.Sheet"?>` +
@@ -626,6 +687,7 @@ export default function WorkpaperEmitidosPage() {
                     `  <Column ss:Width="100"/>`.repeat(headers.length) +
                     headerRow +
                     dataRows +
+                    totalsRowXml +
                     `</Table>` +
                     `</Worksheet>` +
                     `</Workbook>`
@@ -668,53 +730,6 @@ export default function WorkpaperEmitidosPage() {
               >
                 Descarga Zip ({selectedInvoices.size})
               </Button>
-              <Button
-                onClick={() => document.getElementById('xml-upload-input-emitidos')?.click()}
-                disabled={!selectedCompanyId || uploading}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
-              >
-                {uploading ? 'Importando…' : 'Importar XML'}
-              </Button>
-              <input
-                id="xml-upload-input-emitidos"
-                type="file"
-                multiple
-                accept=".xml,.zip"
-                className="hidden"
-                onChange={async (e) => {
-                  const files = e.target.files
-                  if (!files || files.length === 0) return
-                  const items: Array<{ name: string; size: number; xml?: string; selected: boolean; valid: boolean; error?: string }> = []
-                  for (const file of Array.from(files)) {
-                    try {
-                      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip')
-                      if (isZip) {
-                        const buf = await file.arrayBuffer()
-                        const zip = await JSZip.loadAsync(buf)
-                        const entries = Object.values(zip.files).filter(f => !f.dir && f.name.toLowerCase().endsWith('.xml'))
-                        if (entries.length === 0) {
-                          items.push({ name: file.name, size: file.size, selected: false, valid: false, error: 'ZIP sin XML' })
-                        } else {
-                          for (const entry of entries) {
-                            const xml = await entry.async('string')
-                            const valid = /<tfd:TimbreFiscalDigital|<TimbreFiscalDigital/i.test(xml) && /UUID="/i.test(xml)
-                            items.push({ name: entry.name, size: xml.length, xml, selected: valid, valid, error: valid ? undefined : 'Sin Timbre/UUID' })
-                          }
-                        }
-                      } else {
-                        const xml = await file.text()
-                        const valid = /<tfd:TimbreFiscalDigital|<TimbreFiscalDigital/i.test(xml) && /UUID="/i.test(xml)
-                        items.push({ name: file.name, size: file.size, xml, selected: valid, valid, error: valid ? undefined : 'Sin Timbre/UUID' })
-                      }
-                    } catch (err) {
-                      items.push({ name: file.name, size: file.size, selected: false, valid: false, error: err instanceof Error ? err.message : 'Error leyendo archivo' })
-                    }
-                  }
-                  setPreviewItems(items)
-                  setPreviewOpen(true)
-                  e.target.value = ''
-                }}
-              />
             </div>
             <div className="flex items-center justify-between mt-1">
               <div className="text-xs text-muted-foreground flex items-center gap-2">
@@ -1067,86 +1082,6 @@ export default function WorkpaperEmitidosPage() {
             </div>
           </CardContent>
         </Card>
-
-        {previewOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setPreviewOpen(false)} />
-            <div className="relative bg-background rounded-xl shadow-lg w-full max-w-4xl mx-3 max-h-[85vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-3 border-b">
-                <div className="text-lg font-semibold">Previsualizar XMLs</div>
-                <div className="text-sm text-muted-foreground">
-                  Seleccionados {previewItems.filter(i => i.selected).length} de {previewItems.length}
-                </div>
-              </div>
-              <div className="p-3 overflow-y-auto">
-                <div className="space-y-2">
-                  {previewItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between border rounded-md p-2">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={item.selected}
-                          onChange={() => {
-                            const next = [...previewItems]
-                            next[idx] = { ...item, selected: !item.selected }
-                            setPreviewItems(next)
-                          }}
-                        />
-                        <div>
-                          <div className="text-sm font-medium">{item.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {item.valid ? 'Válido' : `Inválido${item.error ? `: ${item.error}` : ''}`}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{item.size} bytes</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center justify-between p-3 border-t">
-                <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button
-                  disabled={!selectedCompanyId || uploading || previewItems.filter(i => i.selected).length === 0}
-                  onClick={async () => {
-                    if (!selectedCompanyId) return
-                    setUploading(true)
-                    try {
-                      const formData = new FormData()
-                      for (const item of previewItems) {
-                        if (!item.selected || !item.xml) continue
-                        const blob = new Blob([item.xml], { type: 'text/xml' })
-                        const file = new File([blob], item.name.replace(/.*\//, ''), { type: 'text/xml' })
-                        formData.append('files', file)
-                      }
-                      const res = await fetch(`/api/dashboard_fiscal/upload?companyId=${selectedCompanyId}`, {
-                        method: 'POST',
-                        body: formData
-                      })
-                      const data = await res.json()
-                      if (!res.ok) {
-                        // Silenciar toast: este módulo no tiene utilidades de toast importadas
-                        console.error('Error importación:', data?.error || 'Error al importar')
-                      } else {
-                        // Refrescar tabla
-                        fetchInvoices()
-                        setPreviewOpen(false)
-                      }
-                    } catch (err) {
-                      console.error('Error importación:', err instanceof Error ? err.message : 'Error desconocido')
-                    } finally {
-                      setUploading(false)
-                    }
-                  }}
-                >
-                  Importar seleccionados
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </ProtectedRoute>
   )

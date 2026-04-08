@@ -16,6 +16,20 @@ import RFCValidator from '@/components/rfc/rfc-validator'
 import Image from 'next/image'
 import { Upload, X } from 'lucide-react'
 
+const optionalUrlSchema = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+  z.string().url('URL inválida').optional()
+)
+
+const optionalPositiveIntSchema = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined
+    return val
+  },
+  z.number().int().positive().optional()
+)
+
 const companyFormSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),
   rfc: z.string()
@@ -31,9 +45,9 @@ const companyFormSchema = z.object({
   country: z.string().default('México'),
   phone: z.string().optional(),
   email: z.string().email('Email inválido').optional(),
-  website: z.string().url('URL inválida').optional(),
+  website: optionalUrlSchema,
   industry: z.string().optional(),
-  employeesCount: z.number().int().positive().optional(),
+  employeesCount: optionalPositiveIntSchema,
   incorporationDate: z.string().optional(),
   notes: z.string().optional(),
 })
@@ -539,7 +553,9 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
                 <Input
                   id="employeesCount"
                   type="number"
-                  {...register('employeesCount', { valueAsNumber: true })}
+                  {...register('employeesCount', {
+                    setValueAs: (value) => value === '' ? undefined : Number(value)
+                  })}
                   placeholder="100"
                 />
                 {errors.employeesCount && (
