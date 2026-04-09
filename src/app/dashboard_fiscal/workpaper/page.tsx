@@ -264,6 +264,7 @@ export default function WorkpaperEmitidosPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [selectedInvoices, setSelectedInvoices] = useState<Map<string, { uuid: string, xmlContent: string }>>(new Map())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [isZipLoading, setIsZipLoading] = useState(false)
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => {
@@ -707,28 +708,46 @@ export default function WorkpaperEmitidosPage() {
               </Button>
               <Button 
                 variant="outline" 
-                disabled={selectedInvoices.size === 0}
+                disabled={selectedInvoices.size === 0 || isZipLoading}
                 onClick={async () => {
                   if (selectedInvoices.size === 0) return
-                  const zip = new JSZip()
-                  selectedInvoices.forEach((data) => {
-                    if (data.xmlContent) {
-                      zip.file(`cfdi_${data.uuid}.xml`, data.xmlContent)
+                  setIsZipLoading(true)
+                  try {
+                    const zip = new JSZip()
+                    for (const [id, data] of Array.from(selectedInvoices.entries())) {
+                      // Agregar XML
+                      if (data.xmlContent) {
+                        zip.file(`cfdi_${data.uuid}.xml`, data.xmlContent)
+                      }
+                      // Fetch y agregar PDF
+                      try {
+                        const pdfRes = await fetch(`/api/invoices/${id}/pdf`)
+                        if (pdfRes.ok) {
+                          const pdfBlob = await pdfRes.blob()
+                          zip.file(`cfdi_${data.uuid}.pdf`, pdfBlob)
+                        } else {
+                          console.error(`Error al descargar PDF para UUID ${data.uuid}`)
+                        }
+                      } catch (err) {
+                        console.error(`Excepción al descargar PDF para UUID ${data.uuid}`, err)
+                      }
                     }
-                  })
-                  const content = await zip.generateAsync({ type: 'blob' })
-                  const url = URL.createObjectURL(content)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `cfdis_seleccionados_${selectedCompany?.rfc || 'empresa'}.zip`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  URL.revokeObjectURL(url)
+                    const content = await zip.generateAsync({ type: 'blob' })
+                    const url = URL.createObjectURL(content)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `cfdis_seleccionados_${selectedCompany?.rfc || 'empresa'}.zip`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                  } finally {
+                    setIsZipLoading(false)
+                  }
                 }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
               >
-                Descarga Zip ({selectedInvoices.size})
+                {isZipLoading ? `Preparando Zip...` : `Descarga Zip (${selectedInvoices.size})`}
               </Button>
             </div>
             <div className="flex items-center justify-between mt-1">
@@ -1004,6 +1023,7 @@ export default function WorkpaperEmitidosPage() {
                                       toast.error('Ocurrió un error al generar el PDF')
                                     }
                                   }}
+                                  className="text-primary bg-transparent hover:bg-primary hover:text-white shadow-sm size-10"
                                 >
                                   <FileText className="h-4 w-4" />
                                 </Button>

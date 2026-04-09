@@ -61,7 +61,8 @@ export async function GET(req: NextRequest) {
 
     // Add Invoice XML
     // Nomenclature: UUID + Serie + Folio + Ingreso.xml
-    const invName = `${invoice.uuid}_${invoice.series || ''}_${invoice.folio || ''}_Ingreso.xml`
+    const sanitizeName = (name: string) => name.replace(/_+/g, '_').replace(/^_|_$/g, '')
+    const invName = sanitizeName(`${invoice.uuid}_${invoice.series || ''}_${invoice.folio || ''}_Ingreso.xml`)
     zip.file(invName, invoice.xmlContent)
 
     // Add Payment XMLs
@@ -76,7 +77,15 @@ export async function GET(req: NextRequest) {
         const doc = parser.parseFromString(payment.xmlContent, 'text/xml')
         // Find DoctoRelacionado for this PPD UUID
         // We need to look inside all Pago elements
-        const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+        const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => {
+          if (!el.nodeName.endsWith(':Pago')) return false
+          let curr = el.parentNode
+          while(curr) {
+            if (curr.nodeName && curr.nodeName.endsWith(':Addenda')) return false
+            curr = curr.parentNode
+          }
+          return true
+        })
         
         for (const pago of pagos) {
           const doctos = Array.from(pago.getElementsByTagName('*')).filter(el => 
@@ -94,7 +103,7 @@ export async function GET(req: NextRequest) {
         console.error('Error parsing payment XML for partiality', payment.uuid, e)
       }
 
-      const payName = `${payment.uuid}_${payment.series || ''}_${payment.folio || ''}_${numParcialidad}_Pago.xml`
+      const payName = sanitizeName(`${payment.uuid}_${payment.series || ''}_${payment.folio || ''}_${numParcialidad}_Pago.xml`)
       zip.file(payName, payment.xmlContent)
     }
 

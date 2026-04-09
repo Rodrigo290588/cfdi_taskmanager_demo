@@ -305,6 +305,49 @@ export default function PaidIncomePage() {
   }
 
   const handleDownload = (uuid: string) => {
+    // Check if we can find the invoice in the loaded data first
+    const invoice = data.find(i => i.uuid === uuid)
+    
+    if (invoice && invoice.xmlContent) {
+      // Local zip generation is much faster
+      try {
+        import('jszip').then(JSZipModule => {
+          const JSZip = JSZipModule.default
+          const zip = new JSZip()
+          const sanitizeName = (name: string) => name.replace(/_+/g, '_').replace(/^_|_$/g, '')
+
+          // XML Factura original
+          const invFileName = sanitizeName(`${invoice.uuid}_${invoice.series || ''}_${invoice.folio || ''}_Ingreso.xml`)
+          zip.file(invFileName, invoice.xmlContent)
+
+          // XMLs de Pagos
+          if (invoice.payments && invoice.payments.length > 0) {
+            invoice.payments.forEach(p => {
+              if (p.paymentXml) {
+                const payFileName = sanitizeName(`${p.paymentUuid}_${p.paymentSeries || ''}_${p.paymentFolio || ''}_${p.numParcialidad || 1}_Pago.xml`)
+                zip.file(payFileName, p.paymentXml)
+              }
+            })
+          }
+
+          zip.generateAsync({ type: 'blob' }).then(content => {
+            const url = URL.createObjectURL(content)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `CFDIs_Pagados_${invoice.uuid.substring(0,8)}.zip`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+          })
+        })
+        return
+      } catch (err) {
+        console.error('Error generating local zip, falling back to server', err)
+      }
+    }
+    
+    // Fallback to server endpoint
     window.open(`/api/dashboard_fiscal/ingresos-parciales/download?uuid=${uuid}`, '_blank')
   }
 

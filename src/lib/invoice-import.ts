@@ -115,6 +115,39 @@ export function parseInvoiceFromXml(xml: string) {
     })
   }
 
+  const relatedCfdis: Prisma.InvoiceRelatedCfdiCreateWithoutInvoiceInput[] = []
+  
+  // Buscar relaciones de CFDI estándar
+  const cfdiRelacionadosRegex = /<[^:>]*:?CfdiRelacionados\b([^>]*)>([\s\S]*?)<\/[^:>]*:?CfdiRelacionados>/gi
+  for (const match of xml.matchAll(cfdiRelacionadosRegex)) {
+    const tipoRelacion = attrNs(`<Tag ${match[1]}>`, 'Tag', 'TipoRelacion') || '04'
+    const cfdiRelacionadoRegex = /<[^:>]*:?CfdiRelacionado\b([^>]*)>/gi
+    for (const relMatch of match[2].matchAll(cfdiRelacionadoRegex)) {
+      const relatedUuid = attrNs(`<Tag ${relMatch[1]}>`, 'Tag', 'UUID')
+      if (relatedUuid) {
+        relatedCfdis.push({
+          relationType: tipoRelacion,
+          relatedUuid: relatedUuid.toUpperCase()
+        })
+      }
+    }
+  }
+
+  // Buscar relaciones del complemento de pagos
+  const doctoRelacionadoRegex = /<[^:>]*:?DoctoRelacionado\b([^>]*)>/gi
+  for (const match of xml.matchAll(doctoRelacionadoRegex)) {
+    const idDocumento = attrNs(`<Tag ${match[1]}>`, 'Tag', 'IdDocumento')
+    if (idDocumento) {
+      // Evitar duplicados si el mismo XML de pago menciona la factura varias veces (por múltiples parcialidades)
+      if (!relatedCfdis.find(r => r.relatedUuid === idDocumento.toUpperCase())) {
+        relatedCfdis.push({
+          relationType: '04', // Tipo de relación estándar para pago (aunque estrictamente el SAT no pide TipoRelacion aquí, usamos 04 u otro valor genérico)
+          relatedUuid: idDocumento.toUpperCase()
+        })
+      }
+    }
+  }
+
   return {
     uuid,
     cfdiType,
@@ -149,6 +182,7 @@ export function parseInvoiceFromXml(xml: string) {
     paymentConditions: attrNs(xml, comprobanteTag, 'CondicionesDePago') || null,
     objectTaxComprobante: attrNs(xml, comprobanteTag, 'ObjetoImp') || null,
     conceptos,
+    relatedCfdis,
   }
 }
 
@@ -313,6 +347,9 @@ export async function createInvoiceFromXml(
       objectTaxComprobante: parsed.objectTaxComprobante,
       concepts: {
         create: parsed.conceptos,
+      },
+      relatedCfdis: {
+        create: parsed.relatedCfdis,
       },
     },
     select: { id: true, uuid: true },

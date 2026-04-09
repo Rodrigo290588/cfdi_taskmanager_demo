@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         xmlContent: true, // Might need to check if PPD itself has info, but usually no.
       },
       orderBy: {
-        issuanceDate: 'desc',
+        issuanceDate: 'asc',
       },
     })
 
@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       impSaldoAnt: number
       impSaldoInsoluto: number
       monedaP: string
+      paymentXml?: string | null
     }
     const paymentsMap: Record<string, PaymentInfo[]> = {}
     
@@ -157,7 +158,18 @@ export async function GET(req: NextRequest) {
         const doc = parser.parseFromString(paymentInvoice.xmlContent, 'text/xml')
         
         // Find all Pago nodes (handle namespaces pago10 and pago20)
-        const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+        const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => {
+          if (!el.nodeName.endsWith(':Pago')) return false
+          // Exclude if it's inside an Addenda to prevent duplicates from embedded text
+          let curr = el.parentNode
+          while(curr) {
+            if (curr.nodeName && curr.nodeName.endsWith(':Addenda')) {
+              return false
+            }
+            curr = curr.parentNode
+          }
+          return true
+        })
         
         pagos.forEach(pagoNode => {
           const monedaP = getAttr(pagoNode, 'MonedaP')
@@ -220,7 +232,8 @@ export async function GET(req: NextRequest) {
               numParcialidad,
               impSaldoAnt,
               impSaldoInsoluto,
-              monedaP
+              monedaP,
+              paymentXml: paymentInvoice.xmlContent
             })
           })
         })
@@ -305,6 +318,9 @@ export async function GET(req: NextRequest) {
       // Determine status
       // Use a small epsilon for float comparison
       const isPaid = saldoInsoluto < 0.01
+
+      // Sort payments by paymentDate ascending
+      payments.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
 
       return {
         ...inv,

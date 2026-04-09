@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select"
 import { Badge } from '@/components/ui/badge'
 // Removed date-fns imports
-import { Loader2, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, FileText, Download } from 'lucide-react'
+import JSZip from 'jszip'
 
 // Dummy utility to format dates (to replace date-fns temporarily)
 const formatDate = (date: string | Date) => {
@@ -44,6 +45,7 @@ type PaymentDetail = {
   numParcialidad: number
   impSaldoAnt: number
   impSaldoInsoluto: number
+  paymentXml?: string
 }
 
 type PartialIncomeInvoice = {
@@ -59,6 +61,7 @@ type PartialIncomeInvoice = {
   currency: string
   exchangeRate: number | null
   issuanceDate: string
+  xmlContent?: string
   totalPaid: number
   saldoInsoluto: number
   isPaid: boolean
@@ -97,6 +100,7 @@ export default function PartialIncomePage() {
   const [data, setData] = useState<PartialIncomeInvoice[]>([])
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
 
   // Initialize dates to current month if empty
   useEffect(() => {
@@ -156,6 +160,178 @@ export default function PartialIncomePage() {
       ...prev,
       [uuid]: !prev[uuid]
     }))
+  }
+
+  const filteredData = React.useMemo(() => {
+    return data.filter(invoice => {
+      if (columnFilters.fecha && !formatDate(invoice.issuanceDate).toLowerCase().includes(columnFilters.fecha.toLowerCase())) return false
+      const serieFolio = `${invoice.series || ''}-${invoice.folio || ''}`.toLowerCase()
+      if (columnFilters.serieFolio && !serieFolio.includes(columnFilters.serieFolio.toLowerCase())) return false
+      if (columnFilters.uuid && !invoice.uuid.toLowerCase().includes(columnFilters.uuid.toLowerCase())) return false
+      if (columnFilters.cliente && !(invoice.receiverName || '').toLowerCase().includes(columnFilters.cliente.toLowerCase())) return false
+      if (columnFilters.rfcReceptor && !(invoice.receiverRfc || '').toLowerCase().includes(columnFilters.rfcReceptor.toLowerCase())) return false
+      
+      // Formatting handles removing symbols for numerical filtering if needed, but we can just check string matches
+      if (columnFilters.totalOriginal && !invoice.total.toString().includes(columnFilters.totalOriginal)) return false
+      if (columnFilters.totalPagado && !invoice.totalPaid.toString().includes(columnFilters.totalPagado)) return false
+      if (columnFilters.saldoInsoluto && !invoice.saldoInsoluto.toString().includes(columnFilters.saldoInsoluto)) return false
+      
+      if (columnFilters.moneda && !(invoice.currency || '').toLowerCase().includes(columnFilters.moneda.toLowerCase())) return false
+      const estatus = invoice.isPaid ? 'pagado' : 'pendiente'
+      if (columnFilters.estatus && !estatus.includes(columnFilters.estatus.toLowerCase())) return false
+      return true
+    })
+  }, [data, columnFilters])
+
+  const handleDownloadZip = async (invoice: PartialIncomeInvoice) => {
+    try {
+      const zip = new JSZip()
+      
+      const sanitizeName = (name: string) => name.replace(/_+/g, '_').replace(/^_|_$/g, '')
+
+      // XML Factura original
+      if (invoice.xmlContent) {
+        const invFileName = sanitizeName(`${invoice.uuid}_${invoice.series || ''}_${invoice.folio || ''}_Ingreso.xml`)
+        zip.file(invFileName, invoice.xmlContent)
+      }
+
+      // XMLs de Pagos
+      if (invoice.payments && invoice.payments.length > 0) {
+        invoice.payments.forEach(p => {
+          if (p.paymentXml) {
+            const payFileName = sanitizeName(`${p.paymentUuid}_${p.paymentSeries || ''}_${p.paymentFolio || ''}_${p.numParcialidad || 1}_Pago.xml`)
+            zip.file(payFileName, p.paymentXml)
+          }
+        })
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(content)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `CFDIs_PPD_${invoice.uuid.substring(0,8)}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Error al generar ZIP', err)
+    }
+  }
+
+  const handleExportExcel = () => {
+    const headers = [
+      'UUID Factura', 'Fecha', 'Serie', 'Folio', 'RFC Receptor', 'Cliente', 
+      'Total Original', 'Total Pagado', 'Saldo Insoluto', 'Moneda', 'Estatus',
+      'UUID Pago', 'Fecha Pago', 'Monto Pagado', 'Moneda Pago', 'Tipo Cambio', 
+      'Saldo Anterior', 'Saldo Insoluto (REP)', 'Parcialidad', 'Metodo Pago'
+    ]
+
+    const escapeXml = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;')
+    
+    const toCell = (value: string, type: 'String' | 'Number' = 'String') =>
+      `<Cell><Data ss:Type="${type}">${escapeXml(value)}</Data></Cell>`
+
+    const headerRow = `<Row>${headers.map(h => toCell(h, 'String')).join('')}</Row>`
+
+    const dataRows = filteredData.map(r => {
+      let rowXml = ''
+      
+      const baseCells = [
+        toCell(r.uuid, 'String'),
+        toCell(formatDate(r.issuanceDate), 'String'),
+        toCell(r.series || '', 'String'),
+        toCell(r.folio || '', 'String'),
+        toCell(r.receiverRfc || '', 'String'),
+        toCell(r.receiverName || '', 'String'),
+        toCell(String(r.total || 0), 'Number'),
+        toCell(String(r.totalPaid || 0), 'Number'),
+        toCell(String(r.saldoInsoluto || 0), 'Number'),
+        toCell(r.currency || 'MXN', 'String'),
+        toCell(r.isPaid ? 'Pagado' : 'Pendiente', 'String')
+      ]
+
+      if (r.payments && r.payments.length > 0) {
+        // Generar una fila por cada pago, repitiendo la información de la factura
+        r.payments.forEach(p => {
+          const pCells = [
+            toCell(p.paymentUuid, 'String'),
+            toCell(formatDate(p.paymentDate), 'String'),
+            toCell(String(p.impPagado || 0), 'Number'),
+            toCell(p.monedaDR || '', 'String'),
+            toCell(String(p.equivalenciaDR || 1), 'Number'),
+            toCell(String(p.impSaldoAnt || 0), 'Number'),
+            toCell(String(p.impSaldoInsoluto || 0), 'Number'),
+            toCell(String(p.numParcialidad || 1), 'Number'),
+            toCell('PPD', 'String') // Asumido por la pantalla, el método de pago de la original
+          ]
+          rowXml += `<Row>${baseCells.concat(pCells).join('')}</Row>`
+        })
+      } else {
+        // Si no hay pagos, generar la fila de la factura con celdas vacías para los pagos
+        const emptyPayments = Array(9).fill(toCell('', 'String'))
+        rowXml += `<Row>${baseCells.concat(emptyPayments).join('')}</Row>`
+      }
+
+      return rowXml
+    }).join('')
+
+    const sumTotal = filteredData.reduce((acc, curr) => acc + (curr.total || 0), 0)
+    const sumPaid = filteredData.reduce((acc, curr) => acc + (curr.totalPaid || 0), 0)
+    const sumInsoluto = filteredData.reduce((acc, curr) => acc + (curr.saldoInsoluto || 0), 0)
+
+    const totalsCells = [
+      toCell('TOTAL', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell(String(sumTotal), 'Number'),
+      toCell(String(sumPaid), 'Number'),
+      toCell(String(sumInsoluto), 'Number'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String'),
+      toCell('', 'String')
+    ].join('')
+
+    const totalsRowXml = `<Row>${totalsCells}</Row>`
+
+    const xml =
+      `<?xml version="1.0"?>` +
+      `<?mso-application progid="Excel.Sheet"?>` +
+      `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ` +
+      `xmlns:o="urn:schemas-microsoft-com:office:office" ` +
+      `xmlns:x="urn:schemas-microsoft-com:office:excel" ` +
+      `xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">` +
+      `<Worksheet ss:Name="Detalle PPD">` +
+      `<Table>` +
+      `  <Column ss:Width="100"/>`.repeat(headers.length) +
+      headerRow +
+      dataRows +
+      totalsRowXml +
+      `</Table>` +
+      `</Worksheet>` +
+      `</Workbook>`
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `facturas_ppd_${selectedCompany?.rfc || 'empresa'}.xls`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -311,8 +487,16 @@ export default function PartialIncomePage() {
 
       {/* Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Detalle de Facturas PPD</CardTitle>
+          <Button 
+            variant="default" 
+            size="sm"
+            onClick={handleExportExcel}
+            className="shadow-md hover:shadow-lg rounded-full px-6"
+          >
+            Descargar Reporte
+          </Button>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -324,28 +508,114 @@ export default function PartialIncomePage() {
                   <TableHead>Serie/Folio</TableHead>
                   <TableHead>UUID</TableHead>
                   <TableHead>Cliente</TableHead>
+                  <TableHead>RFC Receptor</TableHead>
                   <TableHead className="text-right">Total Original</TableHead>
                   <TableHead className="text-right">Total Pagado</TableHead>
                   <TableHead className="text-right">Saldo Insoluto</TableHead>
                   <TableHead>Moneda</TableHead>
                   <TableHead>Estatus</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+                <TableRow className="bg-muted/30">
+                  <TableHead></TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.fecha || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, fecha: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.serieFolio || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, serieFolio: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.uuid || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, uuid: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.cliente || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, cliente: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.rfcReceptor || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, rfcReceptor: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs text-right"
+                      value={columnFilters.totalOriginal || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, totalOriginal: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs text-right"
+                      value={columnFilters.totalPagado || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, totalPagado: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs text-right"
+                      value={columnFilters.saldoInsoluto || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, saldoInsoluto: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.moneda || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, moneda: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead className="px-2 py-1">
+                    <Input
+                      placeholder="Filtrar..."
+                      className="h-8 text-xs"
+                      value={columnFilters.estatus || ''}
+                      onChange={e => setColumnFilters(p => ({ ...p, estatus: e.target.value }))}
+                    />
+                  </TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
+                    <TableCell colSpan={12} className="h-24 text-center">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : data.length === 0 ? (
+                ) : filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
+                    <TableCell colSpan={12} className="h-24 text-center">
                       No se encontraron resultados
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.map((invoice) => (
+                  filteredData.map((invoice) => (
                     <React.Fragment key={invoice.uuid}>
                       <TableRow className={expandedRows[invoice.uuid] ? "bg-muted/50" : ""}>
                         <TableCell>
@@ -360,10 +630,13 @@ export default function PartialIncomePage() {
                         <TableCell>{formatDate(invoice.issuanceDate)}</TableCell>
                         <TableCell>{invoice.series}-{invoice.folio}</TableCell>
                         <TableCell className="font-mono text-xs" title={invoice.uuid}>
-                          {invoice.uuid.substring(0, 8)}...
+                          {invoice.uuid}
                         </TableCell>
                         <TableCell className="max-w-[200px] truncate" title={invoice.receiverName}>
                           {invoice.receiverName}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {invoice.receiverRfc}
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCurrency(invoice.total, invoice.currency)}
@@ -380,10 +653,20 @@ export default function PartialIncomePage() {
                             {invoice.isPaid ? "Pagado" : "Pendiente"}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            title="Descargar ZIP (Factura + Pagos)"
+                            onClick={() => handleDownloadZip(invoice)}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                       {expandedRows[invoice.uuid] && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={10} className="p-0">
+                          <TableCell colSpan={12} className="p-0">
                             <div className="p-4 pl-12 space-y-2">
                               <h4 className="text-sm font-semibold mb-2">Desglose de Pagos (REPs)</h4>
                               {invoice.payments.length > 0 ? (
@@ -407,7 +690,7 @@ export default function PartialIncomePage() {
                                             {formatDate(payment.paymentDate)}
                                           </TableCell>
                                         <TableCell className="text-xs py-1 font-mono">
-                                          {payment.paymentUuid.substring(0, 8)}...
+                                          {payment.paymentUuid}
                                         </TableCell>
                                         <TableCell className="text-xs py-1 text-right font-medium">
                                           {formatCurrency(payment.impPagado, payment.monedaDR)}

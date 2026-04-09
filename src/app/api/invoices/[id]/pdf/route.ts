@@ -3,10 +3,23 @@ import { prisma } from '@/lib/prisma';
 import { XMLParser } from 'fast-xml-parser';
 import QRCode from 'qrcode';
 import puppeteer from 'puppeteer';
-import type { Browser } from 'puppeteer';
+import type { Browser, Page } from 'puppeteer';
 import { generateTemplateClassicHtml } from '@/components/pdf-templates/TemplateClassic';
 import { readFile } from 'fs/promises';
 import path from 'path';
+
+let cachedBrowser: Browser | null = null;
+
+async function getBrowserInstance(): Promise<Browser> {
+  if (cachedBrowser && cachedBrowser.isConnected()) {
+    return cachedBrowser;
+  }
+  cachedBrowser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+  });
+  return cachedBrowser;
+}
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -79,19 +92,17 @@ export async function GET(
     });
 
     let browser: Browser | null = null
+    let page: Page | null = null;
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-      });
+      browser = await getBrowserInstance();
       
-      const page = await browser.newPage();
+      page = await browser.newPage();
       page.setDefaultNavigationTimeout(45000)
       page.setDefaultTimeout(45000)
       await page.setContent(fullHtml, { waitUntil: 'domcontentloaded', timeout: 45000 });
       try {
-        // Pequeña espera para permitir aplicar estilos de CDN si están disponibles
-        await page.waitForNetworkIdle({ idleTime: 500, timeout: 3000 });
+        // Reducimos el tiempo de espera a 200ms para no bloquear tanto la generación
+        await page.waitForNetworkIdle({ idleTime: 200, timeout: 2000 });
       } catch {}
 
       const pdfBuffer = await page.pdf({
@@ -105,8 +116,6 @@ export async function GET(
         }
       });
 
-      await page.close()
-
       return new NextResponse(Buffer.from(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
@@ -114,9 +123,10 @@ export async function GET(
         }
       });
     } finally {
-      if (browser) {
-        try { await browser.close() } catch {}
+      if (page) {
+        try { await page.close() } catch {}
       }
+      // No cerramos el browser aquí para reusarlo en futuras peticiones
     }
 
   } catch (error) {
