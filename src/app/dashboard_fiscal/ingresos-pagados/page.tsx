@@ -52,6 +52,7 @@ type PaymentDetail = {
   impSaldoInsoluto: number
   formaDePagoP: string
   monedaP: string
+  paymentXml?: string | null
 }
 
 type PartialIncomeInvoice = {
@@ -67,6 +68,7 @@ type PartialIncomeInvoice = {
   currency: string
   exchangeRate: number | null
   issuanceDate: string
+  xmlContent?: string
   totalPaid: number
   saldoInsoluto: number
   isPaid: boolean
@@ -318,7 +320,7 @@ export default function PaidIncomePage() {
 
           // XML Factura original
           const invFileName = sanitizeName(`${invoice.uuid}_${invoice.series || ''}_${invoice.folio || ''}_Ingreso.xml`)
-          zip.file(invFileName, invoice.xmlContent)
+          zip.file(invFileName, invoice.xmlContent!)
 
           // XMLs de Pagos
           if (invoice.payments && invoice.payments.length > 0) {

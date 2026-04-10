@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Download, XCircle } from 'lucide-react'
+import { XCircle } from 'lucide-react'
 
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
@@ -65,7 +65,7 @@ export default function CancelacionesPage() {
   const [invDateFrom, setInvDateFrom] = useState<string>('')
   const [invDateTo, setInvDateTo] = useState<string>('')
   const [invPage, setInvPage] = useState(1)
-  const [invLimit, setInvLimit] = useState(20)
+  const [invLimit, setInvLimit] = useState(50)
   const [invLoading, setInvLoading] = useState(false)
   const [invRows, setInvRows] = useState<InvoiceRow[]>([])
   const [invTotalPages, setInvTotalPages] = useState(0)
@@ -73,60 +73,26 @@ export default function CancelacionesPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
 
   const columnDefs = useMemo(() => [
-    { key: 'uuid', label: 'UUID', render: (r: InvoiceRow) => r.uuid },
-    { key: 'cfdiType', label: 'Tipo CFDI', render: (r: InvoiceRow) => r.cfdiType },
+    { key: 'issuerRfc', label: 'RFC Emisor', render: (r: InvoiceRow) => r.issuerRfc },
+    { key: 'issuerName', label: 'Emisor', render: (r: InvoiceRow) => <div className="whitespace-nowrap max-w-[200px] sm:max-w-[300px] truncate" title={r.issuerName}>{r.issuerName}</div> },
+    { key: 'receiverRfc', label: 'RFC Receptor', render: (r: InvoiceRow) => r.receiverRfc },
+    { key: 'receiverName', label: 'Receptor', render: (r: InvoiceRow) => <div className="whitespace-nowrap max-w-[200px] sm:max-w-[300px] truncate" title={r.receiverName}>{r.receiverName}</div> },
     { key: 'series', label: 'Serie', render: (r: InvoiceRow) => r.series ?? '' },
     { key: 'folio', label: 'Folio', render: (r: InvoiceRow) => r.folio ?? '' },
+    { key: 'cfdiType', label: 'Tipo CFDI', render: (r: InvoiceRow) => r.cfdiType },
+    { key: 'issuanceDate', label: 'Fecha', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
+    { key: 'uuid', label: 'UUID', render: (r: InvoiceRow) => <div className="whitespace-nowrap font-mono text-xs">{r.uuid}</div> },
+    { key: 'paymentForm', label: 'Forma de Pago', render: (r: InvoiceRow) => r.paymentForm ?? '' },
+    { key: 'paymentMethod', label: 'Método Pago', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
     { key: 'currency', label: 'Moneda', render: (r: InvoiceRow) => r.currency ?? '' },
-    { key: 'exchangeRate', label: 'Tipo Cambio', render: (r: InvoiceRow) => r.exchangeRate ?? '' },
-    { key: 'status', label: 'Estatus', render: (r: InvoiceRow) => r.status },
-    { key: 'satStatus', label: 'SAT', render: (r: InvoiceRow) => r.satStatus },
-    { key: 'issuerRfc', label: 'RFC Emisor', render: (r: InvoiceRow) => r.issuerRfc },
-    { key: 'issuerName', label: 'Emisor', render: (r: InvoiceRow) => r.issuerName },
-    { key: 'receiverRfc', label: 'RFC Receptor', render: (r: InvoiceRow) => r.receiverRfc },
-    { key: 'receiverName', label: 'Receptor', render: (r: InvoiceRow) => r.receiverName },
+    { key: 'exchangeRate', label: 'Tipo de cambio', render: (r: InvoiceRow) => r.exchangeRate ?? '' },
     { key: 'subtotal', label: 'Subtotal', render: (r: InvoiceRow) => formatMXN(r.subtotal) },
+    { key: 'ivaTransferred', label: 'Impuestos Trasladados', render: (r: InvoiceRow) => formatMXN(r.ivaTransferred) },
+    { key: 'taxesWithheld', label: 'Impuestos Retenidos', render: (r: InvoiceRow) => formatMXN((r.ivaWithheld || 0) + (r.isrWithheld || 0) + (r.iepsWithheld || 0)) },
     { key: 'discount', label: 'Descuento', render: (r: InvoiceRow) => formatMXN(r.discount) },
     { key: 'total', label: 'Total', render: (r: InvoiceRow) => formatMXN(r.total) },
-    { key: 'ivaTransferred', label: 'IVA Trasladado', render: (r: InvoiceRow) => formatMXN(r.ivaTransferred) },
-    { key: 'ivaWithheld', label: 'IVA Retenido', render: (r: InvoiceRow) => formatMXN(r.ivaWithheld) },
-    { key: 'isrWithheld', label: 'ISR Retenido', render: (r: InvoiceRow) => formatMXN(r.isrWithheld) },
-    { key: 'iepsWithheld', label: 'IEPS Retenido', render: (r: InvoiceRow) => formatMXN(r.iepsWithheld) },
-    { key: 'xmlContent', label: 'XML', render: (r: InvoiceRow) => {
-      const xml = String(r.xmlContent || '')
-      if (!xml) return ''
-      return (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `cfdi_${r.uuid || 'cfdi'}.xml`
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-            URL.revokeObjectURL(url)
-          }}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Descargar XML
-        </Button>
-      )
-    } },
-    { key: 'pdfUrl', label: 'PDF', render: (r: InvoiceRow) => r.pdfUrl ?? '' },
-    { key: 'issuanceDate', label: 'Fecha', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
-    { key: 'certificationDate', label: 'Fecha Certificación', render: (r: InvoiceRow) => r.certificationDate ? new Date(r.certificationDate).toLocaleDateString('es-MX') : '' },
+    { key: 'satStatus', label: 'Estatus SAT', render: (r: InvoiceRow) => r.satStatus },
     { key: 'certificationPac', label: 'PAC', render: (r: InvoiceRow) => r.certificationPac },
-    { key: 'paymentMethod', label: 'Método Pago', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
-    { key: 'paymentForm', label: 'Forma Pago', render: (r: InvoiceRow) => r.paymentForm ?? '' },
-    { key: 'cfdiUsage', label: 'Uso CFDI', render: (r: InvoiceRow) => r.cfdiUsage ?? '' },
-    { key: 'placeOfExpedition', label: 'Lugar Expedición', render: (r: InvoiceRow) => r.placeOfExpedition ?? '' },
-    { key: 'exportKey', label: 'Clave Exportación', render: (r: InvoiceRow) => r.exportKey ?? '' },
-    { key: 'objectTaxComprobante', label: 'Objeto Impuesto Comp.', render: (r: InvoiceRow) => r.objectTaxComprobante ?? '' },
-    { key: 'paymentConditions', label: 'Condiciones de Pago', render: (r: InvoiceRow) => r.paymentConditions ?? '' },
   ] as const, [])
   const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(columnDefs.map(c => c.key)))
   const [columnOrder, setColumnOrder] = useState<string[]>(columnDefs.map(c => c.key))
@@ -137,8 +103,8 @@ export default function CancelacionesPage() {
       try {
         const res = await fetch('/api/user/profile')
         const data = await res.json()
-        const cols = data?.user?.preferences?.tables?.workpaperEmitidos?.visibleColumns
-        const order = data?.user?.preferences?.tables?.workpaperEmitidos?.columnOrder
+        const cols = data?.user?.preferences?.tables?.cancelaciones?.visibleColumns
+        const order = data?.user?.preferences?.tables?.cancelaciones?.columnOrder
         if (Array.isArray(cols) && cols.length > 0) {
           setVisibleCols(new Set(cols))
         }
@@ -155,11 +121,12 @@ export default function CancelacionesPage() {
 
 
 
-  const exportValue = (r: InvoiceRow, key: keyof InvoiceRow): string | number => {
-    const v = r[key] as unknown
+  const exportValue = (r: InvoiceRow, key: string): string | number => {
+    if (key === 'taxesWithheld') return (r.ivaWithheld || 0) + (r.isrWithheld || 0) + (r.iepsWithheld || 0)
+    const v = r[key as keyof InvoiceRow] as unknown
     const dateKeys: Array<keyof InvoiceRow> = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']
     if (v === null || v === undefined) return ''
-    if (dateKeys.includes(key)) {
+    if (dateKeys.includes(key as keyof InvoiceRow)) {
       try {
         return new Date(v as string | Date).toLocaleDateString('es-MX')
       } catch {
@@ -309,7 +276,7 @@ export default function CancelacionesPage() {
                   setInvDateFrom('')
                   setInvDateTo('')
                   setColumnFilters({})
-                  setInvLimit(20)
+                  setInvLimit(50)
                   setInvPage(1)
                   fetchInvoices()
                 }}
@@ -409,7 +376,9 @@ export default function CancelacionesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    {columnDefs.map(col => {
+                    {[...columnDefs]
+                      .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
+                      .map(col => {
                       if (!visibleCols.has(col.key)) return null
                       return (
                         <th 
@@ -435,7 +404,9 @@ export default function CancelacionesPage() {
                     })}
                   </tr>
                   <tr className="border-b bg-muted/30">
-                    {columnDefs.map(col => {
+                    {[...columnDefs]
+                      .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
+                      .map(col => {
                       if (!visibleCols.has(col.key)) return null
                       return (
                         <th key={col.key} className="h-10 px-4 text-left align-middle">
