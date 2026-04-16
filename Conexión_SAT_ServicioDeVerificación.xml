@@ -1,0 +1,42 @@
+POST https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/VerificaSolicitudDescargaService.svc HTTP/1.1 
+Accept-Encoding: gzip,deflate 
+Content-Type: text/xml;charset=UTF-8 
+SOAPAction: "http://DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga" 
+Authorization: WRAP access_token="eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE3NDcwOTc5MjUsImV4cCI6MTc0NzA5ODUyNSwiaWF0IjoxNzQ3MDk3OTI1LCJpc3MiOiJMb2FkU2VydmljaW9EZWNhcmdhTWFzaXZhVGVyY2Vyb3MiLCJhY3RvcnQiOiIzMzMwMzAzMDMxMzAzMDMwMzAzMDMwMzUzMDMwMzAzMDM0MzUzNjMwIn0._eOSO175aj_Op9S1wFf1iXKOnJkdnMwxnGyQmJyblg&wrap_subject=3330303031303030303030353030303034353630"
+Content-Length: 4641 
+Host: cfdidescargamasivasolicitud.clouda.sat.gob.mx 
+ 
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+   xmlns:des="http://DescargaMasivaTerceros.sat.gob.mx"
+   xmlns:xd="http://www.w3.org/2000/09/xmldsig#">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <des:VerificaSolicitudDescarga>
+         <des:solicitud IdSolicitud="4E80345D-917F-40BB-A98F4A73939343C5" RfcSolicitante="AXT940727FP8">
+            <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+               <SignedInfo>
+                  <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+                  <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+                  <Reference URI="">
+                     <Transforms>
+                        <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+                     </Transforms>
+                     <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+                     <DigestValue>leZ4dK/Q/RNbckYkY7WOOnCjK5Q=</DigestValue>
+                  </Reference>
+               </SignedInfo>
+               <SignatureValue>BuuRjPmgk4Qwl2ER7vjL7+57WiqNZMRD12Hjfh65irEI1Cu8biQSqeHHiaZ7NnmB/LsjyGaHQmZMW50mfnDtNzowAdytB6FS0RNUNLoajAZAdii8bYHYoW0BqrLaXSImwbZYaHgi4TlPch1OpXZHmUOqfS1qnEEsRXVBN2DvEh1RbAYupmQxBMW75eo4HZZm/lRug44mb47Evm9428ejTzTnu6LDPEAZEmHV4jOwRzqmM4GgiW7aEptqHOhdSxV+QzPSQ2/H5s8AZZ41 LCK+3gSdCq3Kmf9S2H5R3BRS6VSam5J9xa0I2CvzJf/REwrxHsc7Xk9uXwXWOofjeTI1Bw==</SignatureValue>
+               <KeyInfo>
+                  <X509Data>
+                     <X509IssuerSerial>
+                        <X509IssuerName>OID.1.2.840.113549.1.9.2=Responsable: ACDMA, OID.2.5.4.45=SAT970701NN3, L=Coyoacán, S=Distrito Federal, C=MX, PostalCode=06300, STREET="Av. Hidalgo 77, Col. Guerrero", E=asisnet@pruebas.sat.gob.mx, OU=Administración de Seguridad de la Información, O=Servicio de Administración Tributaria, CN=A.C. 2 de pruebas(4096)</X509IssuerName>
+                        <X509SerialNumber>292233162870206001759766198425879490509036075057</X509SerialNumber>
+                     </X509IssuerSerial>
+                     <X509Certificate>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</X509Certificate>
+                  </X509Data>
+               </KeyInfo>
+            </Signature>
+         </des:solicitud>
+      </des:VerificaSolicitudDescarga>
+   </soapenv:Body>
+</soapenv:Envelope> 

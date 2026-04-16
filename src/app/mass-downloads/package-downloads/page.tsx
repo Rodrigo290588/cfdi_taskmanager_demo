@@ -113,11 +113,11 @@ export default function PackageDownloadsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto px-4 lg:px-8 py-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight">Descarga de paquetes de solicitud</h1>
-            <p className="text-muted-foreground">
+      <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
+        <div className="flex items-center justify-between space-y-2">
+          <div className="flex flex-col space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight">Descarga de Paquetes</h1>
+            <p className="text-sm text-muted-foreground">
               Simulación de flujo de descarga de paquetes .zip de CFDI, con estados tipo SAT.
             </p>
           </div>
@@ -133,7 +133,7 @@ export default function PackageDownloadsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="col-span-1">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">

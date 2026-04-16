@@ -690,11 +690,20 @@ export default function DashboardFiscalPage() {
             </CardHeader>
             <CardContent className="overflow-x-auto scrollbar-visible">
               <div className="min-w-[800px]">
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={metrics?.topClients || []} margin={{ left: 60, right: 30 }}>
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={metrics?.topClients || []} layout="vertical" margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="rfc" />
-                    <YAxis tickFormatter={(val: any) => formatMXN(Number(val))} />
+                    <XAxis 
+                      type="number"
+                      tickFormatter={(val: any) => formatMXN(Number(val))} 
+                    />
+                    <YAxis 
+                      type="category"
+                      dataKey="rfc" 
+                      width={120} 
+                      tick={{ fontSize: 11 }}
+                      interval={0}
+                    />
                     <Tooltip 
                       formatter={(value: any) => formatMXN(Number(value))}
                       labelFormatter={(label: any, payload: any) => {
@@ -705,7 +714,7 @@ export default function DashboardFiscalPage() {
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="total" name="Monto" fill="#68d391" />
+                    <Bar dataKey="total" name="Monto" fill="#68d391" barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -34,6 +34,7 @@ export async function GET(
 
     const fileParam = request.nextUrl.searchParams.get('file');
     let xmlRaw = '';
+    let isCancelled = false;
     if (fileParam) {
       const filePath =
         fileParam.includes(':\\') || fileParam.startsWith('/')
@@ -41,15 +42,15 @@ export async function GET(
           : path.join(process.cwd(), 'java-client', 'xml-data', fileParam);
       xmlRaw = await readFile(filePath, 'utf8');
     } else {
-      let invoice: { xmlContent: string } | null = await prisma.invoice.findUnique({
+      let invoice: { xmlContent: string, satStatus?: string | null } | null = await prisma.invoice.findUnique({
         where: { id },
-        select: { xmlContent: true }
+        select: { xmlContent: true, satStatus: true }
       });
 
       if (!invoice) {
         invoice = await prisma.satInvoice.findUnique({
           where: { id },
-          select: { xmlContent: true }
+          select: { xmlContent: true, satStatus: true }
         });
       }
 
@@ -57,6 +58,9 @@ export async function GET(
         return NextResponse.json({ error: 'Factura no encontrada o sin XML' }, { status: 404 });
       }
       xmlRaw = (invoice.xmlContent || '').trim();
+      if (invoice.satStatus === 'CANCELADO') {
+        isCancelled = true;
+      }
     }
 
     if (!xmlRaw.startsWith('<')) {
@@ -88,7 +92,8 @@ export async function GET(
     const fullHtml = generateTemplateClassicHtml({
       cfdiData: parsedData,
       qrCodeDataUrl,
-      brandConfig: { primaryColor: '#0f172a' }
+      brandConfig: { primaryColor: '#0f172a' },
+      isCancelled
     });
 
     let browser: Browser | null = null

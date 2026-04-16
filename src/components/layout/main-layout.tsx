@@ -33,12 +33,12 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top header */}
         <header className="bg-gradient-to-r from-primary to-[#0f172a] shadow-md border-b border-white/10 h-16 shrink-0">
           <div className="flex items-center justify-between px-4 h-full">
@@ -51,12 +51,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               >
                 <Menu className="h-5 w-5" />
               </Button>
-              <h1 className="ml-4 text-xl font-heading font-semibold text-white">
+              <h1 className="ml-4 text-xl font-heading font-semibold text-white truncate">
                 Plataforma de Inteligencia Fiscal Mexicana
               </h1>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 shrink-0">
               <Button variant="ghost" size="icon" className="rounded-full text-white hover:bg-white/10 hover:text-white">
                 <Bell className="h-5 w-5" />
               </Button>
@@ -65,7 +65,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </header>
 
         {/* Main content area */}
-        <main className="flex-1 overflow-auto bg-gray-50/30">
+        <main className="flex-1 overflow-y-auto bg-gray-50/30 relative">
           {children}
         </main>
       </div>

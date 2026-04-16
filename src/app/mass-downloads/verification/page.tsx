@@ -41,7 +41,6 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 
 // Types based on Prisma model
@@ -171,24 +170,22 @@ export default function VerificationMonitorPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto px-4 lg:px-8 py-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <div className="flex flex-col space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight">Monitor de Verificación</h1>
-            <p className="text-muted-foreground">
-              Rastreo del ciclo de vida y verificación automática de solicitudes SAT.
+      <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
+        <div className="flex items-center justify-between space-y-2">
+          <div className="flex flex-col space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight">Verificación de Solicitudes SAT</h1>
+            <p className="text-sm text-muted-foreground">
+              Consulta el estado de las solicitudes enviadas y descarga los paquetes listos.
             </p>
           </div>
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={fetchRequests} disabled={loading}>
-              <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-              Actualizar
-            </Button>
-          </div>
+          <Button onClick={fetchRequests} disabled={loading} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Actualizando...' : 'Actualizar Estado'}
+          </Button>
         </div>
 
         {!selectedCompany ? (
-          <Card>
+          <Card className="mt-4">
             <CardContent className="py-10 text-center text-muted-foreground">
               Selecciona una empresa en el menú lateral para ver la información.
             </CardContent>
@@ -231,6 +228,7 @@ export default function VerificationMonitorPage() {
                     <TableRow>
                       <TableHead>Fecha Creación</TableHead>
                       <TableHead>RFC Solicitante</TableHead>
+                      <TableHead>Tipo Archivo</TableHead>
                       <TableHead>ID Paquete SAT</TableHead>
                       <TableHead>Estatus</TableHead>
                       <TableHead>Fecha de petición</TableHead>
@@ -243,7 +241,7 @@ export default function VerificationMonitorPage() {
                   <TableBody>
                     {filteredRequests.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                           No hay solicitudes para verificar
                         </TableCell>
                       </TableRow>
@@ -254,6 +252,11 @@ export default function VerificationMonitorPage() {
                             {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
                           </TableCell>
                           <TableCell>{request.requestingRfc}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={request.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
+                              {request.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="font-mono text-xs">{request.satPackageId}</TableCell>
                           <TableCell>{getStatusBadge(request.requestStatus)}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">

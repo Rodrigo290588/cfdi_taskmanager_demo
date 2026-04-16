@@ -10,7 +10,8 @@
     "clean:next": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true});}catch(e){} try{require('fs').rmSync('.next_old_trae',{recursive:true,force:true});}catch(e){}\"",
     "rebuild": "npm run clean:next && npm run build",
     "migrate:cfdis-to-invoices": "node scripts/migrate-cfdis-to-invoices.mjs",
-    "seed:dev": "node scripts/seed-dev.mjs"
+    "seed:dev": "node scripts/seed-dev.mjs",
+    "worker:verify": "npx tsx src/scripts/start-worker.ts"
   },
   "overrides": {
     "baseline-browser-mapping": "^2.9.9"

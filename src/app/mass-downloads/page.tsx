@@ -68,15 +68,17 @@ export default async function MassDownloadsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto py-10 px-4">
-        <div className="flex flex-col space-y-8">
+      <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
+        <div className="flex items-center justify-between space-y-2">
           <div className="flex flex-col space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Descargas Masivas</h1>
-            <p className="text-muted-foreground">
-              Gestiona la configuración de llaves privadas para automatizar la descarga de comprobantes.
+            <h1 className="text-3xl font-bold tracking-tight">Configuración de Descargas Masivas</h1>
+            <p className="text-sm text-muted-foreground">
+              Configura tus RFCs y sube tus archivos .key y .cer para poder solicitar y descargar comprobantes desde el SAT.
             </p>
           </div>
-          
+        </div>
+
+        <div className="mt-4 space-y-8">
           <PrivateKeyForm companies={companies} organizationId={organizationId} />
         </div>
       </div>

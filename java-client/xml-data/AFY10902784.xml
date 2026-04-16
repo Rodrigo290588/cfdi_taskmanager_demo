@@ -1,0 +1,546 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Certificado="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" Exportacion="01" Fecha="2026-02-02T13:11:14" Folio="10902784" FormaPago="01" LugarExpedicion="39000" MetodoPago="PUE" Moneda="MXN" NoCertificado="00001000000515790974" Sello="bAOgSO80E71e80/7Ch2/FiPdaALwEBPgBp81UhjuAzlvx2yFx0HvyJ4RdpQrL3DvuiB28ddDMxkHR2qtltnerk6E00LeqDol8B6LwATCMKI/sg19sujvhcj4yWwbW7o4ibJsuDo+H/F5FeK0Zj96PPSjcw2HCnxF3+SXqi/s/yBLiDgipoMFdk0Xt5NjbaB2sclHtdizTOowWdx3zAr2n0go0Yf+w4gadItlbmI6weZ9YmHEOrjqC1vQsuNi84kgvvjZv49PnwUPLOXjwiGuhWsH0OaKxaGjorAoNl+r3qvf2cvDZ0+RktgtRQme1xXVvLPh1qLW/aRSUzKwOwr5lA==" Serie="AFY" SubTotal="1938.83" TipoCambio="1" TipoDeComprobante="I" Total="2249.03" Version="4.0" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd"><cfdi:Emisor Nombre="OPTICAS DEVLYN" RegimenFiscal="601" Rfc="ODE8604257UA"/><cfdi:Receptor DomicilioFiscalReceptor="39000" Nombre="VENTA PUBLICO EN GENERAL" RegimenFiscalReceptor="616" Rfc="XAXX010101000" UsoCFDI="S01"/><cfdi:Conceptos>
+	<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" Importe="695.96" ObjetoImp="02" Unidad="Pieza" ValorUnitario="695.9600"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="695.96" Importe="111.35" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142902" ClaveUnidad="H87" Descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" Importe="695.96" ObjetoImp="02" Unidad="Pieza" ValorUnitario="695.9600"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="695.96" Importe="111.35" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="2" ClaveProdServ="12171500" ClaveUnidad="ACT" Descripcion="6898 AR PREMIUM" Importe="0.02" ObjetoImp="02" Unidad="Unidad" ValorUnitario="0.0100"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="0.02" Importe="0.00" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="42142901" ClaveUnidad="H87" Descripcion="20093681 MOLTO DG-84542S NEGRO NEGRO" Importe="546.87" ObjetoImp="02" Unidad="Pieza" ValorUnitario="546.8700"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="546.87" Importe="87.50" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+<cfdi:Concepto Cantidad="1" ClaveProdServ="85121610" ClaveUnidad="ACT" Descripcion="EXAMEN DE LA VISTA DE PROMOCION" Importe="0.02" ObjetoImp="02" Unidad="Unidad" ValorUnitario="0.0200"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="0.02" Importe="0.00" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/>
+</cfdi:Traslados>
+</cfdi:Impuestos>
+</cfdi:Concepto>
+</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="310.20"><cfdi:Traslados><cfdi:Traslado Base="1938.83" Importe="310.20" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2026-02-02T13:37:07" NoCertificadoSAT="00001000000700926429" RfcProvCertif="FAC100625MC0" SelloCFD="bAOgSO80E71e80/7Ch2/FiPdaALwEBPgBp81UhjuAzlvx2yFx0HvyJ4RdpQrL3DvuiB28ddDMxkHR2qtltnerk6E00LeqDol8B6LwATCMKI/sg19sujvhcj4yWwbW7o4ibJsuDo+H/F5FeK0Zj96PPSjcw2HCnxF3+SXqi/s/yBLiDgipoMFdk0Xt5NjbaB2sclHtdizTOowWdx3zAr2n0go0Yf+w4gadItlbmI6weZ9YmHEOrjqC1vQsuNi84kgvvjZv49PnwUPLOXjwiGuhWsH0OaKxaGjorAoNl+r3qvf2cvDZ0+RktgtRQme1xXVvLPh1qLW/aRSUzKwOwr5lA==" SelloSAT="EB7O/WctlwSLVVhRh0Zt8A6a+VJfFOR8kA+bIE7crd5r58DSTPcg7h9IHUekNYYMh+QvmiyZ0VrP3FJiJqPPMuNtMnEBFk6G9AgXvpBt9VukR1RJtUoBgiTXGZV6GFD6afUHXE0stA/KdfGNlhjL30+uTqxXNQKhoUJGy9TaFUQ/0uB+++iVjKWmPWhKROhcKiYY5X85pysY3HahT6oj88dMvZISgCdGGBgBYy/7tACYadjRSBjhK8xlrCK1k3qBp/CdcyvMa63pJkKwMn7B4N7wlwCXc0UZvJkA472fPiEMoFNvuCD3+GY8ojV5PtKSPgZx45K/O7nQeCjQWbow3A==" UUID="136DB320-3B54-4D23-A6E0-175532505A71" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/></cfdi:Complemento><cfdi:Addenda>
+		<fa:Datos xmlns:fa="http://www.itcomplements.com/cfd/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.itcomplements.com/cfd/v1 http://www.itcomplements.com/cfd/v1/fav1.xsd" version="1.0" tipoDocumento="FACTURA" mail="" printer="" fechaFactura="2026-02-02" ordenCompra="" fechaOrdenCompra="" noContraRecibo="" fechaContraRecibo="" glnComprador="" glnVendedor="" glnEntregado="" totalPartidas="" cantidadConLetra="DOS MIL DOSCIENTOS CUARENTA Y NUEVE PESOS 03/100 M.N." status="1" totalMx="" ivaMx="" noProveedor="" noCliente="" hora="13:11:14" leyendaUSD="" noPedido="" remision="" condicionPago="" ordenventa="1131155517/AXBP040029" notes="" subTotalProductosConIva="1938.83" subTotalProductosSinIva="0.00" FolioSAP="0107281243" MetodoPago="PUE Pago en un sola exhibicion" FormaPago="01 Efectivo" LugarExpedicion="39000 Guerrero CHILPANCINGO DE LOS BRAVO" TipoDeComprobante="I ingreso" RegimenFiscal="601 General de Ley Personas Morales" UsoCFDI="S01 Sin efectos fiscales" Tasa="16" Sucursal="B036" RegimenFiscalReceptor="616 Sin obligaciones fiscales" uuidSus="" motivoCancel="">
+			<fa:Detalle>     
+			<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" unidad="Pieza" valorUnitario="695.9600" importe="695.96" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="111.35" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142902" cantidad="1" ClaveUnidad="H87" descripcion="42001612 POLY VS ESFERICO BLUE LIGHT" unidad="Pieza" valorUnitario="695.9600" importe="695.96" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="111.35" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="12171500" cantidad="2" ClaveUnidad="ACT" descripcion="6898 AR PREMIUM" unidad="Unidad" valorUnitario="0.0100" importe="0.02" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="0.00" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="42142901" cantidad="1" ClaveUnidad="H87" descripcion="20093681 MOLTO DG-84542S NEGRO NEGRO" unidad="Pieza" valorUnitario="546.8700" importe="546.87" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="87.50" ObjetoImp="02"/>
+<fa:Detalle ClaveProdServ="85121610" cantidad="1" ClaveUnidad="ACT" descripcion="EXAMEN DE LA VISTA DE PROMOCION" unidad="Unidad" valorUnitario="0.0200" importe="0.02" impuesto="002 IVA" porcentaje="0.160000" totalimpuesto="0.00" ObjetoImp="02"/>
+</fa:Detalle>
+			<fa:AddendaComercial>
+				<fa:Impuestos><fa:Traslados>
+					<fa:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="Total IVA 16%" Importe="310.20"/>
+</fa:Traslados></fa:Impuestos>
+				<fa:Totales tipoFactura="" subtotalSinDescuentos="" subTotalMx="" totalMx="" cantidadConLetra="" referencia=""/>  
+				<fa:EntregadoEn nombre="" calle="" noExterior="" noInterior="" colonia="" localidad="" referencia="" municipio="" estado="" pais="" codigoPostal=""/>
+				<fa:DireccionEmisor nombre="" calle="MIGUEL DE CERVANTES SAAVEDRA" noExterior="31" colonia="GRANADA, MEXICO" municipio="MIGUEL HIDALGO" estado="Ciudad de Mexico" pais="México" codigoPostal="11520"/><fa:EmisorExpedidoEn nombre="" calle="AV FRANCISCO I MADERO" noExterior="6" colonia="CHILPANCINGO DE LOS BRAVOS CENTRO" localidad="GUERRERO" municipio="CHILPANCINGO DE LOS BRAVO" estado="Guerrero" pais="México" codigoPostal="39000"/><fa:DireccionReceptor nombre="" calle="AV FRANCISCO I MADERO" noExterior="6" colonia="CHILPANCINGO DE LOS BRAVOS CENTRO" localidad="CHILPANCINGO DE LOS BRAVO" municipio="GUERRERO" estado="Guerrero" pais="México" codigoPostal="39000"/>
+				<fa:Traslados>
+				</fa:Traslados>
+				<fa:Retenciones>
+				</fa:Retenciones>
+			</fa:AddendaComercial>
+			<fa:hfd version="1.0">~|0| Z0 Xi
+~K1 = "Arial" 6
+~K2 = "Arial" n6
+~K3 = "Arial" 8
+~K4 = "Arial" n8
+~K5 = "Arial" 10
+~K6 = "Arial" n10
+~K7 = "Arial" 6 100.100.100
+~K8 = "Arial" n8 100.100.100
+~K9 = "Arial" 5
+~&lt;P'=1' A "Activa.jpg"
+~&gt;
+
+~H|0|
+
+~[3 30 40 30
+~#
+~[3
+~]
+
+
+~#D M280.280 "LOGO_ODE8604257UA.jpg";
+
+~#
+~[30
+~#|e+|M150.150 Jc Jv50 @6
+OPTICAS DEVLYN
+~#|e+|M150.150 Jc Jv50 @1
+R.F.C. ODE8604257UA
+
+MIGUEL DE CERVANTES SAAVEDRA  31 
+
+GRANADA, MEXICO   MIGUEL HIDALGO  
+
+Ciudad de Mexico  México 11520 
+
+
+
+
+
+~#|e+|M50.50 Jc Jv50 @4
+FACTURA
+~]
+
+~#
+~]
+
+
+~[2 20 30 10 20 22 3
+~#
+~[3
+~]
+
+
+~#|e+| Jl @2
+Régimen:
+
+Método de Pago:
+
+Lugar de Expedición:
+
+Moneda y Tipo de cambio:
+
+Orden de Venta
+
+Forma de Pago
+
+Exportación:
+
+Condiciones de Pago:
+
+~#|e+| Jl @1
+601 General de Ley Personas Morales
+
+PUE Pago en un sola exhibicion
+
+39000 Guerrero CHILPANCINGO DE LOS BRAVO
+
+MXN   1
+
+1131155517/AXBP040029
+
+01 Efectivo
+
+01
+
+
+
+~#|e+|
+
+~#|e+| Jl @2
+Hoja:
+
+Serie y Folio:
+
+Tipo De Comprobante: 
+
+No. Serie Certificado:
+
+No Certificado SAT:
+
+Fecha y Hora de Certificación:
+
+Fecha y Hora Documento:
+
+Folio Fiscal:
+~#|e+| Jl @1
+@p de @P
+
+AFY 10902784
+
+I ingreso
+
+00001000000515790974
+
+00001000000700926429
+
+2026-02-02T13:37:07
+
+2026-02-02T13:11:14
+
+@9136DB320-3B54-4D23-A6E0-175532505A71
+~#|e+|
+
+~]
+~&lt;Z20&gt;
+
+~[2 45 10 45
+
+~#
+~[3
+~]
+
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+CLIENTE
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+VENTA PUBLICO EN GENERAL
+
+AV FRANCISCO I MADERO  6   
+
+CHILPANCINGO DE LOS BRAVOS CENTRO  CHILPANCINGO DE LOS BRAVO  GUERRERO 
+
+Guerrero  México  39000  
+
+
+
+R.F.C. XAXX010101000
+
+Uso CFDI:S01 Sin efectos fiscales
+
+Régimen Fiscal:616 Sin obligaciones fiscales
+
+~]
+~#
+~#
+~[45
+~#|e+ 15.1 gulg f110.20|M80.80 Jl Jv50 @2
+LUGAR DE EXPEDICIÓN
+~#|e+ 15.1 gdrg|M170.170 Jl Jv50 @1
+
+
+AV FRANCISCO I MADERO  6    
+
+CHILPANCINGO DE LOS BRAVOS CENTRO  GUERRERO  CHILPANCINGO DE LOS BRAVO
+
+Guerrero  México  39000  
+~]
+~]
+
+~&lt;Z20&gt;
+
+~[2 10 9 40 15 10 10 10 10 10 10
+~#
+~[3
+~]
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CLAVE SAT
+~#|e+ 15.1f110.20|M50.50 Jc Jv50 @2
+CANTIDAD
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+CONCEPTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+UNIDAD DE MEDIDA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+COSTO UNITARIO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOTAL
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+IMPUESTO
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+OBJ. IMP
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TASA O CUOTA
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @2
+TOT. IMP.
+~]
+
+~&gt;
+
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42001612 POLY VS ESFERICO BLUE LIGHT
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+695.9600
+~# Jr @3 |r20|
+695.96
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+111.35
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142902
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+42001612 POLY VS ESFERICO BLUE LIGHT
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+695.9600
+~# Jr @3 |r20|
+695.96
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+111.35
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+12171500
+~# Jc @3 |r20|
+2
+~# Jl @3 |l30|
+6898 AR PREMIUM
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+0.0100
+~# Jr @3 |r20|
+0.02
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+0.00
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+42142901
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+20093681 MOLTO DG-84542S NEGRO NEGRO
+~#  Jl @3 |l30|
+H87
+~#  Jl @3 |l30|
+Pieza
+~#  Jr @3 |r20|
+546.8700
+~# Jr @3 |r20|
+546.87
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+87.50
+~]
+~[ 2 10 10 40 8 10 10 10 10 10 10 10
+~# 
+
+~# Jc @3 |r20|
+85121610
+~# Jc @3 |r20|
+1
+~# Jl @3 |l30|
+EXAMEN DE LA VISTA DE PROMOCION
+~#  Jl @3 |l30|
+ACT
+~#  Jl @3 |l30|
+Unidad
+~#  Jr @3 |r20|
+0.0200
+~# Jr @3 |r20|
+0.02
+~# Jc @3 |r20|
+002 IVA
+~# Jc @3 |r20|
+02
+~# Jc @3 |r20|
+0.160000
+~# Jr @3 |r20|
+0.00
+~]
+
+~[2 40 60
+
+~#
+~[2
+~]
+
+
+~#
+~[40
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+CFDI RELACIONADOS
+~]
+
+~#
+~[60
+~#|e+ 15.1 f110.20|M50.50 Jc Jv50 @4
+Tipo de Relacion:
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|Jl @3
+~]
+~]
+
+
+~F|0|
+~[2 50 5 20 20
+
+~#
+~[2
+~]
+
+~#
+~[50
+~#|e+ 15.1 gudlrg|M80.80 Jl @4
+CANTIDAD CON LETRA:
+
+DOS MIL DOSCIENTOS CUARENTA Y NUEVE PESOS 03/100 M.N.
+
+~]
+
+~#
+~[5
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. IVA 16%
+~#|e+| M60.60 Jr @4
+SUBTOTAL PROD. SIN IVA 0%
+~#|e+| M60.60 Jr @4
+SUBTOTAL GENERAL
+~#|e+| M60.60 Jr @4
+Total IVA 16%
+~#|e+| M60.60 Jr @4
+
+TOTAL
+~]
+
+~#
+~[20
+~#|e+| M60.60 Jr @3
+1,938.83
+~#|e+| M60.60 Jr @3
+0.00
+~#|e+| M60.60 Jr @3
+1,938.83
+~#|e+| M60.60 Jr @3
+
+310.20
+~#|e+| M60.60 Jr @3
+2,249.03
+~]
+
+~]
+
+~&lt;Z20
+~&gt;
+
+~[2 20 80
+
+~#
+~[2
+~]
+
+~#
+~[20
+~#D M420.420 "136DB320-3B54-4D23-A6E0-175532505A71.bmp";
+~]
+
+~#
+~[80
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+Observaciones
+
+@1
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO DIGITAL DEL CFDI
+
+@1bAOgSO80E71e80/7Ch2/FiPdaALwEBPgBp81UhjuAzlvx2yFx0HvyJ4RdpQrL3DvuiB28ddDMxkHR2qtltnerk6E00LeqDol8B6LwATCMKI/sg19sujvhcj4yWwbW7o4ibJsuDo+H/F5FeK0Zj96PPSjcw2HCnxF3+SXqi/s/yBLiDgipoMFdk0Xt5NjbaB2sclHtdizTOowWdx3zAr2n0go0Yf+w4gadItlbmI6weZ9YmHEOrjqC1vQsuNi84kgvvjZv49PnwUPLOXjwiGuhWsH0OaKxaGjorAoNl+r3qvf2cvDZ0+RktgtRQme1xXVvLPh1qLW/aRSUzKwOwr5lA==
+
+~#|e+ 15.1  gdlurg|M60.60 Jc @4
+SELLO SAT
+
+@1EB7O/WctlwSLVVhRh0Zt8A6a+VJfFOR8kA+bIE7crd5r58DSTPcg7h9IHUekNYYMh+QvmiyZ0VrP3FJiJqPPMuNtMnEBFk6G9AgXvpBt9VukR1RJtUoBgiTXGZV6GFD6afUHXE0stA/KdfGNlhjL30+uTqxXNQKhoUJGy9TaFUQ/0uB+++iVjKWmPWhKROhcKiYY5X85pysY3HahT6oj88dMvZISgCdGGBgBYy/7tACYadjRSBjhK8xlrCK1k3qBp/CdcyvMa63pJkKwMn7B4N7wlwCXc0UZvJkA472fPiEMoFNvuCD3+GY8ojV5PtKSPgZx45K/O7nQeCjQWbow3A==
+
+~#|e+ 15.1 gudlrg| Jc @4
+CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT
+
+@1||1.1|136DB320-3B54-4D23-A6E0-175532505A71|2026-02-02T13:37:07|FAC100625MC0||bAOgSO80E71e80/7Ch2/FiPdaALwEBPgBp81UhjuAzlvx2yFx0HvyJ4RdpQrL3DvuiB28ddDMxkHR2qtltnerk6E00LeqDol8B6LwATCMKI/sg19sujvhcj4yWwbW7o4ibJsuDo+H/F5FeK0Zj96PPSjcw2HCnxF3+SXqi/s/yBLiDgipoMFdk0Xt5NjbaB2sclHtdizTOowWdx3zAr2n0go0Yf+w4gadItlbmI6weZ9YmHEOrjqC1vQsuNi84kgvvjZv49PnwUPLOXjwiGuhWsH0OaKxaGjorAoNl+r3qvf2cvDZ0+RktgtRQme1xXVvLPh1qLW/aRSUzKwOwr5lA==|00001000000700926429||
+~]
+
+~]
+
+~&lt;Z10
+~&gt;
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+ 15.1 gudlrg d0|M180.180 Jj @3 Jv50
+DEBO Y PAGARÉ INCONDICIONALMENTE A LA ORDEN DE OPTICAS DEVLYN EN MÉXICO, D.F. O EN CUALQUIER
+PLAZA QUE SE ME REQUIERA EN LA FECHA __________________________ LA CANTIDAD DE $ ________________________________________
+
+( _______________________________________________________________________________________________________________________ )
+
+VALOR RECIBIDO A MI ENTERA SATISFACCIÓN. DESDE LA FECHA DE VENCIMIENTO DE ESTE DOCUMENTO HASTA EL DÍA DE SU LIQUIDACIÓN
+CAUSARÁ INTERESES MORATORIOS AL TIPO DE _________ % MENSUAL, PAGADERO EN MÉXICO D.F. O EN CUALQUIER PLAZA QUE SE ME REQUIERA.
+
+~#|e+ 15.1 gudlrg u0 d0|M80.80 Jc @3 Jv100
+ACEPTO Y PAGARÉ A SU VENCIMIENTO.
+~#|e+ 15.1 gudlrg u0|M150.150 Jc @3 Jv100
+________________________________
+
+FIRMA
+~]
+
+~]
+
+~[2 98
+
+~#
+~[2
+~]
+
+~#
+~[98
+~#|e+|M80.80 Jc @2 Jv50
+Este documento es una representación impresa de un CFDI
+~]
+~]
+~&gt;</fa:hfd>
+		</fa:Datos>
+	</cfdi:Addenda></cfdi:Comprobante>

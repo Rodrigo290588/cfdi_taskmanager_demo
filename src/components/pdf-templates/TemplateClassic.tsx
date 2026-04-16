@@ -66,9 +66,10 @@ export interface InvoiceTemplateProps {
     logoUrl?: string;
     primaryColor?: string;
   };
+  isCancelled?: boolean;
 }
 
-export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConfig }: InvoiceTemplateProps): string => {
+export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConfig, isCancelled }: InvoiceTemplateProps): string => {
   const comprobante: CfdiComprobante = cfdiData['cfdi:Comprobante'] || cfdiData['Comprobante'] || {};
   const get = <T,>(obj: unknown, key: string): T | undefined => {
     if (obj && typeof obj === 'object' && key in (obj as Record<string, unknown>)) {
@@ -109,12 +110,27 @@ export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConf
     <title>Factura ${comprobante['@_Serie'] || ''}${comprobante['@_Folio'] || ''}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; position: relative; }
       .primary-bg { background-color: ${primaryColor}; }
       .primary-text { color: ${primaryColor}; }
+      .watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 120px;
+        color: rgba(239, 68, 68, 0.15); /* text-red-500 with low opacity */
+        font-weight: 900;
+        letter-spacing: 10px;
+        z-index: -1;
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+      }
     </style>
   </head>
   <body class="bg-white text-slate-800 p-8 text-sm">
+    ${isCancelled ? '<div class="watermark">CANCELADO</div>' : ''}
     
     <!-- Header -->
     <div class="flex justify-between items-start mb-8">

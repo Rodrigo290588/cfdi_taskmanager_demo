@@ -101,7 +101,7 @@ export default function CancelacionesPage() {
   useEffect(() => {
     const loadPrefs = async () => {
       try {
-        const res = await fetch('/api/user/profile')
+        const res = await fetch('/api/user/profile', { cache: 'no-store' })
         const data = await res.json()
         const cols = data?.user?.preferences?.tables?.cancelaciones?.visibleColumns
         const order = data?.user?.preferences?.tables?.cancelaciones?.columnOrder

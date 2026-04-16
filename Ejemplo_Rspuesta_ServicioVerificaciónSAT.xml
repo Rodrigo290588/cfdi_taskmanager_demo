@@ -1,0 +1,25 @@
+HTTP/1.1 200 OK 
+Content-Type: text/xml; charset=utf-8 
+Content-Encoding: gzip 
+Vary: Accept-Encoding 
+Server: Microsoft-IIS/10.0 
+X-Powered-By: ASP.NET 
+Date: Thu, 10 May 2018 16:38:15 GMT 
+Content-Length: 430 
+ 
+ 
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+        <VerificaSolicitudDescargaResponse xmlns="http://DescargaMasivaTerceros.sat.gob.mx">
+            <VerificaSolicitudDescargaResult CodEstatus="5000" EstadoSolicitud="3" CodigoEstadoSolicitud="5000" NumeroCFDIs="0" Mensaje="Solicitud Aceptada">
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_01</IdsPaquetes>
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_02</IdsPaquetes>
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_03</IdsPaquetes>
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_04</IdsPaquetes>
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_05</IdsPaquetes>
+                <IdsPaquetes>4e80345d-917f-40bb-a98f4a73939343c5_06</IdsPaquetes>
+            </VerificaSolicitudDescargaResult>
+        </VerificaSolicitudDescargaResponse>
+    </s:Body>
+</s:Envelope>  

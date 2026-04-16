@@ -148,6 +148,27 @@ export function parseInvoiceFromXml(xml: string) {
     }
   }
 
+  let totalValue = parseDecimal(attrNs(xml, comprobanteTag, 'Total'), '0')
+
+  // Si es un CFDI de Pago, el total del comprobante suele ser 0.
+  // Intentamos extraer el MontoTotalPagos (pago20) o sumar los Monto de cada pago (pago10)
+  if (cfdiType === CfdiType.PAGO) {
+    const totalesMatch = /<[^:>]*:?Totales\b[^>]*MontoTotalPagos="([^"]+)"/gi.exec(xml)
+    if (totalesMatch && totalesMatch[1]) {
+      totalValue = parseDecimal(totalesMatch[1], '0')
+    } else {
+      let sumPagos = 0
+      const pagoRegex = /<[^:>]*:?Pago\b[^>]*Monto="([^"]+)"/gi
+      for (const m of xml.matchAll(pagoRegex)) {
+        // Evitar sumar montos si están dentro de una Addenda (ya controlado en el parser pero aquí simplificado)
+        sumPagos += Number(m[1].replace(/,/g, '')) || 0
+      }
+      if (sumPagos > 0) {
+        totalValue = new Prisma.Decimal(sumPagos.toFixed(2))
+      }
+    }
+  }
+
   return {
     uuid,
     cfdiType,
@@ -165,7 +186,7 @@ export function parseInvoiceFromXml(xml: string) {
     receiverName,
     subtotal: parseDecimal(attrNs(xml, comprobanteTag, 'SubTotal'), '0'),
     discount: parseDecimal(attrNs(xml, comprobanteTag, 'Descuento'), '0'),
-    total: parseDecimal(attrNs(xml, comprobanteTag, 'Total'), '0'),
+    total: totalValue,
     ivaTransferred,
     ivaWithheld,
     isrWithheld,

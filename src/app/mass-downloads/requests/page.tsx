@@ -10,15 +10,16 @@ export const metadata: Metadata = {
 export default function MassDownloadsRequestsPage() {
   return (
     <ProtectedRoute>
-      <div className="container mx-auto py-10 px-4">
-        <div className="flex flex-col space-y-8">
+      <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
+        <div className="flex items-center justify-between space-y-2">
           <div className="flex flex-col space-y-2">
             <h1 className="text-3xl font-bold tracking-tight">Solicitud de Descargas</h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Solicita nuevas descargas masivas de CFDI.
             </p>
           </div>
-          
+        </div>
+        <div className="mt-4">
           <MassDownloadRequestForm />
         </div>
       </div>

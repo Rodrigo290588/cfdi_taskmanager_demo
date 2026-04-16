@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { Prisma, RequestStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { v4 as uuidv4 } from 'uuid'
-import { generateDummyInvoices } from '@/services/dummy-invoice.service'
+import { verifyMassDownload } from '@/lib/sat-service'
+import { massVerificationQueue } from '@/lib/queue'
 
 const createSchema = z.object({
   companyId: z.string(),
@@ -51,9 +52,24 @@ export async function POST(req: Request) {
         satMessage: 'Solicitud registrada; pendiente de verificación con el SAT',
         packageIds: [],
         verificationAttempts: 0,
-        nextCheck: new Date(Date.now() + 30000),
+        nextCheck: new Date(Date.now() + 30000), // Revisar en 30 segundos
       },
     })
+
+    // ===== OPTIMIZACIÓN: Encolar el trabajo de verificación en Redis (BullMQ) =====
+    // En lugar de que el usuario verifique manualmente, delegamos esto a un proceso en segundo plano
+    if (satIdSolicitud && satIdSolicitud !== '') {
+      await massVerificationQueue.add('verify-request', {
+        requestId: request.id,
+        rfc: validatedData.requestingRfc
+      }, {
+        delay: 30000, // Esperar 30 segundos antes de la primera verificación
+        jobId: `verify-init-${request.id}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60000 } // Si falla, reintenta en 1m, 2m, 4m...
+      })
+    }
+    // ==============================================================================
 
     return NextResponse.json([
       {
@@ -130,82 +146,12 @@ export async function GET(req: Request) {
       take: 100, // Limit to 100 for now
     })
 
-    const now = new Date()
+    // ===== OPTIMIZACIÓN: Devolvemos directamente desde la base de datos =====
+    // El trabajo pesado de consultar al SAT (VerificaSolicitaDescarga) ya NO se 
+    // hace aquí en tiempo real, bloqueando el request HTTP.
+    // Ese trabajo ahora vive en src/workers/verification.worker.ts (usando Redis).
+    return NextResponse.json(requests)
 
-    const updatedRequests = await Promise.all(
-      requests.map(async (req) => {
-        if (!req.satPackageId) {
-          return req
-        }
-
-        const createdAt = req.createdAt
-        const diffSeconds = Math.floor((now.getTime() - createdAt.getTime()) / 1000)
-
-        let newStatus = req.requestStatus
-        let verificationAttempts = req.verificationAttempts
-        let nextCheck = req.nextCheck
-        let satMessage = req.satMessage
-        let packageIds = req.packageIds as string[] | null
-
-        if (diffSeconds <= 30) {
-          newStatus = RequestStatus.SOLICITADO
-          verificationAttempts = 0
-          nextCheck = new Date(createdAt.getTime() + 30_000)
-          satMessage = 'Solicitud registrada; pendiente de verificación con el SAT'
-          packageIds = []
-        } else if (diffSeconds <= 60) {
-          newStatus = RequestStatus.EN_PROCESO
-          verificationAttempts = Math.max(1, verificationAttempts)
-          nextCheck = new Date(createdAt.getTime() + 60_000)
-          satMessage = 'Solicitud en proceso'
-          packageIds = []
-        } else {
-          newStatus = RequestStatus.TERMINADO
-          verificationAttempts = Math.max(2, verificationAttempts)
-          nextCheck = null
-          if (!packageIds || packageIds.length === 0) {
-            packageIds = [
-              uuidv4().toUpperCase(),
-              uuidv4().toUpperCase(),
-              uuidv4().toUpperCase(),
-            ]
-          }
-          satMessage = 'Solicitud terminada con éxito'
-        }
-
-        const shouldUpdate =
-          newStatus !== req.requestStatus ||
-          verificationAttempts !== req.verificationAttempts ||
-          (nextCheck?.getTime() || null) !== (req.nextCheck?.getTime() || null) ||
-          satMessage !== req.satMessage ||
-          JSON.stringify(packageIds) !== JSON.stringify(req.packageIds)
-
-        if (!shouldUpdate) {
-          return req
-        }
-
-        const updated = await prisma.massDownloadRequest.update({
-          where: { id: req.id },
-          data: {
-            requestStatus: newStatus,
-            verificationAttempts,
-            nextCheck,
-            satMessage,
-            packageIds,
-          },
-        })
-
-        // Generate dummy invoices if transitioning to TERMINADO
-        if (newStatus === RequestStatus.TERMINADO && req.requestStatus !== RequestStatus.TERMINADO) {
-           // We do this asynchronously to not block the response
-           generateDummyInvoices(req.requestingRfc, req.companyId).catch(console.error)
-        }
-
-        return updated
-      })
-    )
-
-    return NextResponse.json(updatedRequests)
   } catch (error) {
     console.error('Error fetching mass download requests:', error)
     return NextResponse.json(
