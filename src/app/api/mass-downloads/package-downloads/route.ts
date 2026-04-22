@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { v4 as uuidv4 } from 'uuid'
 
 function getEstadoFromStatus(requestStatus: string) {
   switch (requestStatus) {
@@ -10,14 +9,26 @@ function getEstadoFromStatus(requestStatus: string) {
       return { code: 2, texto: 'En Proceso' }
     case 'TERMINADO':
       return { code: 3, texto: 'Terminada' }
+    case 'RECHAZADO':
+      return { code: 4, texto: 'Rechazada' }
+    case 'VENCIDO':
+      return { code: 5, texto: 'Vencida' }
     default:
       return { code: 0, texto: requestStatus || 'Desconocido' }
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url)
+    const rfc = searchParams.get('rfc')
+
+    if (!rfc) {
+      return NextResponse.json({ error: 'El RFC es requerido' }, { status: 400 })
+    }
+
     const requests = await prisma.massDownloadRequest.findMany({
+      where: { requestingRfc: rfc },
       orderBy: { createdAt: 'desc' },
       take: 50,
     })
@@ -27,11 +38,8 @@ export async function GET() {
     const data = requests.map((r) => {
       const { code, texto } = getEstadoFromStatus(r.requestStatus)
       const progreso = code === 1 ? 10 : code === 2 ? 50 : code === 3 ? 100 : 0
-      const paquetes = Array.isArray(r.packageIds) && r.packageIds.length > 0
-        ? r.packageIds
-        : code === 3
-          ? [uuidv4().toUpperCase(), uuidv4().toUpperCase()]
-          : []
+      
+      const paquetes = Array.isArray(r.packageIds) ? r.packageIds : []
 
       const periodoMes = (r.startDate?.getMonth() ?? now.getMonth()) + 1
       const periodoAnio = r.startDate?.getFullYear() ?? now.getFullYear()
@@ -39,9 +47,24 @@ export async function GET() {
       const fecha_vencimiento = new Date(r.createdAt)
       fecha_vencimiento.setDate(fecha_vencimiento.getDate() + 7)
 
-      const totalXml = 200
-      const descargadosXml =
-        code === 1 ? 20 : code === 2 ? 100 : code === 3 ? 200 : 0
+      // Extraer datos reales del errorLog si existen, si no simular en base al estado
+      const errorLogData = r.errorLog as Record<string, unknown> | null
+      const numeroCFDIsStr = errorLogData?.numeroCFDIs
+      let totalXml = typeof numeroCFDIsStr === 'string' ? parseInt(numeroCFDIsStr, 10) : (code === 3 ? 200 : 0)
+      
+      // Si está TERMINADO asumimos que los XML se descargaron (simulación parcial si el worker aún está bajando)
+      // En un entorno real se contaría desde la base de datos o el registro del worker
+      let descargadosXml = code === 3 ? totalXml : (code === 2 ? Math.floor(totalXml * 0.5) : 0)
+
+      if (r.requestType === 'metadata' && r.satMessage) {
+        const metadataMatch = r.satMessage.match(/Metadata procesada: (\d+) registros importados/i)
+        if (metadataMatch && metadataMatch[1]) {
+          descargadosXml = parseInt(metadataMatch[1], 10)
+          if (totalXml === 0) totalXml = descargadosXml // Fallback if SAT didn't provide numeroCFDIs
+        } else if (code !== 3) {
+          descargadosXml = 0
+        }
+      }
 
       return {
         id_solicitud: r.satPackageId ?? r.id,
@@ -51,12 +74,12 @@ export async function GET() {
         progreso,
         paquetes,
         fecha_vencimiento: fecha_vencimiento.toISOString(),
-        fecha_peticion:
-          code === 3 ? r.updatedAt.toISOString() : null,
+        fecha_peticion: code === 3 ? r.updatedAt.toISOString() : null,
         periodoMes,
         periodoAnio,
         totalXml,
         descargadosXml,
+        requestType: r.requestType,
       }
     })
 
@@ -70,44 +93,4 @@ export async function GET() {
   }
 }
 
-export async function POST() {
-  try {
-    const now = new Date()
-    const fakeRfc = 'AAA010101AAA'
-    const idSolicitud = uuidv4().toUpperCase()
 
-    const request = await prisma.massDownloadRequest.create({
-      data: {
-        companyId: 'demo-company',
-        requestingRfc: fakeRfc,
-        issuerRfc: fakeRfc,
-        receiverRfc: null,
-        startDate: now,
-        endDate: now,
-        requestType: 'metadata',
-        retrievalType: 'emitidos',
-        folio: null,
-        voucherType: null,
-        status: 'Vigente',
-        thirdPartyRfc: null,
-        complement: null,
-        requestStatus: 'SOLICITADO',
-        satPackageId: idSolicitud,
-        satMessage: 'Solicitud aceptada',
-        packageIds: [],
-        verificationAttempts: 0,
-        nextCheck: new Date(now.getTime() + 15000),
-      },
-    })
-
-    return NextResponse.json({
-      id_solicitud: request.satPackageId,
-    })
-  } catch (error) {
-    console.error('Error creating demo package request:', error)
-    return NextResponse.json(
-      { error: 'Internal Error' },
-      { status: 500 },
-    )
-  }
-}

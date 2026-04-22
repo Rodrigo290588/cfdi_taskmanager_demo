@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 // Removed date-fns imports
-import { CloudDownload, RefreshCw } from 'lucide-react'
+import { CloudDownload, RefreshCw, Loader2 } from 'lucide-react'
 
 // Dummy utility to format dates (to replace date-fns temporarily)
 const formatDate = (date: string | Date) => {
@@ -35,6 +35,7 @@ interface PackageRequest {
   periodoAnio: number
   totalXml: number
   descargadosXml: number
+  requestType: string
 }
 
 function getStatusBadge(code: number, text: string) {
@@ -62,11 +63,58 @@ export default function PackageDownloadsPage() {
   const [loading, setLoading] = useState(false)
   const [autoRefresh] = useState(true)
   const [selectedRequest, setSelectedRequest] = useState<PackageRequest | null>(null)
+  const [selectedCompany, setSelectedCompany] = useState<{ id: string, rfc: string, businessName?: string } | null>(null)
+
+  const [isDownloadingZip, setIsDownloadingZip] = useState<string | null>(null)
+
+  const handleDownloadZip = async (rfc: string, idPaquete: string) => {
+    try {
+      setIsDownloadingZip(idPaquete)
+      const url = `/api/mass-downloads/download-zip?rfc=${encodeURIComponent(rfc)}&idPaquete=${encodeURIComponent(idPaquete)}`
+      
+      // Intentamos abrir la descarga en la misma ventana para que el navegador inicie la descarga
+      window.location.href = url
+      
+      toast.success(`Descargando paquete ${idPaquete}...`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Ocurrió un error al intentar descargar el paquete')
+    } finally {
+      // Damos un pequeño retraso para apagar el estado de carga
+      setTimeout(() => setIsDownloadingZip(null), 2000)
+    }
+  }
+
+  // Load selected company
+  useEffect(() => {
+    const updateCompany = () => {
+      try {
+        const stored = localStorage.getItem('selectedCompany')
+        if (stored) {
+          const company = JSON.parse(stored)
+          if (company?.id && company?.rfc) {
+            setSelectedCompany(company)
+          }
+        }
+      } catch (e) {
+        console.error('Error loading company', e)
+      }
+    }
+
+    updateCompany()
+    window.addEventListener('company-selected', updateCompany)
+    return () => window.removeEventListener('company-selected', updateCompany)
+  }, [])
 
   const fetchData = useCallback(async () => {
+    if (!selectedCompany?.rfc) return
+
     setLoading(true)
     try {
-      const res = await fetch('/api/mass-downloads/package-downloads', { cache: 'no-store' })
+      const params = new URLSearchParams()
+      params.append('rfc', selectedCompany.rfc)
+
+      const res = await fetch(`/api/mass-downloads/package-downloads?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error('Error al cargar solicitudes de paquetes')
       const data: PackageRequest[] = await res.json()
       const normalized = data.map((item) => ({
@@ -80,36 +128,31 @@ export default function PackageDownloadsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selectedCompany?.rfc])
+
+  // Auto-fetch when company changes
+  useEffect(() => {
+    if (selectedCompany?.rfc) {
+      fetchData()
+    }
+  }, [selectedCompany, fetchData])
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  useEffect(() => {
-    if (!autoRefresh) return
+    if (!autoRefresh || !selectedCompany?.rfc) return
     const interval = setInterval(() => {
       fetchData()
     }, 5000)
     return () => clearInterval(interval)
-  }, [autoRefresh, fetchData])
+  }, [autoRefresh, fetchData, selectedCompany?.rfc])
 
-  const handleSimulateNew = async () => {
-    try {
-      const res = await fetch('/api/mass-downloads/package-downloads', {
-        method: 'POST',
-      })
-      if (!res.ok) throw new Error('Error al simular la solicitud')
-      toast.success('Nueva solicitud de paquetes simulada correctamente')
-      fetchData()
-    } catch (error) {
-      console.error(error)
-      toast.error('No se pudo simular la nueva solicitud')
-    }
-  }
+  const cfdiRequests = requests.filter(r => r.requestType !== 'metadata')
+  const metadataRequests = requests.filter(r => r.requestType === 'metadata')
 
-  const totalXml = requests.reduce((acc, r) => acc + r.totalXml, 0)
-  const totalDescargados = requests.reduce((acc, r) => acc + r.descargadosXml, 0)
+  const totalXml = cfdiRequests.reduce((acc, r) => acc + r.totalXml, 0)
+  const totalDescargados = cfdiRequests.reduce((acc, r) => acc + r.descargadosXml, 0)
+
+  const totalMetadata = metadataRequests.reduce((acc, r) => acc + r.totalXml, 0)
+  const metadataDescargados = metadataRequests.reduce((acc, r) => acc + r.descargadosXml, 0)
 
   return (
     <ProtectedRoute>
@@ -118,62 +161,72 @@ export default function PackageDownloadsPage() {
           <div className="flex flex-col space-y-2">
             <h1 className="text-3xl font-bold tracking-tight">Descarga de Paquetes</h1>
             <p className="text-sm text-muted-foreground">
-              Simulación de flujo de descarga de paquetes .zip de CFDI, con estados tipo SAT.
+              Monitor de descarga de paquetes .zip de CFDI desde el WebService del SAT.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading || !selectedCompany}>
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
               Actualizar
-            </Button>
-            <Button onClick={handleSimulateNew}>
-              <CloudDownload className="h-4 w-4 mr-2" />
-              Nueva Solicitud
             </Button>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="col-span-1">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                XML a descargar
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold">{totalXml}</span>
+        {!selectedCompany ? (
+          <Card className="mt-4">
+            <CardContent className="py-10 text-center text-muted-foreground">
+              Selecciona una empresa en el menú lateral para ver la información de sus descargas.
             </CardContent>
           </Card>
-          <Card className="col-span-1">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                XML descargados
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-emerald-500">{totalDescargados}</span>
-            </CardContent>
-          </Card>
-          <Card className="col-span-1">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Progreso global
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Progress
-                value={totalXml > 0 ? (totalDescargados / totalXml) * 100 : 0}
-                className="h-2"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {totalXml > 0
-                  ? `${Math.round((totalDescargados / totalXml) * 100)}% de los XML descargados`
-                  : 'Sin descargas simuladas aún'}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* CFDI Cards */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    XML CFDI a descargar
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-baseline justify-between">
+                  <span className="text-3xl font-bold">{totalXml}</span>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    XML CFDI descargados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-3xl font-bold text-emerald-500">{totalDescargados}</span>
+                  <Progress value={totalXml > 0 ? (totalDescargados / totalXml) * 100 : 0} className="h-1 mt-2" />
+                </CardContent>
+              </Card>
 
+              {/* Metadata Cards */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Registros Metadata a descargar
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-baseline justify-between">
+                  <span className="text-3xl font-bold text-indigo-500">{totalMetadata}</span>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Registros Metadata importados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-3xl font-bold text-indigo-600">{metadataDescargados}</span>
+                  <Progress value={totalMetadata > 0 ? (metadataDescargados / totalMetadata) * 100 : 0} className="h-1 mt-2" />
+                </CardContent>
+              </Card>
+            </div>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Solicitudes de paquetes</CardTitle>
@@ -185,6 +238,7 @@ export default function PackageDownloadsPage() {
                   <TableRow>
                     <TableHead>RFC</TableHead>
                     <TableHead>Periodo</TableHead>
+                    <TableHead>Tipo Archivo</TableHead>
                     <TableHead>ID de Solicitud</TableHead>
                     <TableHead>Estatus</TableHead>
                     <TableHead>Fecha de petición</TableHead>
@@ -196,8 +250,8 @@ export default function PackageDownloadsPage() {
                 <TableBody>
                   {requests.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No hay solicitudes simuladas. Usa Nueva Solicitud para iniciar el flujo.
+                      <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                        No hay solicitudes de descarga de paquetes. Usa Nueva Solicitud en el monitor para iniciar el flujo.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -206,6 +260,11 @@ export default function PackageDownloadsPage() {
                         <TableCell className="font-mono text-xs">{req.rfc}</TableCell>
                         <TableCell>
                           {req.periodoMes.toString().padStart(2, '0')}/{req.periodoAnio}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={req.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
+                            {req.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
+                          </Badge>
                         </TableCell>
                         <TableCell className="font-mono text-xs">{req.id_solicitud}</TableCell>
                         <TableCell>{getStatusBadge(req.estado_code, req.estado_texto)}</TableCell>
@@ -276,7 +335,7 @@ export default function PackageDownloadsPage() {
                   {getStatusBadge(selectedRequest.estado_code, selectedRequest.estado_texto)}
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Paquetes .zip simulados</p>
+                  <p className="text-xs text-muted-foreground">Paquetes .zip</p>
                   <div className="space-y-1">
                     {selectedRequest.paquetes.map((p) => (
                       <div
@@ -284,8 +343,17 @@ export default function PackageDownloadsPage() {
                         className="flex items-center justify-between rounded-md border px-3 py-2 text-xs"
                       >
                         <span className="font-mono">{p}</span>
-                        <Button size="icon" variant="outline">
-                          <CloudDownload className="h-4 w-4" />
+                        <Button 
+                          size="icon" 
+                          variant="outline"
+                          onClick={() => handleDownloadZip(selectedRequest.rfc, p)}
+                          disabled={isDownloadingZip === p}
+                        >
+                          {isDownloadingZip === p ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CloudDownload className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     ))}
@@ -294,6 +362,8 @@ export default function PackageDownloadsPage() {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </ProtectedRoute>

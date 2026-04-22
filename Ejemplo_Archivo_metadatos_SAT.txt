@@ -1,0 +1,2 @@
+Uuid|RfcEmisor|NombreEmisor|RfcReceptor|NombreReceptor|RfcPac|FechaEmision|FechaCertificacionSat|Monto|EfectoComprobante|Estatus|FechaCancelacion
+608C13E2-2C9A-4E90-9E13-1D6C5A2D1B22|ABC123456T12|EMPRESA EJEMPLO SA DE CV|XYZ987654A21|JUAN PEREZ LOPEZ|PAC110101G11|2026-03-15T10:30:00|2026-03-15T10:32:45|1500.50|I|1|

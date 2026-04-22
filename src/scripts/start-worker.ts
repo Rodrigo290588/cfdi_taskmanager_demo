@@ -1,8 +1,10 @@
 import { setupVerificationWorker } from '../workers/verification.worker'
+import { setupDownloadWorker } from '../workers/download.worker'
 
-console.log('Starting Verification Worker (SAT Mock)...')
+console.log('Starting Background Workers (SAT Verification & Download)...')
 setupVerificationWorker()
-console.log('Verification Worker started. Listening for jobs...')
+setupDownloadWorker()
+console.log('Workers started. Listening for jobs...')
 
 // Keep process alive
 process.on('SIGTERM', () => process.exit(0))

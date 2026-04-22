@@ -33,54 +33,54 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
     }
 
-    const fiscalEntity = await prisma.fiscalEntity.findFirst({
-      where: { rfc: company.rfc },
-      select: { id: true, rfc: true },
-    })
+    const targetRfc = company.rfc
 
-    if (!fiscalEntity) {
-      return NextResponse.json({
-        kpis: { metadataTotal: 0, xmlTotal: 0, completenessPercent: 0 },
-        monthly: [],
-        discrepancyAlert: false,
-        discrepancyPercent: 0,
-        table: {
-          rows: [],
-          pagination: { page: pageParam, pageSize: pageSizeParam, total: 0, totalPages: 0 },
-        },
-      })
+    const typeMap: Record<string, string> = {
+      'INGRESO': 'I',
+      'EGRESO': 'E',
+      'TRASLADO': 'T',
+      'NOMINA': 'N',
+      'PAGO': 'P'
     }
 
-    const baseSatWhere: Prisma.SatInvoiceWhereInput = {
-      fiscalEntityId: fiscalEntity.id,
-    }
-
-    if (rfcFilter) {
-      baseSatWhere.OR = [
-        { issuerRfc: rfcFilter },
-        { receiverRfc: rfcFilter },
+    const baseSatWhere: Prisma.SatMetadataWhereInput = {
+      OR: [
+        { rfcEmisor: targetRfc },
+        { rfcReceptor: targetRfc }
       ]
     }
 
-    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && cfdiTypeParam in CfdiType) {
-      baseSatWhere.cfdiType = cfdiTypeParam as CfdiType
+    if (rfcFilter) {
+      baseSatWhere.AND = [
+        {
+          OR: [
+            { rfcEmisor: rfcFilter },
+            { rfcReceptor: rfcFilter }
+          ]
+        }
+      ]
     }
 
-    if (satStatusParam && satStatusParam !== "ALL" && satStatusParam in SatStatus) {
-      baseSatWhere.satStatus = satStatusParam as SatStatus
+    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && typeMap[cfdiTypeParam]) {
+      baseSatWhere.efectoComprobante = typeMap[cfdiTypeParam]
+    }
+
+    if (satStatusParam && satStatusParam !== "ALL") {
+      // SAT Metadata usually uses "1" for Vigente and "0" for Cancelado, or literal "1"/"0"
+      baseSatWhere.estatus = satStatusParam === "VIGENTE" ? "1" : "0"
     }
 
     if (yearParam && monthParam) {
       const start = new Date(yearParam, monthParam - 1, 1)
       const end = new Date(yearParam, monthParam, 0, 23, 59, 59, 999)
-      baseSatWhere.issuanceDate = {
+      baseSatWhere.fechaEmision = {
         gte: start,
         lte: end,
       }
     } else if (yearParam) {
       const start = new Date(yearParam, 0, 1)
       const end = new Date(yearParam, 11, 31, 23, 59, 59, 999)
-      baseSatWhere.issuanceDate = {
+      baseSatWhere.fechaEmision = {
         gte: start,
         lte: end,
       }
@@ -90,8 +90,8 @@ export async function GET(request: Request) {
       AND: [
         {
           OR: [
-            { issuerRfc: fiscalEntity.rfc },
-            { receiverRfc: fiscalEntity.rfc },
+            { issuerRfc: targetRfc },
+            { receiverRfc: targetRfc },
           ],
         },
       ],
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
     }
 
     const [metadataTotal, xmlTotal] = await Promise.all([
-      prisma.satInvoice.count({ where: baseSatWhere }),
+      prisma.satMetadata.count({ where: baseSatWhere }),
       prisma.invoice.count({ where: baseInvoiceWhere }),
     ])
 
@@ -141,25 +141,25 @@ export async function GET(request: Request) {
 
     // New: Cancelation Stats (Donut Chart)
     const [vigentesCount, canceladosCount, canceladosTotalResult] = await Promise.all([
-      prisma.satInvoice.count({
+      prisma.satMetadata.count({
         where: {
           ...baseSatWhere,
-          satStatus: SatStatus.VIGENTE,
+          estatus: "1", // 1 = Vigente
         },
       }),
-      prisma.satInvoice.count({
+      prisma.satMetadata.count({
         where: {
           ...baseSatWhere,
-          satStatus: SatStatus.CANCELADO,
+          estatus: "0", // 0 = Cancelado
         },
       }),
-      prisma.satInvoice.aggregate({
+      prisma.satMetadata.aggregate({
         where: {
           ...baseSatWhere,
-          satStatus: SatStatus.CANCELADO,
+          estatus: "0",
         },
         _sum: {
-          total: true,
+          monto: true,
         },
       }),
     ])
@@ -167,7 +167,7 @@ export async function GET(request: Request) {
     const cancelationStats = {
       vigentes: vigentesCount,
       cancelados: canceladosCount,
-      totalCanceladoAmount: Number(canceladosTotalResult._sum.total || 0),
+      totalCanceladoAmount: Number(canceladosTotalResult._sum.monto || 0),
     }
 
     const now = new Date()
@@ -188,9 +188,9 @@ export async function GET(request: Request) {
       const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
       const label = `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`
 
-      const satWhere: Prisma.SatInvoiceWhereInput = {
+      const satWhere: Prisma.SatMetadataWhereInput = {
         ...baseSatWhere,
-        issuanceDate: {
+        fechaEmision: {
           gte: start,
           lte: end,
         },
@@ -204,37 +204,32 @@ export async function GET(request: Request) {
         },
       }
 
-      // We need breakdown by CfdiType for SatInvoice (Metadata)
-      // Since aggregate doesn't support grouping by enum easily in a simple query loop without raw query or separate counts,
-      // we'll run separate counts/sums for each type. 
-      // For performance, a groupBy query would be better, but inside a loop of months, let's just do a groupBy for the month.
-
       monthlyPromises.push(
         Promise.all([
-          prisma.satInvoice.count({ where: satWhere }),
+          prisma.satMetadata.count({ where: satWhere }),
           prisma.invoice.count({ where: invoiceWhere }),
-          prisma.satInvoice.groupBy({
-            by: ['cfdiType'],
+          prisma.satMetadata.groupBy({
+            by: ['efectoComprobante'],
             where: satWhere,
             _sum: {
-              total: true
+              monto: true
             }
           })
         ]).then(([mc, xc, typeGroups]) => {
-          const getSum = (type: CfdiType) => {
-            const group = typeGroups.find(g => g.cfdiType === type)
-            return Number(group?._sum.total || 0)
+          const getSum = (type: string) => {
+            const group = typeGroups.find(g => g.efectoComprobante === type)
+            return Number(group?._sum.monto || 0)
           }
 
           return {
             label,
             metadataCount: mc,
             xmlCount: xc,
-            ingreso: getSum(CfdiType.INGRESO),
-            egreso: getSum(CfdiType.EGRESO),
-            traslado: getSum(CfdiType.TRASLADO),
-            nomina: getSum(CfdiType.NOMINA),
-            pago: getSum(CfdiType.PAGO),
+            ingreso: getSum('I'),
+            egreso: getSum('E'),
+            traslado: getSum('T'),
+            nomina: getSum('N'),
+            pago: getSum('P'),
           }
         })
       )
@@ -247,40 +242,26 @@ export async function GET(request: Request) {
     const skip = (page - 1) * pageSize
 
     const [satRows, satTotal] = await Promise.all([
-      prisma.satInvoice.findMany({
+      prisma.satMetadata.findMany({
         where: baseSatWhere,
-        orderBy: { issuanceDate: "desc" },
+        orderBy: { fechaEmision: "desc" },
         skip,
         take: pageSize,
         select: {
           uuid: true,
-          issuerRfc: true,
-          issuerName: true,
-          receiverRfc: true,
-          receiverName: true,
-          issuanceDate: true,
-          total: true,
-          satStatus: true,
-          cfdiType: true,
-          series: true,
-          folio: true,
-          currency: true,
-          exchangeRate: true,
-          subtotal: true,
-          discount: true,
-          ivaTrasladado: true,
-          ivaRetenido: true,
-          isrRetenido: true,
-          iepsRetenido: true,
-          certificationDate: true,
-          certificationPac: true,
-          paymentMethod: true,
-          paymentForm: true,
-          usageCfdi: true,
-          expeditionPlace: true,
+          rfcEmisor: true,
+          nombreEmisor: true,
+          rfcReceptor: true,
+          nombreReceptor: true,
+          fechaEmision: true,
+          monto: true,
+          estatus: true,
+          efectoComprobante: true,
+          fechaCertificacionSat: true,
+          rfcPac: true,
         },
       }),
-      prisma.satInvoice.count({ where: baseSatWhere }),
+      prisma.satMetadata.count({ where: baseSatWhere }),
     ])
 
     const rowsWithXml = await Promise.all(
@@ -289,33 +270,44 @@ export async function GET(request: Request) {
           where: { uuid: row.uuid },
           select: { id: true },
         })
+        
+        // Map types back to readable
+        const mapType = (t: string | null) => {
+          if (t === 'I') return 'INGRESO'
+          if (t === 'E') return 'EGRESO'
+          if (t === 'T') return 'TRASLADO'
+          if (t === 'N') return 'NOMINA'
+          if (t === 'P') return 'PAGO'
+          return 'DESCONOCIDO'
+        }
+
         return {
           uuid: row.uuid,
-          issuerRfc: row.issuerRfc,
-          issuerName: row.issuerName,
-          receiverRfc: row.receiverRfc,
-          receiverName: row.receiverName,
-          issuanceDate: row.issuanceDate,
-          total: Number(row.total),
-          satStatus: row.satStatus,
+          issuerRfc: row.rfcEmisor,
+          issuerName: row.nombreEmisor || "",
+          receiverRfc: row.rfcReceptor,
+          receiverName: row.nombreReceptor || "",
+          issuanceDate: row.fechaEmision,
+          total: Number(row.monto || 0),
+          satStatus: row.estatus === "1" ? "VIGENTE" : "CANCELADO",
           hasXml: Boolean(xml),
-          cfdiType: row.cfdiType,
-          series: row.series,
-          folio: row.folio,
-          currency: row.currency,
-          exchangeRate: row.exchangeRate,
-          subtotal: Number(row.subtotal),
-          discount: Number(row.discount),
-          ivaTrasladado: Number(row.ivaTrasladado),
-          ivaRetenido: Number(row.ivaRetenido),
-          isrRetenido: Number(row.isrRetenido),
-          iepsRetenido: Number(row.iepsRetenido),
-          certificationDate: row.certificationDate,
-          certificationPac: row.certificationPac,
-          paymentMethod: row.paymentMethod,
-          paymentForm: row.paymentForm,
-          usageCfdi: row.usageCfdi,
-          expeditionPlace: row.expeditionPlace,
+          cfdiType: mapType(row.efectoComprobante),
+          series: "",
+          folio: "",
+          currency: "MXN",
+          exchangeRate: 1,
+          subtotal: 0,
+          discount: 0,
+          ivaTrasladado: 0,
+          ivaRetenido: 0,
+          isrRetenido: 0,
+          iepsRetenido: 0,
+          certificationDate: row.fechaCertificacionSat,
+          certificationPac: row.rfcPac || "",
+          paymentMethod: "",
+          paymentForm: "",
+          usageCfdi: "",
+          expeditionPlace: "",
         }
       })
     )

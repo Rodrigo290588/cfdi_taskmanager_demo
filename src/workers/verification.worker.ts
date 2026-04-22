@@ -1,7 +1,7 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
 import { RequestStatus } from '@prisma/client'
-import { MASS_VERIFICATION_QUEUE_NAME, massVerificationQueue } from '@/lib/queue'
+import { MASS_VERIFICATION_QUEUE_NAME, massVerificationQueue, massDownloadQueue } from '@/lib/queue'
 import { verifyMassDownload } from '@/lib/sat-service'
 import { generateDummyInvoices } from '@/services/dummy-invoice.service'
 import { v4 as uuidv4 } from 'uuid'
@@ -46,9 +46,17 @@ export function setupVerificationWorker() {
       const nextDelayMs = nextDelayMinutes * 60 * 1000
       // ==========================================================
 
+      let satVerification: {
+        estadoSolicitud: string
+        codigoEstadoSolicitud: string
+        numeroCFDIs: string
+        mensaje: string
+        idsPaquetes: string[]
+      } | null = null
+
       try {
         // Consultar al SAT REAL
-        const satVerification = await verifyMassDownload({
+        satVerification = await verifyMassDownload({
           rfc: request.requestingRfc,
           idSolicitud: request.satPackageId,
         })
@@ -114,7 +122,12 @@ export function setupVerificationWorker() {
           verificationAttempts: { increment: 1 },
           nextCheck,
           satMessage,
-          packageIds: packageIds || []
+          packageIds: packageIds || [],
+          errorLog: satVerification ? {
+            numeroCFDIs: satVerification.numeroCFDIs,
+            codigoEstadoSolicitud: satVerification.codigoEstadoSolicitud,
+            mensaje: satVerification.mensaje
+          } : undefined
         }
       })
 
@@ -122,12 +135,26 @@ export function setupVerificationWorker() {
       if (newStatus === RequestStatus.TERMINADO) {
         console.log(`[Verification] Request ${requestId} Finished. Packages: ${packageIds?.join(', ')}`)
         
-        // Simular descarga de facturas en base de datos de pruebas
+        // Simular descarga de facturas en base de datos de pruebas (Opcional, se mantiene por legado)
         if (request.requestType === 'cfdi') {
           await generateDummyInvoices(request.requestingRfc, request.companyId)
         }
 
-        // TODO: Encolar trabajos en `massDownloadQueue` para descargar físicamente los ZIPs.
+        // Encolar trabajos en `massDownloadQueue` para descargar físicamente los ZIPs
+        if (packageIds && packageIds.length > 0) {
+          for (const packId of packageIds) {
+            await massDownloadQueue.add('download-package', {
+              requestId: request.id,
+              rfc: request.requestingRfc,
+              idPaquete: packId
+            }, {
+              jobId: `download-${packId}-${Date.now()}`,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 10000 }
+            })
+          }
+          console.log(`[Verification] Enqueued ${packageIds.length} packages for download.`)
+        }
 
       } else if (newStatus === RequestStatus.EN_PROCESO || newStatus === RequestStatus.SOLICITADO) {
         // RE-ENCOLAR PARA SEGUIR HACIENDO POLLING

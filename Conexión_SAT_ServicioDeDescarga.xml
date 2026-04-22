@@ -1,10 +1,19 @@
+POST https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/DescargaMasivaTercerosService.svc HTTP/1.1 
+Accept-Encoding: gzip,deflate 
+Content-Type: text/xml;charset=UTF-8 
+SOAPAction: "http://DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaTercerosService/Descargar" 
+Authorization: WRAP access_token="eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE3NDcwOTc5MjUsImV4cCI6MTc0NzA5ODUyNSwiaWF0IjoxNzQ3MDk3OTI1LCJpc3MiOiJMb2FkU2VydmljaW9EZWNhcmdhTWFzaXZhVGVyY2Vyb3MiLCJhY3RvcnQiOiIzMzMwMzAzMDMxMzAzMDMwMzAzMDMwMzUzMDMwMzAzMDM0MzUzNjMwIn0._eOSO175aj_Op9S1wFf1iXKOnJkdnMwxnGyQmJyblg&wrap_subject=3330303031303030303030353030303034353630"
+Content-Length: 4979 
+Host: cfdidescargamasivasolicitud.clouda.sat.gob.mx
+ 
+ 
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
    xmlns:des="http://DescargaMasivaTerceros.sat.gob.mx"
    xmlns:xd="http://www.w3.org/2000/09/xmldsig#">
    <soapenv:Header/>
    <soapenv:Body>
-      <des:VerificaSolicitudDescarga>
-         <des:solicitud IdSolicitud="4E80345D-917F-40BB-A98F4A73939343C5" RfcSolicitante="AXT940727FP8">
+      <des:PeticionDescargaMasivaTercerosEntrada>
+         <des:peticionDescarga IdPaquete="4e80345d-917f-40bb-a98f4a73939343c5_01" RfcSolicitante="AXT940727FP8">
             <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
                <SignedInfo>
                   <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
@@ -28,7 +37,7 @@
                   </X509Data>
                </KeyInfo>
             </Signature>
-         </des:solicitud>
-      </des:VerificaSolicitudDescarga>
+         </des:peticionDescarga>
+      </des:PeticionDescargaMasivaTercerosEntrada>
    </soapenv:Body>
 </soapenv:Envelope> 

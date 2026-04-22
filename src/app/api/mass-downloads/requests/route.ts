@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { Prisma, RequestStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { v4 as uuidv4 } from 'uuid'
-import { verifyMassDownload } from '@/lib/sat-service'
 import { massVerificationQueue } from '@/lib/queue'
+import { requestMassDownload } from '@/lib/sat-service'
 
 const createSchema = z.object({
   companyId: z.string(),
@@ -30,7 +29,28 @@ export async function POST(req: Request) {
     const startDate = validatedData.startDate ? new Date(validatedData.startDate) : new Date()
     const endDate = validatedData.endDate ? new Date(validatedData.endDate) : new Date()
 
-    const satIdSolicitud = uuidv4().toUpperCase()
+    let satIdSolicitud = ''
+    let satMessage = 'Solicitud registrada; pendiente de verificación con el SAT'
+
+    try {
+      const satResponse = await requestMassDownload({
+        rfc: validatedData.requestingRfc,
+        startDate,
+        endDate,
+        requestType: validatedData.requestType,
+        retrievalType: validatedData.retrievalType,
+        receiverRfc: validatedData.receiverRfc,
+        issuerRfc: validatedData.issuerRfc
+      })
+      satIdSolicitud = satResponse.idSolicitud
+      satMessage = satResponse.message
+    } catch (satError) {
+      console.error('Error al solicitar descarga al SAT:', satError)
+      return NextResponse.json(
+        { error: 'Error de comunicación con el SAT', details: satError instanceof Error ? satError.message : String(satError) },
+        { status: 400 }
+      )
+    }
 
     const request = await prisma.massDownloadRequest.create({
       data: {
@@ -49,7 +69,7 @@ export async function POST(req: Request) {
         complement: validatedData.complement,
         requestStatus: RequestStatus.SOLICITADO,
         satPackageId: satIdSolicitud,
-        satMessage: 'Solicitud registrada; pendiente de verificación con el SAT',
+        satMessage: satMessage,
         packageIds: [],
         verificationAttempts: 0,
         nextCheck: new Date(Date.now() + 30000), // Revisar en 30 segundos
