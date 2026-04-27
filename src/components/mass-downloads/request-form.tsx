@@ -252,7 +252,8 @@ export function MassDownloadRequestForm() {
       }
 
       if (!response.ok) {
-        throw new Error(result?.error || result?.details || 'Error al enviar la solicitud')
+        // Priorizar el mensaje de 'details' que contiene la descripción específica del SAT
+        throw new Error(result?.details || result?.error || 'Error al enviar la solicitud')
       }
 
       if (Array.isArray(result) && result.length > 0) {
@@ -292,7 +293,9 @@ export function MassDownloadRequestForm() {
       }
     } catch (error) {
       console.error(error)
-      toast.error('Error al enviar la solicitud')
+      toast.error(error instanceof Error ? error.message : 'Error al enviar la solicitud', {
+        duration: 10000,
+      })
     } finally {
       setIsSubmitting(false)
     }

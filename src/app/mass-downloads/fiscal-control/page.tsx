@@ -41,6 +41,7 @@ type FiscalControlRow = {
   total: number
   satStatus: string
   hasXml: boolean
+  xmlContent: string
   cfdiType: string
   series: string | null
   folio: string | null
@@ -53,6 +54,7 @@ type FiscalControlRow = {
   isrRetenido: number
   iepsRetenido: number
   certificationDate: string
+  cancelationDate: string | null
   certificationPac: string
   paymentMethod: string
   paymentForm: string
@@ -128,6 +130,49 @@ function formatDate(value: string) {
   return `${day}/${month}/${year} ${hours}:${minutes}`
 }
 
+function getXmlAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const comprobanteMatch = xml.match(/<[^:]+:Comprobante([^>]+)>/)
+  if (comprobanteMatch) {
+    const attrs = comprobanteMatch[1]
+    const regex = new RegExp(`${attr}="([^"]+)"`)
+    const match = attrs.match(regex)
+    if (match) return match[1]
+  }
+  return ''
+}
+
+function getReceptorAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const receptorMatch = xml.match(/<[^:]+:Receptor([^>]+)>/)
+  if (receptorMatch) {
+    const attrs = receptorMatch[1]
+    const regex = new RegExp(`${attr}="([^"]+)"`)
+    const match = attrs.match(regex)
+    if (match) return match[1]
+  }
+  return ''
+}
+
+function getGlobalImpuestosAttribute(xml: string, attr: string): string {
+  if (!xml) return ''
+  const regex = new RegExp(`<[^:]+:Impuestos[^>]*?\\b${attr}="([^"]+)"`)
+  const match = xml.match(regex)
+  if (match) return match[1]
+  return ''
+}
+
+function getCfdiRelacionadosAttribute(xml: string, type: 'TipoRelacion' | 'UUID'): string {
+  if (!xml) return ''
+  if (type === 'TipoRelacion') {
+    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionados[^>]*?\bTipoRelacion="([^"]+)"/g))
+    return matches.map(m => m[1]).join(', ')
+  } else {
+    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionado[^>]*?\bUUID="([^"]+)"/g))
+    return matches.map(m => m[1]).join(', ')
+  }
+}
+
 export default function MassDownloadsFiscalControlPage() {
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(() => {
     try {
@@ -150,37 +195,152 @@ export default function MassDownloadsFiscalControlPage() {
   const [pageSize] = useState(50)
 
   const columnDefs = useMemo(() => [
-    { key: 'uuid', label: 'UUID' },
-    { key: 'issuerRfc', label: 'RFC Emisor' },
-    { key: 'issuerName', label: 'Nombre Emisor' },
-    { key: 'receiverRfc', label: 'RFC Receptor' },
-    { key: 'receiverName', label: 'Nombre Receptor' },
-    { key: 'issuanceDate', label: 'Fecha Emisión' },
-    { key: 'certificationDate', label: 'Fecha Certificación' },
-    { key: 'cfdiType', label: 'Tipo' },
-    { key: 'series', label: 'Serie' },
-    { key: 'folio', label: 'Folio' },
-    { key: 'subtotal', label: 'Subtotal' },
-    { key: 'discount', label: 'Descuento' },
-    { key: 'ivaTrasladado', label: 'IVA Trasladado' },
-    { key: 'ivaRetenido', label: 'IVA Retenido' },
-    { key: 'isrRetenido', label: 'ISR Retenido' },
-    { key: 'iepsRetenido', label: 'IEPS Retenido' },
-    { key: 'total', label: 'Total' },
-    { key: 'currency', label: 'Moneda' },
-    { key: 'exchangeRate', label: 'T. Cambio' },
-    { key: 'satStatus', label: 'Estado SAT' },
-    { key: 'hasXml', label: 'Origen' },
-    { key: 'paymentMethod', label: 'Método Pago' },
-    { key: 'paymentForm', label: 'Forma Pago' },
-    { key: 'usageCfdi', label: 'Uso CFDI' },
-    { key: 'expeditionPlace', label: 'Lugar Exp.' },
-    { key: 'certificationPac', label: 'PAC' },
+    { key: 'uuid', label: 'UUID', group: '<tfd:TimbreFiscalDigital>', render: (r: FiscalControlRow) => <span className="whitespace-nowrap">{r.uuid}</span> },
+    { key: 'version', label: 'Versión', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'Version') },
+    { key: 'noCertificado', label: 'No. Certificado', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'NoCertificado') },
+    { key: 'certificado', label: 'Certificado', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => {
+      const val = getXmlAttribute(r.xmlContent, 'Certificado')
+      return <div className="max-w-[150px] truncate" title={val}>{val}</div>
+    } },
+    { key: 'cfdiType', label: 'Tipo', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => r.cfdiType },
+    { key: 'series', label: 'Serie', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'Serie') || r.series || '' },
+    { key: 'folio', label: 'Folio', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'Folio') || r.folio || '' },
+    { key: 'currency', label: 'Moneda', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'Moneda') || r.currency },
+    { key: 'exchangeRate', label: 'T. Cambio', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'TipoCambio') || r.exchangeRate || '' },
+    { key: 'satStatus', label: 'Estado SAT', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
+      <Badge variant={r.satStatus === "VIGENTE" ? "default" : "outline"}>
+        {r.satStatus}
+      </Badge>
+    ) },
+    { key: 'hasXml', label: 'Origen', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
+      <Badge className={r.hasXml ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"}>
+        {r.hasXml ? "XML" : "Meta"}
+      </Badge>
+    ) },
+    { key: 'tipoRelacion', label: 'Tipo Relación', group: '<cfdi:CfdiRelacionados>', render: (r: FiscalControlRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'TipoRelacion') },
+    { key: 'cfdiRelacionado', label: 'CFDIRelacionado', group: '<cfdi:CfdiRelacionados>', render: (r: FiscalControlRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'UUID') },
+    { key: 'issuerRfc', label: 'RFC Emisor', group: '<cfdi:Emisor>', render: (r: FiscalControlRow) => r.issuerRfc },
+    { key: 'issuerName', label: 'Nombre Emisor', group: '<cfdi:Emisor>', render: (r: FiscalControlRow) => r.issuerName },
+    { key: 'receiverRfc', label: 'RFC Receptor', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => r.receiverRfc },
+    { key: 'receiverName', label: 'Nombre Receptor', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => r.receiverName },
+    { key: 'domicilioFiscalReceptor', label: 'Domicilio Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => getReceptorAttribute(r.xmlContent, 'DomicilioFiscalReceptor') },
+    { key: 'residenciaFiscal', label: 'Residencia Fiscal', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => getReceptorAttribute(r.xmlContent, 'ResidenciaFiscal') },
+    { key: 'numRegIdTrib', label: 'Num Reg Id Trib', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => getReceptorAttribute(r.xmlContent, 'NumRegIdTrib') },
+    { key: 'regimenFiscalReceptor', label: 'Régimen Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => getReceptorAttribute(r.xmlContent, 'RegimenFiscalReceptor') },
+    { key: 'subtotal', label: 'Subtotal', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => {
+      const xmlVal = getXmlAttribute(r.xmlContent, 'SubTotal')
+      return formatCurrency(xmlVal ? Number(xmlVal) : r.subtotal)
+    } },
+    { key: 'discount', label: 'Descuento', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => {
+      const xmlVal = getXmlAttribute(r.xmlContent, 'Descuento')
+      return formatCurrency(xmlVal ? Number(xmlVal) : r.discount)
+    } },
+    { key: 'total', label: 'Total', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => {
+      const xmlVal = getXmlAttribute(r.xmlContent, 'Total')
+      return formatCurrency(xmlVal ? Number(xmlVal) : r.total)
+    } },
+    { key: 'totalImpuestosTrasladados', label: 'Total Impuestos Trasladados', group: '<cfdi:Impuestos>', render: (r: FiscalControlRow) => {
+      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados')
+      return val ? formatCurrency(Number(val)) : ''
+    } },
+    { key: 'totalImpuestosRetenidos', label: 'Total Impuestos Retenidos', group: '<cfdi:Impuestos>', render: (r: FiscalControlRow) => {
+      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos')
+      return val ? formatCurrency(Number(val)) : ''
+    } },
+    { key: 'issuanceDate', label: 'Fecha Emisión', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => <span className="text-xs text-muted-foreground whitespace-nowrap">{r.issuanceDate ? formatDate(r.issuanceDate) : '-'}</span> },
+    { key: 'certificationDate', label: 'Fecha Certificación', group: '<tfd:TimbreFiscalDigital>', render: (r: FiscalControlRow) => <span className="text-xs text-muted-foreground whitespace-nowrap">{r.certificationDate ? formatDate(r.certificationDate) : '-'}</span> },
+    { key: 'cancelationDate', label: 'Fecha Cancelación', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => <span className="text-xs text-muted-foreground whitespace-nowrap">{r.cancelationDate ? formatDate(r.cancelationDate) : '-'}</span> },
+    { key: 'certificationPac', label: 'PAC', group: '<tfd:TimbreFiscalDigital>', render: (r: FiscalControlRow) => <span className="font-mono text-xs whitespace-nowrap">{r.certificationPac}</span> },
+    { key: 'paymentMethod', label: 'Método Pago', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'MetodoPago') || r.paymentMethod || '' },
+    { key: 'paymentForm', label: 'Forma Pago', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'FormaPago') || r.paymentForm || '' },
+    { key: 'usageCfdi', label: 'Uso CFDI', group: '<cfdi:Receptor>', render: (r: FiscalControlRow) => getReceptorAttribute(r.xmlContent, 'UsoCFDI') || r.usageCfdi || '' },
+    { key: 'expeditionPlace', label: 'Lugar Exp.', group: '<cfdi:Comprobante>', render: (r: FiscalControlRow) => getXmlAttribute(r.xmlContent, 'LugarExpedicion') || r.expeditionPlace || '' },
   ], [])
 
-  // Default visible columns (subset to avoid clutter)
-  const [visibleCols, setVisibleCols] = useState(new Set(['uuid', 'issuerRfc', 'receiverRfc', 'issuanceDate', 'total', 'satStatus', 'hasXml']))
+  const groupedColumns = useMemo(() => {
+    const groups: Record<string, typeof columnDefs[number][]> = {}
+    groups['<cfdi:Conceptos>'] = [] // Para mantener el orden visual
+    columnDefs.forEach(c => {
+      const g = c.group || 'Otros'
+      if (!groups[g]) groups[g] = []
+      groups[g].push(c)
+    })
+    return groups
+  }, [columnDefs])
+
+  // Default visible columns
+  const basicColumnsKeys = ['uuid', 'issuerRfc', 'receiverRfc', 'receiverName', 'issuanceDate', 'total', 'satStatus', 'hasXml', 'certificationPac', 'certificationDate', 'cfdiType', 'cancelationDate']
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(basicColumnsKeys))
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const known = columnDefs.map(c => c.key)
+    const missing = known.filter(k => !basicColumnsKeys.includes(k))
+    return [...basicColumnsKeys, ...missing]
+  })
+  
   const [showColumnPanel, setShowColumnPanel] = useState(false)
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [debouncedFilters, setDebouncedFilters] = useState<Record<string, string>>({})
+
+  const persistVisibleColumns = useCallback(async (cols: string[]) => {
+    try {
+      await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preferences: {
+            tables: {
+              fiscalControl: { visibleColumns: cols }
+            }
+          }
+        })
+      })
+    } catch {}
+  }, [])
+
+  const persistColumnOrder = useCallback(async (order: string[]) => {
+    try {
+      await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preferences: {
+            tables: {
+              fiscalControl: { columnOrder: order }
+            }
+          }
+        })
+      })
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        const res = await fetch('/api/user/profile')
+        const data = await res.json()
+        const cols = data?.user?.preferences?.tables?.fiscalControl?.visibleColumns
+        const order = data?.user?.preferences?.tables?.fiscalControl?.columnOrder
+        if (Array.isArray(cols) && cols.length > 0) {
+          setVisibleCols(new Set(cols))
+        }
+        if (Array.isArray(order) && order.length > 0) {
+          const known = columnDefs.map(c => c.key)
+          const cleanOrder = order.filter(k => known.includes(k))
+          const missing = known.filter(k => !cleanOrder.includes(k))
+          setColumnOrder([...cleanOrder, ...missing])
+        }
+      } catch {}
+    }
+    loadPrefs()
+  }, [columnDefs])
+
+  // Debounce the column filters to avoid spamming the API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedFilters(columnFilters)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [columnFilters])
 
   useEffect(() => {
     const handler = () => {
@@ -238,6 +398,13 @@ export default function MassDownloadsFiscalControlPage() {
       if (cfdiType && cfdiType !== "ALL") params.set("cfdiType", cfdiType)
       if (satStatus && satStatus !== "ALL") params.set("satStatus", satStatus)
 
+      // Add column filters
+      Object.entries(debouncedFilters).forEach(([key, value]) => {
+        if (value.trim()) {
+          params.set(`filter_${key}`, value.trim())
+        }
+      })
+
       try {
         const res = await fetch(`/api/mass-downloads/fiscal-control?${params.toString()}`, { cache: "no-store" })
         const json = await res.json()
@@ -249,7 +416,7 @@ export default function MassDownloadsFiscalControlPage() {
         setLoading(false)
       }
     },
-    [selectedCompanyId, pageSize, rfcFilter, year, month, cfdiType, satStatus]
+    [selectedCompanyId, pageSize, rfcFilter, year, month, cfdiType, satStatus, debouncedFilters]
   )
 
   useEffect(() => {
@@ -274,6 +441,13 @@ export default function MassDownloadsFiscalControlPage() {
     if (month) params.set("month", month)
     if (cfdiType && cfdiType !== "ALL") params.set("cfdiType", cfdiType)
     if (satStatus && satStatus !== "ALL") params.set("satStatus", satStatus)
+
+    // Add column filters
+    Object.entries(debouncedFilters).forEach(([key, value]) => {
+      if (value.trim()) {
+        params.set(`filter_${key}`, value.trim())
+      }
+    })
 
     const url = `/api/mass-downloads/fiscal-control/export?${params.toString()}`
     const link = document.createElement("a")
@@ -306,6 +480,8 @@ export default function MassDownloadsFiscalControlPage() {
   const completenessLabel = data?.kpis
     ? `${data.kpis.completenessPercent.toFixed(2)}% de los XML descargados`
     : "Sin datos"
+
+  const filteredRows = data?.table?.rows || []
 
   const totalPages = data?.table?.pagination?.totalPages || 0
   
@@ -439,9 +615,6 @@ export default function MassDownloadsFiscalControlPage() {
                 </Select>
               </div>
               <div className="flex items-end gap-2 justify-end md:col-span-4 lg:col-span-2">
-                <Button variant="outline" onClick={handleExport} disabled={loading || !data?.table?.rows?.length}>
-                  Exportar a Excel
-                </Button>
                 <Button onClick={handleApplyFilters} disabled={loading}>
                   {loading ? "Aplicando..." : "Aplicar filtros"}
                 </Button>
@@ -591,6 +764,9 @@ export default function MassDownloadsFiscalControlPage() {
               <div className="text-sm text-muted-foreground mr-4">
                 {recordCounter}
               </div>
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={loading || !data?.table?.rows?.length}>
+                Exportar reporte
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setShowColumnPanel(v => !v)}>
                 <Eye className="h-4 w-4 mr-2" />
                 Columnas
@@ -609,105 +785,122 @@ export default function MassDownloadsFiscalControlPage() {
                       onClick={() => {
                         const all = new Set(columnDefs.map(c => c.key))
                         setVisibleCols(all)
+                        persistVisibleColumns(Array.from(all))
                       }}
                     >
                       Mostrar todo
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const basic = new Set(basicColumnsKeys)
+                        setVisibleCols(basic)
+                        persistVisibleColumns(Array.from(basic))
+                        
+                        const known = columnDefs.map(c => c.key)
+                        const missing = known.filter(k => !basicColumnsKeys.includes(k))
+                        const newOrder = [...basicColumnsKeys, ...missing]
+                        setColumnOrder(newOrder)
+                        persistColumnOrder(newOrder)
+                      }}
+                    >
+                      Vista básica
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const def = columnDefs.map(c => c.key)
+                        setColumnOrder(def)
+                        persistColumnOrder(def)
+                      }}
+                    >
+                      Orden por defecto
+                    </Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {columnDefs.map(col => {
-                    const checked = visibleCols.has(col.key)
-                    return (
-                      <label key={col.key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const next = new Set(visibleCols)
-                            if (e.target.checked) next.add(col.key)
-                            else next.delete(col.key)
-                            setVisibleCols(next)
-                          }}
-                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                        />
-                        {col.label}
-                      </label>
-                    )
-                  })}
+                <div className="flex flex-col gap-4">
+                  {Object.entries(groupedColumns)
+                    .sort(([a], [b]) => {
+                      const order = ['<cfdi:Comprobante>', '<cfdi:CfdiRelacionados>', '<cfdi:Emisor>', '<cfdi:Receptor>', '<cfdi:Conceptos>', '<cfdi:Impuestos>', '<tfd:TimbreFiscalDigital>', 'Sistema / Metadatos']
+                      const posA = order.indexOf(a)
+                      const posB = order.indexOf(b)
+                      return (posA === -1 ? 999 : posA) - (posB === -1 ? 999 : posB)
+                    })
+                    .map(([groupName, cols]) => {
+                      if (groupName === '<cfdi:Conceptos>') {
+                        return null; // Handle if necessary later
+                      }
+                      if (cols.length === 0) return null
+                      return (
+                        <div key={groupName} className="space-y-2">
+                          <h4 className="text-xs font-semibold text-primary tracking-wider border-b pb-1 flex items-center gap-2">
+                            {groupName}
+                          </h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {cols.map(col => {
+                              const checked = visibleCols.has(col.key)
+                              return (
+                                <label key={col.key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted p-1 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const next = new Set(visibleCols)
+                                      if (e.target.checked) next.add(col.key)
+                                      else next.delete(col.key)
+                                      setVisibleCols(next)
+                                      persistVisibleColumns(Array.from(next))
+                                    }}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                                  />
+                                  {col.label}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
                 </div>
               </div>
             )}
-            <div className="overflow-x-auto">
-              <Table className="[&_th]:px-4 [&_td]:px-4">
+            <div className="border rounded-md mt-4 overflow-x-auto">
+              <Table>
                 <TableHeader>
                   <TableRow>
-                    {columnDefs.map((col) => (
-                      visibleCols.has(col.key) && (
+                    {columnOrder.map((key) => {
+                      const col = columnDefs.find(c => c.key === key)
+                      if (!col || !visibleCols.has(col.key)) return null
+                      return (
                         <TableHead key={col.key} className="whitespace-nowrap">
-                          {col.label}
+                          <div className="mb-2 font-semibold">{col.label}</div>
+                          <Input
+                            placeholder="Buscar..."
+                            className="h-7 text-xs font-normal"
+                            value={columnFilters[col.key] || ''}
+                            onChange={(e) => setColumnFilters(prev => ({ ...prev, [col.key]: e.target.value }))}
+                          />
                         </TableHead>
                       )
-                    ))}
+                    })}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.table?.rows?.length ? (
-                    data.table.rows.map((row) => (
+                  {filteredRows.length ? (
+                    filteredRows.map((row) => (
                       <TableRow key={row.uuid}>
-                        {columnDefs.map((col) => {
-                          if (!visibleCols.has(col.key)) return null
-                          const val = row[col.key as keyof FiscalControlRow]
+                        {columnOrder.map((key) => {
+                          const col = columnDefs.find(c => c.key === key)
+                          if (!col || !visibleCols.has(col.key)) return null
                           
-                          if (col.key === 'issuanceDate' || col.key === 'certificationDate') {
-                            return (
-                              <TableCell key={col.key} className="text-xs text-muted-foreground whitespace-nowrap">
-                                {formatDate(val as string)}
-                              </TableCell>
-                            )
-                          }
+                          // Align right for numbers
+                          const isNumber = ['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos'].includes(col.key)
                           
-                          if (['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido'].includes(col.key)) {
-                            return (
-                              <TableCell key={col.key} className="text-sm font-medium">
-                                {formatCurrency(val as number)}
-                              </TableCell>
-                            )
-                          }
-
-                          if (col.key === 'satStatus') {
-                            return (
-                              <TableCell key={col.key}>
-                                <Badge variant={val === "VIGENTE" ? "default" : "outline"}>
-                                  {val as string}
-                                </Badge>
-                              </TableCell>
-                            )
-                          }
-
-                          if (col.key === 'hasXml') {
-                            return (
-                              <TableCell key={col.key}>
-                                <Badge
-                                  className={val ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"}
-                                >
-                                  {val ? "XML" : "Meta"}
-                                </Badge>
-                              </TableCell>
-                            )
-                          }
-
-                          if (['uuid', 'issuerRfc', 'receiverRfc', 'certificationPac'].includes(col.key)) {
-                            return (
-                              <TableCell key={col.key} className="font-mono text-xs whitespace-nowrap">
-                                {val as string}
-                              </TableCell>
-                            )
-                          }
-
                           return (
-                            <TableCell key={col.key} className="text-sm max-w-[200px] truncate" title={String(val || '')}>
-                              {val as React.ReactNode}
+                            <TableCell key={col.key} className={`text-sm ${isNumber ? 'text-right' : ''}`}>
+                              {col.render(row)}
                             </TableCell>
                           )
                         })}
@@ -721,21 +914,40 @@ export default function MassDownloadsFiscalControlPage() {
                     </TableRow>
                   )}
                 </TableBody>
-                {data?.table?.rows?.length ? (
+                {filteredRows.length > 0 && (
                   <TableFooter>
                     <TableRow>
-                      {columnDefs.map((col) => {
-                        if (!visibleCols.has(col.key)) return null
-                        if (['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido'].includes(col.key)) {
-                          const sum = data.table.rows.reduce((acc, row) => acc + (Number(row[col.key as keyof FiscalControlRow]) || 0), 0)
+                      {columnOrder.map((key) => {
+                        const col = columnDefs.find(c => c.key === key)
+                        if (!col || !visibleCols.has(col.key)) return null
+                        
+                        const isNumber = ['total', 'subtotal', 'discount', 'ivaTrasladado', 'ivaRetenido', 'isrRetenido', 'iepsRetenido', 'totalImpuestosTrasladados', 'totalImpuestosRetenidos'].includes(col.key)
+                        
+                        if (isNumber) {
+                          let sum = 0;
+                          if (col.key === 'subtotal' || col.key === 'discount' || col.key === 'total') {
+                            sum = filteredRows.reduce((acc, row) => {
+                              const xmlVal = getXmlAttribute(row.xmlContent, col.key === 'subtotal' ? 'SubTotal' : col.key === 'discount' ? 'Descuento' : 'Total')
+                              const val = xmlVal ? Number(xmlVal) : (row[col.key as keyof FiscalControlRow] as number || 0)
+                              return acc + val
+                            }, 0)
+                          } else if (col.key === 'totalImpuestosTrasladados' || col.key === 'totalImpuestosRetenidos') {
+                            sum = filteredRows.reduce((acc, row) => {
+                              const xmlVal = getGlobalImpuestosAttribute(row.xmlContent, col.key === 'totalImpuestosTrasladados' ? 'TotalImpuestosTrasladados' : 'TotalImpuestosRetenidos')
+                              return acc + (xmlVal ? Number(xmlVal) : 0)
+                            }, 0)
+                          } else {
+                            sum = filteredRows.reduce((acc, row) => acc + (Number(row[col.key as keyof FiscalControlRow]) || 0), 0)
+                          }
+                          
                           return (
-                            <TableCell key={col.key} className="text-sm font-bold">
+                            <TableCell key={col.key} className="text-sm font-bold text-right">
                               {formatCurrency(sum)}
                             </TableCell>
                           )
                         }
-                        // Solo mostrar la etiqueta "Totales" en la primera columna visible
-                        const firstVisibleKey = columnDefs.find(c => visibleCols.has(c.key))?.key
+                        
+                        const firstVisibleKey = columnOrder.find(k => visibleCols.has(k))
                         if (col.key === firstVisibleKey) {
                           return (
                             <TableCell key={col.key} className="text-sm font-bold">
@@ -743,11 +955,12 @@ export default function MassDownloadsFiscalControlPage() {
                             </TableCell>
                           )
                         }
+                        
                         return <TableCell key={col.key} />
                       })}
                     </TableRow>
                   </TableFooter>
-                ) : null}
+                )}
               </Table>
             </div>
             {totalPages > 1 && (

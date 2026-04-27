@@ -130,14 +130,9 @@ export async function authenticateWithSat(rfc: string): Promise<string> {
   // 8. Parse Response
   // Expecting <AutenticaResult>TOKEN...</AutenticaResult> or similar
   // Or sometimes it's inside the header or body.
-  // Standard response:
-  // <AutenticaResponse>
-  //   <AutenticaResult>token...</AutenticaResult>
-  // </AutenticaResponse>
-  
-  const match = responseText.match(/<AutenticaResult>(.*?)<\/AutenticaResult>/)
+  const match = responseText.match(/<[^>]*AutenticaResult>([\s\S]*?)<\/[^>]*AutenticaResult>/i)
   if (match && match[1]) {
-    const token = match[1]
+    const token = match[1].trim()
     // Store in Redis (expires in 5 mins usually, but we can set 4 mins to be safe)
     try {
       await redis.set(`sat_token:${rfc}`, token, 'EX', 9 * 60)
@@ -286,17 +281,17 @@ ${envelope}`
     throw new Error(`SAT Request failed: HTTP ${response.status}`)
   }
 
-  // Extraer IdSolicitud y Código de Estatus
-  const idMatch = responseText.match(/IdSolicitud="([^"]+)"/)
-  const statusMatch = responseText.match(/CodEstatus="([^"]+)"/i)
-  const msgMatch = responseText.match(/Mensaje="([^"]+)"/)
+  // Extraer IdSolicitud y Código de Estatus usando regex robustas
+  const idMatch = responseText.match(/IdSolicitud\s*=\s*"([^"]+)"/i)
+  const statusMatch = responseText.match(/CodEstatus\s*=\s*"([^"]+)"/i)
+  const msgMatch = responseText.match(/Mensaje\s*=\s*"([^"]+)"/i)
 
-  const code = statusMatch ? statusMatch[1] : 'Desconocido'
-  const message = msgMatch ? msgMatch[1] : 'Sin mensaje'
+  const code = statusMatch ? statusMatch[1].trim() : 'Desconocido'
+  const message = msgMatch ? msgMatch[1].trim() : 'Sin mensaje'
   const finalMessage = getSatStatusDescription(code, message)
 
   if (code !== '5000') {
-    throw new Error(`Solicitud rechazada. Código SAT: ${code}, Mensaje: ${finalMessage}`)
+    throw new Error(`Solicitud rechazada. Código SAT: ${code}, Mensaje: ${finalMessage}\n\nXML Enviado:\n${solicitudXml}`)
   }
 
   if (!idMatch || !idMatch[1]) {

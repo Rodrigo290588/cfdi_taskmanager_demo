@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { Prisma, CfdiType, SatStatus } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 
 function parseNumber(value: string | null): number | null {
@@ -50,10 +50,150 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
     }
 
-    const fiscalEntity = await prisma.fiscalEntity.findFirst({
-      where: { rfc: company.rfc },
-      select: { id: true },
+    const targetRfc = company.rfc
+
+    const typeMap: Record<string, string> = {
+      'INGRESO': 'I',
+      'EGRESO': 'E',
+      'TRASLADO': 'T',
+      'NOMINA': 'N',
+      'PAGO': 'P'
+    }
+
+    // Extract dynamic column filters
+    const columnFilters: Record<string, string> = {}
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("filter_") && value.trim() !== "") {
+        columnFilters[key.replace("filter_", "")] = value.trim()
+      }
     })
+
+    const baseSatWhere: Prisma.SatMetadataWhereInput = {
+      OR: [
+        { rfcEmisor: targetRfc },
+        { rfcReceptor: targetRfc }
+      ]
+    }
+
+    if (rfcFilter) {
+      baseSatWhere.AND = [
+        {
+          OR: [
+            { rfcEmisor: rfcFilter },
+            { rfcReceptor: rfcFilter }
+          ]
+        }
+      ]
+    }
+
+    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && typeMap[cfdiTypeParam]) {
+      baseSatWhere.efectoComprobante = typeMap[cfdiTypeParam]
+    }
+
+    if (satStatusParam && satStatusParam !== "ALL") {
+      baseSatWhere.estatus = satStatusParam === "VIGENTE" ? "1" : "0"
+    }
+
+    if (yearParam && monthParam) {
+      const start = new Date(yearParam, monthParam - 1, 1)
+      const end = new Date(yearParam, monthParam, 0, 23, 59, 59, 999)
+      baseSatWhere.fechaEmision = {
+        gte: start,
+        lte: end,
+      }
+    } else if (yearParam) {
+      const start = new Date(yearParam, 0, 1)
+      const end = new Date(yearParam, 11, 31, 23, 59, 59, 999)
+      baseSatWhere.fechaEmision = {
+        gte: start,
+        lte: end,
+      }
+    }
+
+    // Apply dynamic column filters to baseSatWhere
+    if (Object.keys(columnFilters).length > 0) {
+      if (!baseSatWhere.AND) baseSatWhere.AND = []
+      
+      Object.entries(columnFilters).forEach(([key, value]) => {
+        const query = value.toLowerCase()
+        const andArray = baseSatWhere.AND as Prisma.SatMetadataWhereInput[]
+        
+        switch(key) {
+          case 'uuid':
+            andArray.push({ uuid: { contains: query, mode: 'insensitive' } })
+            break
+          case 'issuerRfc':
+            andArray.push({ rfcEmisor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'receiverRfc':
+            andArray.push({ rfcReceptor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'receiverName':
+            andArray.push({ nombreReceptor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'issuerName':
+            andArray.push({ nombreEmisor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'certificationPac':
+            andArray.push({ rfcPac: { contains: query, mode: 'insensitive' } })
+            break
+          case 'cfdiType':
+            const mapInverse: Record<string, string> = {
+              'ingreso': 'I', 'egreso': 'E', 'traslado': 'T', 'nomina': 'N', 'pago': 'P'
+            }
+            if (mapInverse[query]) {
+              andArray.push({ efectoComprobante: mapInverse[query] })
+            } else {
+              andArray.push({ efectoComprobante: { contains: query, mode: 'insensitive' } })
+            }
+            break
+          case 'total':
+            const num = Number(query.replace(/[^0-9.-]+/g, ""))
+            if (!isNaN(num)) andArray.push({ monto: { equals: num } })
+            break
+          case 'issuanceDate':
+          case 'certificationDate':
+          case 'cancelationDate':
+            const dbField = key === 'issuanceDate' ? 'fechaEmision' 
+                          : key === 'certificationDate' ? 'fechaCertificacionSat' 
+                          : 'fechaCancelacion'
+            
+            const parts = query.split(/[\/\-]/).map(Number).filter(n => !isNaN(n))
+            if (parts.length === 3) {
+              const [day, month, year] = parts
+              if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, month - 1, day, 0, 0, 0),
+                    lte: new Date(year, month - 1, day, 23, 59, 59, 999)
+                  }
+                })
+              }
+            } else if (parts.length === 2) {
+              const [month, year] = parts
+              if (year > 1900 && month >= 1 && month <= 12) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, month - 1, 1, 0, 0, 0),
+                    lte: new Date(year, month, 0, 23, 59, 59, 999)
+                  }
+                })
+              }
+            } else if (parts.length === 1) {
+              const [year] = parts
+              if (year > 2000 && year < 2100) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, 0, 1, 0, 0, 0),
+                    lte: new Date(year, 11, 31, 23, 59, 59, 999)
+                  }
+                })
+              }
+            }
+            break
+        }
+      })
+    }
 
     const headers = [
       "UUID",
@@ -63,101 +203,31 @@ export async function GET(request: Request) {
       "Nombre Receptor",
       "Fecha Emisión",
       "Fecha Certificación",
+      "Fecha Cancelación",
       "Tipo CFDI",
-      "Serie",
-      "Folio",
-      "Subtotal",
-      "Descuento",
-      "IVA Trasladado",
-      "IVA Retenido",
-      "ISR Retenido",
-      "IEPS Retenido",
-      "Total",
-      "Moneda",
-      "T. Cambio",
+      "Monto",
       "Estado SAT",
       "Origen (XML)",
-      "Método Pago",
-      "Forma Pago",
-      "Uso CFDI",
-      "Lugar Exp.",
       "PAC"
     ]
 
-    if (!fiscalEntity) {
-      return new Response(headers.join(","), {
-        headers: {
-          "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": 'attachment; filename="panel_control_fiscal_cfdi.csv"',
-        },
-      })
-    }
-
-    const baseSatWhere: Prisma.SatInvoiceWhereInput = {
-      fiscalEntityId: fiscalEntity.id,
-    }
-
-    if (rfcFilter) {
-      baseSatWhere.OR = [
-        { issuerRfc: rfcFilter },
-        { receiverRfc: rfcFilter },
-      ]
-    }
-
-    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && cfdiTypeParam in CfdiType) {
-      baseSatWhere.cfdiType = cfdiTypeParam as CfdiType
-    }
-
-    if (satStatusParam && satStatusParam !== "ALL" && satStatusParam in SatStatus) {
-      baseSatWhere.satStatus = satStatusParam as SatStatus
-    }
-
-    if (yearParam && monthParam) {
-      const start = new Date(yearParam, monthParam - 1, 1)
-      const end = new Date(yearParam, monthParam, 0, 23, 59, 59, 999)
-      baseSatWhere.issuanceDate = {
-        gte: start,
-        lte: end,
-      }
-    } else if (yearParam) {
-      const start = new Date(yearParam, 0, 1)
-      const end = new Date(yearParam, 11, 31, 23, 59, 59, 999)
-      baseSatWhere.issuanceDate = {
-        gte: start,
-        lte: end,
-      }
-    }
-
     // Fetch ALL matching records without pagination
-    const satRows = await prisma.satInvoice.findMany({
+    const satRows = await prisma.satMetadata.findMany({
       where: baseSatWhere,
-      orderBy: { issuanceDate: "desc" },
+      orderBy: { fechaEmision: "desc" },
       select: {
         uuid: true,
-        issuerRfc: true,
-        issuerName: true,
-        receiverRfc: true,
-        receiverName: true,
-        issuanceDate: true,
-        certificationDate: true,
-        cfdiType: true,
-        series: true,
-        folio: true,
-        subtotal: true,
-        discount: true,
-        ivaTrasladado: true,
-        ivaRetenido: true,
-        isrRetenido: true,
-        iepsRetenido: true,
-        total: true,
-        currency: true,
-        exchangeRate: true,
-        satStatus: true,
-        paymentMethod: true,
-        paymentForm: true,
-        usageCfdi: true,
-        expeditionPlace: true,
-        certificationPac: true,
+        rfcEmisor: true,
+        nombreEmisor: true,
+        rfcReceptor: true,
+        nombreReceptor: true,
+        fechaEmision: true,
+        fechaCertificacionSat: true,
+        fechaCancelacion: true,
+        efectoComprobante: true,
+        monto: true,
+        estatus: true,
+        rfcPac: true,
       },
     })
 
@@ -174,36 +244,31 @@ export async function GET(request: Request) {
 
     const existingXmlSet = new Set(existingXmls.map((x) => x.uuid))
 
+    const inverseTypeMap: Record<string, string> = {
+      'I': 'INGRESO',
+      'E': 'EGRESO',
+      'T': 'TRASLADO',
+      'N': 'NOMINA',
+      'P': 'PAGO'
+    }
+
     // Generate CSV content
     const csvRows = satRows.map((row) => {
       const hasXml = existingXmlSet.has(row.uuid)
       return [
         escapeCsv(row.uuid),
-        escapeCsv(row.issuerRfc),
-        escapeCsv(row.issuerName),
-        escapeCsv(row.receiverRfc),
-        escapeCsv(row.receiverName),
-        escapeCsv(formatDate(row.issuanceDate)),
-        escapeCsv(formatDate(row.certificationDate)),
-        escapeCsv(row.cfdiType),
-        escapeCsv(row.series),
-        escapeCsv(row.folio),
-        escapeCsv(row.subtotal),
-        escapeCsv(row.discount),
-        escapeCsv(row.ivaTrasladado),
-        escapeCsv(row.ivaRetenido),
-        escapeCsv(row.isrRetenido),
-        escapeCsv(row.iepsRetenido),
-        escapeCsv(row.total),
-        escapeCsv(row.currency),
-        escapeCsv(row.exchangeRate),
-        escapeCsv(row.satStatus),
+        escapeCsv(row.rfcEmisor),
+        escapeCsv(row.nombreEmisor),
+        escapeCsv(row.rfcReceptor),
+        escapeCsv(row.nombreReceptor),
+        escapeCsv(formatDate(row.fechaEmision)),
+        escapeCsv(formatDate(row.fechaCertificacionSat)),
+        escapeCsv(formatDate(row.fechaCancelacion)),
+        escapeCsv(row.efectoComprobante ? (inverseTypeMap[row.efectoComprobante] || row.efectoComprobante) : ""),
+        escapeCsv(row.monto),
+        escapeCsv(row.estatus === "1" ? "VIGENTE" : "CANCELADO"),
         hasXml ? "SI" : "NO",
-        escapeCsv(row.paymentMethod),
-        escapeCsv(row.paymentForm),
-        escapeCsv(row.usageCfdi),
-        escapeCsv(row.expeditionPlace),
-        escapeCsv(row.certificationPac),
+        escapeCsv(row.rfcPac),
       ].join(",")
     })
 

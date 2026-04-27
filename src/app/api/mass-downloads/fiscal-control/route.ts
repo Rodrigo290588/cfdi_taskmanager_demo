@@ -43,6 +43,14 @@ export async function GET(request: Request) {
       'PAGO': 'P'
     }
 
+    // Extract dynamic column filters
+    const columnFilters: Record<string, string> = {}
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("filter_") && value.trim() !== "") {
+        columnFilters[key.replace("filter_", "")] = value.trim()
+      }
+    })
+
     const baseSatWhere: Prisma.SatMetadataWhereInput = {
       OR: [
         { rfcEmisor: targetRfc },
@@ -84,6 +92,92 @@ export async function GET(request: Request) {
         gte: start,
         lte: end,
       }
+    }
+
+    // Apply dynamic column filters to baseSatWhere
+    if (Object.keys(columnFilters).length > 0) {
+      if (!baseSatWhere.AND) baseSatWhere.AND = []
+      
+      Object.entries(columnFilters).forEach(([key, value]) => {
+        const query = value.toLowerCase()
+        const andArray = baseSatWhere.AND as Prisma.SatMetadataWhereInput[]
+        
+        switch(key) {
+          case 'uuid':
+            andArray.push({ uuid: { contains: query, mode: 'insensitive' } })
+            break
+          case 'issuerRfc':
+            andArray.push({ rfcEmisor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'receiverRfc':
+            andArray.push({ rfcReceptor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'receiverName':
+            andArray.push({ nombreReceptor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'issuerName':
+            andArray.push({ nombreEmisor: { contains: query, mode: 'insensitive' } })
+            break
+          case 'certificationPac':
+            andArray.push({ rfcPac: { contains: query, mode: 'insensitive' } })
+            break
+          case 'cfdiType':
+            const mapInverse: Record<string, string> = {
+              'ingreso': 'I', 'egreso': 'E', 'traslado': 'T', 'nomina': 'N', 'pago': 'P'
+            }
+            if (mapInverse[query]) {
+              andArray.push({ efectoComprobante: mapInverse[query] })
+            } else {
+              andArray.push({ efectoComprobante: { contains: query, mode: 'insensitive' } })
+            }
+            break
+          case 'total':
+            const num = Number(query.replace(/[^0-9.-]+/g, ""))
+            if (!isNaN(num)) andArray.push({ monto: { equals: num } })
+            break
+          case 'issuanceDate':
+          case 'certificationDate':
+          case 'cancelationDate':
+            const dbField = key === 'issuanceDate' ? 'fechaEmision' 
+                          : key === 'certificationDate' ? 'fechaCertificacionSat' 
+                          : 'fechaCancelacion'
+            
+            // Expected formats: DD/MM/YYYY or MM/YYYY or YYYY
+            const parts = query.split(/[\/\-]/).map(Number).filter(n => !isNaN(n))
+            if (parts.length === 3) {
+              const [day, month, year] = parts
+              if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, month - 1, day, 0, 0, 0),
+                    lte: new Date(year, month - 1, day, 23, 59, 59, 999)
+                  }
+                })
+              }
+            } else if (parts.length === 2) {
+              const [month, year] = parts
+              if (year > 1900 && month >= 1 && month <= 12) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, month - 1, 1, 0, 0, 0),
+                    lte: new Date(year, month, 0, 23, 59, 59, 999)
+                  }
+                })
+              }
+            } else if (parts.length === 1) {
+              const [year] = parts
+              if (year > 2000 && year < 2100) {
+                andArray.push({
+                  [dbField]: {
+                    gte: new Date(year, 0, 1, 0, 0, 0),
+                    lte: new Date(year, 11, 31, 23, 59, 59, 999)
+                  }
+                })
+              }
+            }
+            break
+        }
+      })
     }
 
     const baseInvoiceWhere: Prisma.InvoiceWhereInput = {
@@ -258,6 +352,7 @@ export async function GET(request: Request) {
           estatus: true,
           efectoComprobante: true,
           fechaCertificacionSat: true,
+          fechaCancelacion: true,
           rfcPac: true,
         },
       }),
@@ -268,7 +363,7 @@ export async function GET(request: Request) {
       satRows.map(async (row) => {
         const xml = await prisma.invoice.findUnique({
           where: { uuid: row.uuid },
-          select: { id: true },
+          select: { id: true, xmlContent: true },
         })
         
         // Map types back to readable
@@ -291,6 +386,7 @@ export async function GET(request: Request) {
           total: Number(row.monto || 0),
           satStatus: row.estatus === "1" ? "VIGENTE" : "CANCELADO",
           hasXml: Boolean(xml),
+          xmlContent: xml?.xmlContent || "",
           cfdiType: mapType(row.efectoComprobante),
           series: "",
           folio: "",
@@ -303,6 +399,7 @@ export async function GET(request: Request) {
           isrRetenido: 0,
           iepsRetenido: 0,
           certificationDate: row.fechaCertificacionSat,
+          cancelationDate: row.fechaCancelacion,
           certificationPac: row.rfcPac || "",
           paymentMethod: "",
           paymentForm: "",

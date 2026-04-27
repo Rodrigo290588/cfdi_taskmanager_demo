@@ -29,6 +29,13 @@ export async function POST(req: Request) {
     const startDate = validatedData.startDate ? new Date(validatedData.startDate) : new Date()
     const endDate = validatedData.endDate ? new Date(validatedData.endDate) : new Date()
 
+    // Si la fecha final tiene la misma hora que la inicial (ej. las 00:00:00), 
+    // la ajustamos para que abarque hasta el final de ese día (23:59:59)
+    // El SAT marca Error 301 si FechaFinal no es mayor a FechaInicial.
+    if (endDate.getUTCHours() === 0 && endDate.getUTCMinutes() === 0 && endDate.getUTCSeconds() === 0) {
+      endDate.setUTCHours(23, 59, 59, 999)
+    }
+
     let satIdSolicitud = ''
     let satMessage = 'Solicitud registrada; pendiente de verificación con el SAT'
 
