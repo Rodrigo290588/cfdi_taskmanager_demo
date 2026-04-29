@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const defaultLimit = Number(searchParams.get('limit') || 20)
     const limit = isExport ? defaultLimit : Math.min(defaultLimit, 100)
     const query = searchParams.get('query') || ''
-    const cfdiType = searchParams.get('cfdiType') as keyof typeof CfdiType | null
+    const cfdiTypeParam = searchParams.get('cfdiType')
     const status = searchParams.get('status') as keyof typeof InvoiceStatus | null
     const satStatus = searchParams.get('satStatus') as keyof typeof SatStatus | null
     const dateFrom = searchParams.get('dateFrom')
@@ -65,13 +65,37 @@ export async function GET(request: NextRequest) {
         { folio: { contains: query, mode: 'insensitive' } },
       ]
     }
-    if (cfdiType && CfdiType[cfdiType]) {
-      where.cfdiType = CfdiType[cfdiType]
+    if (cfdiTypeParam) {
+      const typeMap: Record<string, keyof typeof CfdiType> = {
+        'I': 'INGRESO', 'E': 'EGRESO', 'P': 'PAGO', 'T': 'TRASLADO', 'N': 'NOMINA'
+      }
+      const types = cfdiTypeParam.split(',').flatMap(t => {
+        const val = t.trim().toUpperCase()
+        if (typeMap[val]) return [typeMap[val]]
+        return Object.keys(CfdiType).filter(k => k.includes(val))
+      }).filter(Boolean) as (keyof typeof CfdiType)[]
+      
+      const uniqueTypes = Array.from(new Set(types))
+      
+      if (uniqueTypes.length > 0) {
+        where.cfdiType = { in: uniqueTypes.map(t => CfdiType[t]) }
+      } else {
+        where.cfdiType = { in: [CfdiType.INGRESO, CfdiType.PAGO] }
+      }
     } else {
       where.cfdiType = { in: [CfdiType.INGRESO, CfdiType.PAGO] }
     }
-    if (status && InvoiceStatus[status]) where.status = InvoiceStatus[status]
-    if (satStatus && SatStatus[satStatus]) where.satStatus = SatStatus[satStatus]
+    
+    if (status) {
+      const s = status.toUpperCase()
+      const matchedStatus = Object.keys(InvoiceStatus).find(k => k.includes(s))
+      if (matchedStatus) where.status = InvoiceStatus[matchedStatus as keyof typeof InvoiceStatus]
+    }
+    if (satStatus) {
+      const s = satStatus.toUpperCase()
+      const matchedSatStatus = Object.keys(SatStatus).find(k => k.includes(s))
+      if (matchedSatStatus) where.satStatus = SatStatus[matchedSatStatus as keyof typeof SatStatus]
+    }
     if (dateFrom || dateTo) {
       where.issuanceDate = {}
       if (dateFrom) where.issuanceDate.gte = new Date(dateFrom)
@@ -79,7 +103,7 @@ export async function GET(request: NextRequest) {
     }
 
     const simpleFilterFields = [
-      'uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName',
+      'id', 'userId', 'issuerFiscalEntityId', 'uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName',
       'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm',
       'cfdiUsage', 'placeOfExpedition', 'exportKey', 'objectTaxComprobante',
       'paymentConditions', 'certificationPac'
@@ -92,6 +116,31 @@ export async function GET(request: NextRequest) {
         where[field] = { contains: val, mode: 'insensitive' }
       }
     })
+
+    const exactNumberFields = ['subtotal', 'discount', 'total', 'exchangeRate']
+    exactNumberFields.forEach(field => {
+      const val = searchParams.get(field)
+      if (val && !isNaN(Number(val))) {
+        // @ts-expect-error - Dynamic assignment to typed where object
+        where[field] = Number(val)
+      }
+    })
+
+    const xmlFilterFields = [
+      'version', 'noCertificado', 'certificado', 'tipoRelacion', 'cfdiRelacionado',
+      'domicilioFiscalReceptor', 'residenciaFiscal', 'numRegIdTrib', 'regimenFiscalReceptor',
+      'totalImpuestosTrasladados', 'totalImpuestosRetenidos'
+    ]
+
+    const xmlFilters = xmlFilterFields.map(field => {
+      const val = searchParams.get(field)
+      return val ? { xmlContent: { contains: val, mode: 'insensitive' } } : null
+    }).filter(Boolean) as Prisma.InvoiceWhereInput[]
+
+    if (xmlFilters.length > 0) {
+      if (!where.AND) where.AND = []
+      if (Array.isArray(where.AND)) where.AND.push(...xmlFilters)
+    }
 
     const skip = (page - 1) * limit
     const [rows, total] = await Promise.all([

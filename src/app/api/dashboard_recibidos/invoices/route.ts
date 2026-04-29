@@ -63,17 +63,76 @@ export async function GET(request: NextRequest) {
         { folio: { contains: query, mode: 'insensitive' } },
       ]
     }
-    if (cfdiType && CfdiType[cfdiType]) {
-      where.cfdiType = CfdiType[cfdiType]
+    if (cfdiType) {
+      const typeMap: Record<string, keyof typeof CfdiType> = {
+        'I': 'INGRESO', 'E': 'EGRESO', 'P': 'PAGO', 'T': 'TRASLADO', 'N': 'NOMINA'
+      }
+      const val = cfdiType.trim().toUpperCase()
+      const mappedVal = typeMap[val] || val
+      
+      const matchedType = Object.keys(CfdiType).find(k => k.includes(mappedVal))
+      if (matchedType) {
+        where.cfdiType = CfdiType[matchedType as keyof typeof CfdiType]
+      } else {
+        where.cfdiType = CfdiType.EGRESO
+      }
     } else {
       where.cfdiType = CfdiType.EGRESO
     }
-    if (status && InvoiceStatus[status]) where.status = InvoiceStatus[status]
-    if (satStatus && SatStatus[satStatus]) where.satStatus = SatStatus[satStatus]
+    if (status) {
+      const s = status.toUpperCase()
+      const matchedStatus = Object.keys(InvoiceStatus).find(k => k.includes(s))
+      if (matchedStatus) where.status = InvoiceStatus[matchedStatus as keyof typeof InvoiceStatus]
+    }
+    if (satStatus) {
+      const s = satStatus.toUpperCase()
+      const matchedSatStatus = Object.keys(SatStatus).find(k => k.includes(s))
+      if (matchedSatStatus) where.satStatus = SatStatus[matchedSatStatus as keyof typeof SatStatus]
+    }
     if (dateFrom || dateTo) {
       where.issuanceDate = {}
       if (dateFrom) where.issuanceDate.gte = new Date(dateFrom)
       if (dateTo) where.issuanceDate.lte = new Date(dateTo)
+    }
+
+    const simpleFilterFields = [
+      'id', 'userId', 'issuerFiscalEntityId', 'uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName',
+      'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm',
+      'cfdiUsage', 'placeOfExpedition', 'exportKey', 'objectTaxComprobante',
+      'paymentConditions', 'certificationPac'
+    ]
+    
+    simpleFilterFields.forEach(field => {
+      const val = searchParams.get(field)
+      if (val) {
+        // @ts-expect-error - Dynamic assignment
+        where[field] = { contains: val, mode: 'insensitive' }
+      }
+    })
+
+    const exactNumberFields = ['subtotal', 'discount', 'total', 'exchangeRate']
+    exactNumberFields.forEach(field => {
+      const val = searchParams.get(field)
+      if (val && !isNaN(Number(val))) {
+        // @ts-expect-error - Dynamic assignment
+        where[field] = Number(val)
+      }
+    })
+
+    const xmlFilterFields = [
+      'version', 'noCertificado', 'certificado', 'tipoRelacion', 'cfdiRelacionado',
+      'domicilioFiscalReceptor', 'residenciaFiscal', 'numRegIdTrib', 'regimenFiscalReceptor',
+      'totalImpuestosTrasladados', 'totalImpuestosRetenidos'
+    ]
+
+    const xmlFilters = xmlFilterFields.map(field => {
+      const val = searchParams.get(field)
+      return val ? { xmlContent: { contains: val, mode: 'insensitive' } } : null
+    }).filter(Boolean) as Prisma.InvoiceWhereInput[]
+
+    if (xmlFilters.length > 0) {
+      if (!where.AND) where.AND = []
+      if (Array.isArray(where.AND)) where.AND.push(...xmlFilters)
     }
 
     const skip = (page - 1) * limit
@@ -85,22 +144,41 @@ export async function GET(request: NextRequest) {
         take: limit,
         select: {
           id: true,
+          userId: true,
+          issuerFiscalEntityId: true,
           uuid: true,
           cfdiType: true,
           series: true,
           folio: true,
+          currency: true,
+          exchangeRate: true,
+          status: true,
+          satStatus: true,
           issuerRfc: true,
           issuerName: true,
           receiverRfc: true,
           receiverName: true,
           subtotal: true,
+          discount: true,
           total: true,
+          ivaTransferred: true,
+          ivaWithheld: true,
+          isrWithheld: true,
+          iepsWithheld: true,
+          xmlContent: true,
+          pdfUrl: true,
           issuanceDate: true,
-          status: true,
-          satStatus: true,
-          paymentForm: true,
+          certificationDate: true,
+          certificationPac: true,
           paymentMethod: true,
-          currency: true,
+          paymentForm: true,
+          cfdiUsage: true,
+          placeOfExpedition: true,
+          exportKey: true,
+          objectTaxComprobante: true,
+          paymentConditions: true,
+          createdAt: true,
+          updatedAt: true,
         }
       }),
       prisma.invoice.count({ where })
@@ -108,9 +186,18 @@ export async function GET(request: NextRequest) {
 
     const invoices = rows.map(r => ({
       ...r,
+      exchangeRate: r.exchangeRate ?? null,
       subtotal: Number(r.subtotal),
+      discount: Number(r.discount ?? 0),
       total: Number(r.total),
+      ivaTransferred: Number(r.ivaTransferred ?? 0),
+      ivaWithheld: Number(r.ivaWithheld ?? 0),
+      isrWithheld: Number(r.isrWithheld ?? 0),
+      iepsWithheld: Number(r.iepsWithheld ?? 0),
       issuanceDate: r.issuanceDate,
+      certificationDate: r.certificationDate,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
     }))
 
     return NextResponse.json({

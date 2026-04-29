@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { CfdiType } from '@prisma/client'
+import { DOMParser } from '@xmldom/xmldom'
 
 export async function GET() {
   try {
@@ -26,7 +27,7 @@ export async function GET() {
     if (entities.length === 0) {
       return NextResponse.json({
         organization: { id: member.organization.id },
-        kpis: { totalCfdis: 0, totalMonto: 0, tasaCancelacion: 0 },
+        kpis: { totalCfdis: 0, totalMonto: 0, tasaCancelacion: 0, montoCobrado: 0, montoPorCobrar: 0, carteraVencida: 0 },
         byType: [],
         bySatStatus: [],
         monthly: [],
@@ -42,7 +43,7 @@ export async function GET() {
       cfdiType: { in: [CfdiType.INGRESO, CfdiType.PAGO, CfdiType.NOMINA] }
     }
 
-    const [byType, bySatStatus, monthly, totals, cancelled, topClients, paymentMethods] = await Promise.all([
+    const [byType, bySatStatus, monthly, totals, cancelled, topClients, paymentMethods, pueInvoices, ppdInvoicesList] = await Promise.all([
       prisma.invoice.groupBy({
         by: ['cfdiType'],
         where: baseWhere,
@@ -76,22 +77,83 @@ export async function GET() {
         _count: { _all: true },
         _sum: { total: true },
       }),
-      prisma.invoice.count({ where: { ...baseWhere, satStatus: 'CANCELADO' } })
-    ,
+      prisma.invoice.count({ where: { ...baseWhere, satStatus: 'CANCELADO' } }),
       prisma.invoice.groupBy({
         by: ['receiverRfc', 'receiverName'],
         where: baseWhere,
         _sum: { total: true },
         orderBy: { _sum: { total: 'desc' } },
         take: 5
-      })
-    ,
+      }),
       prisma.invoice.groupBy({
         by: ['paymentMethod'],
         where: baseWhere,
         _count: { _all: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { ...baseWhere, paymentMethod: 'PUE', cfdiType: { in: [CfdiType.INGRESO, CfdiType.PAGO] } },
+        _sum: { total: true }
+      }),
+      prisma.invoice.findMany({
+        where: { ...baseWhere, paymentMethod: 'PPD', cfdiType: { in: [CfdiType.INGRESO, CfdiType.PAGO] } },
+        select: { uuid: true, total: true, issuanceDate: true },
       })
     ])
+
+    const totalPUE = Number(pueInvoices._sum.total) || 0
+
+    const ppdUuids = ppdInvoicesList.map(i => i.uuid)
+    const relatedCfdis = ppdUuids.length > 0 ? await prisma.invoiceRelatedCfdi.findMany({
+      where: {
+        relatedUuid: { in: ppdUuids },
+        invoice: { cfdiType: 'PAGO', satStatus: 'VIGENTE' }
+      },
+      include: { invoice: { select: { xmlContent: true } } }
+    }) : []
+
+    const paidAmountsByUuid: Record<string, number> = {}
+    const parser = new DOMParser()
+    const getAttr = (el: Element, name: string) => el.getAttribute(name) || ''
+
+    relatedCfdis.forEach(relation => {
+      const xml = relation.invoice.xmlContent
+      if (!xml) return
+      try {
+        const doc = parser.parseFromString(xml, 'text/xml')
+        const pagos = Array.from(doc.getElementsByTagName('*')).filter((el: Element) => el.nodeName.endsWith(':Pago'))
+        pagos.forEach((pagoNode: Element) => {
+          const doctos = Array.from(pagoNode.getElementsByTagName('*')).filter((el: Element) => 
+            el.nodeName.endsWith(':DoctoRelacionado') && 
+            getAttr(el, 'IdDocumento').toLowerCase() === relation.relatedUuid.toLowerCase()
+          )
+          doctos.forEach((doctoNode: Element) => {
+            const impPagado = parseFloat(getAttr(doctoNode, 'ImpPagado')) || 0
+            paidAmountsByUuid[relation.relatedUuid] = (paidAmountsByUuid[relation.relatedUuid] || 0) + impPagado
+          })
+        })
+      } catch {}
+    })
+
+    let totalPPDFullyPaid = 0
+    let totalPPDPending = 0
+    let carteraVencida = 0
+    const now = new Date()
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+    ppdInvoicesList.forEach(inv => {
+      const paid = paidAmountsByUuid[inv.uuid] || 0
+      if (paid >= Number(inv.total) - 0.01) {
+        totalPPDFullyPaid += Number(inv.total)
+      } else {
+        totalPPDPending += Number(inv.total)
+        if (now.getTime() - new Date(inv.issuanceDate).getTime() > THIRTY_DAYS_MS) {
+          carteraVencida += (Number(inv.total) - paid)
+        }
+      }
+    })
+
+    const montoCobrado = totalPUE + totalPPDFullyPaid
+    const montoPorCobrar = totalPPDPending
 
     return NextResponse.json({
       organization: { id: member.organization.id },
@@ -101,6 +163,9 @@ export async function GET() {
         tasaCancelacion: (totals._count._all || 0)
           ? Math.round((cancelled / (totals._count._all || 1)) * 100)
           : 0,
+        montoCobrado,
+        montoPorCobrar,
+        carteraVencida
       },
       byType: byType.map(t => ({ type: t.cfdiType, count: t._count._all, total: t._sum.total || 0 })),
       bySatStatus: bySatStatus.map(s => ({ status: s.satStatus, count: s._count._all })),

@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { XCircle } from 'lucide-react'
+import { XCircle, FileCode, FileText } from 'lucide-react'
+import { toast } from 'sonner'
 
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
@@ -375,7 +376,7 @@ export default function CancelacionesPage() {
               )}
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/50">
+                  <tr className="border-b bg-muted/50 text-xs text-muted-foreground uppercase">
                     {[...columnDefs]
                       .sort((a, b) => columnOrder.indexOf(a.key) - columnOrder.indexOf(b.key))
                       .map(col => {
@@ -402,6 +403,9 @@ export default function CancelacionesPage() {
                         </th>
                       )
                     })}
+                    <th className="h-10 px-4 text-center font-medium align-middle sticky right-0 bg-muted/50 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                      Acciones
+                    </th>
                   </tr>
                   <tr className="border-b bg-muted/30">
                     {[...columnDefs]
@@ -425,6 +429,9 @@ export default function CancelacionesPage() {
                         </th>
                       )
                     })}
+                    <th className="h-10 px-4 text-center align-middle sticky right-0 bg-muted/30 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                      {/* Empty header cell for Actions filter row */}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -440,11 +447,56 @@ export default function CancelacionesPage() {
                             </td>
                           )
                         })}
+                      <td className="p-4 text-center align-middle sticky right-0 bg-background z-10 border-l shadow-[-5px_0_5px_-5px_rgba(0,0,0,0.1)]">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title="XML"
+                            onClick={() => {
+                              const xml = String(row.xmlContent || '')
+                              if (!xml) return
+                              const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `cfdi_${row.uuid || 'cfdi'}.xml`
+                              document.body.appendChild(a)
+                              a.click()
+                              document.body.removeChild(a)
+                              URL.revokeObjectURL(url)
+                            }}
+                          >
+                            <FileCode className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title="PDF"
+                            onClick={() => {
+                              try {
+                                toast.info('Generando PDF...')
+                                const a = document.createElement('a')
+                                a.href = `/api/invoices/${row.id}/pdf`
+                                a.target = '_blank'
+                                document.body.appendChild(a)
+                                a.click()
+                                document.body.removeChild(a)
+                              } catch (error) {
+                                console.error(error)
+                                toast.error('Ocurrió un error al generar el PDF')
+                              }
+                            }}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {invRows.length === 0 && !invLoading && (
                     <tr>
-                      <td colSpan={visibleCols.size} className="p-4 text-center text-muted-foreground">
+                      <td colSpan={visibleCols.size + 1} className="p-4 text-center text-muted-foreground">
                         No se encontraron registros
                       </td>
                     </tr>

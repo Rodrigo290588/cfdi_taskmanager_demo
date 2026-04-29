@@ -30,6 +30,8 @@ type MetricsResponse = {
     tasaCancelacion: number;
     montoCancelado: number;
     montoNotasCredito: number;
+    montoCobrado: number;
+    montoPorCobrar: number;
     taxes: {
       ivaTrasladado: number;
       ivaRetenido: number;
@@ -127,6 +129,8 @@ export default function DashboardFiscalPage() {
         tasaCancelacion: 0,
         montoCancelado: 0,
         montoNotasCredito: 0,
+        montoCobrado: 0,
+        montoPorCobrar: 0,
         taxes: {
           ivaTrasladado: 0,
           ivaRetenido: 0,
@@ -234,8 +238,8 @@ export default function DashboardFiscalPage() {
 
   // Summary
   const montoFacturado = ventas
-  const montoCobrado = 0 // Placeholder
-  const pendiente = montoFacturado - montoCobrado
+  const montoCobrado = metrics?.kpis?.montoCobrado || 0
+  const pendiente = metrics?.kpis?.montoPorCobrar || (montoFacturado - montoCobrado)
 
   return (
     <ProtectedRoute>

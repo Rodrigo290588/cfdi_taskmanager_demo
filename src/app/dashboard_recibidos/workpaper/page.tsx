@@ -447,13 +447,16 @@ export default function WorkpaperRecibidosPage() {
     if (invSatStatus) params.set('satStatus', invSatStatus)
     if (invDateFrom) params.set('dateFrom', invDateFrom)
     if (invDateTo) params.set('dateTo', invDateTo)
+    Object.entries(columnFilters).forEach(([key, value]) => {
+      if (value) params.set(key, value)
+    })
     const res = await fetch(`/api/dashboard_recibidos/invoices?${params.toString()}`)
     const data = await res.json()
     setInvRows(data?.invoices || [])
     setInvTotalPages(data?.pagination?.totalPages || 0)
     setInvTotal(data?.pagination?.total || 0)
     setInvLoading(false)
-  }, [selectedCompanyId, invPage, invLimit, invQuery, invCfdiType, invStatus, invSatStatus, invDateFrom, invDateTo])
+  }, [selectedCompanyId, invPage, invLimit, invQuery, invCfdiType, invStatus, invSatStatus, invDateFrom, invDateTo, columnFilters])
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -944,17 +947,15 @@ export default function WorkpaperRecibidosPage() {
                               >
                                 {c.label}
                               </span>
-                              {['uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName', 'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm', 'cfdiUsage', 'placeOfExpedition', 'exportKey', 'objectTaxComprobante', 'paymentConditions', 'certificationPac'].includes(c.key) && (
-                                <Input
-                                  className="h-7 text-xs px-2 w-full min-w-[100px]"
-                                  placeholder={`Buscar...`}
-                                  value={columnFilters[c.key] || ''}
-                                  onChange={(e) => {
-                                    setColumnFilters(prev => ({ ...prev, [c.key]: e.target.value }))
-                                    setInvPage(1)
-                                  }}
-                                />
-                              )}
+                              <Input
+                                className="h-7 text-xs px-2 w-full min-w-[100px]"
+                                placeholder={`Buscar...`}
+                                value={columnFilters[c.key] || ''}
+                                onChange={(e) => {
+                                  setColumnFilters(prev => ({ ...prev, [c.key]: e.target.value }))
+                                  setInvPage(1)
+                                }}
+                              />
                             </div>
                           </th>
                         ))}

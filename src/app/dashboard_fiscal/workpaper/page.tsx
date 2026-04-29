@@ -430,7 +430,7 @@ export default function WorkpaperEmitidosPage() {
       companyId: selectedCompanyId,
       page: String(invPage),
       limit: String(invLimit),
-      cfdiType: 'INGRESO', // Hardcoded for Reporte de Ingresos
+      cfdiType: 'INGRESO,PAGO,EGRESO,TRASLADO', // Modificado para incluir múltiples tipos
       origin: 'issued' // Only show Emitidos
     })
     if (invQuery) params.set('query', invQuery)
@@ -455,7 +455,7 @@ export default function WorkpaperEmitidosPage() {
       page: '1',
       limit: '999999',
       export: 'true',
-      cfdiType: 'INGRESO',
+      cfdiType: 'INGRESO,PAGO,EGRESO,TRASLADO',
       origin: 'issued'
     })
     if (invQuery) params.set('query', invQuery)
@@ -925,17 +925,15 @@ export default function WorkpaperEmitidosPage() {
                               >
                                 {c.label}
                               </span>
-                              {['uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName', 'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm', 'cfdiUsage', 'placeOfExpedition', 'exportKey', 'objectTaxComprobante', 'paymentConditions', 'certificationPac'].includes(c.key) && (
-                                <Input
-                                  className="h-7 text-xs px-2 w-full min-w-[100px]"
-                                  placeholder={`Buscar...`}
-                                  value={columnFilters[c.key] || ''}
-                                  onChange={(e) => {
-                                    setColumnFilters(prev => ({ ...prev, [c.key]: e.target.value }))
-                                    setInvPage(1)
-                                  }}
-                                />
-                              )}
+                              <Input
+                                className="h-7 text-xs px-2 w-full min-w-[100px]"
+                                placeholder={`Buscar...`}
+                                value={columnFilters[c.key] || ''}
+                                onChange={(e) => {
+                                  setColumnFilters(prev => ({ ...prev, [c.key]: e.target.value }))
+                                  setInvPage(1)
+                                }}
+                              />
                             </div>
                           </th>
                         ))}
