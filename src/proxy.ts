@@ -48,7 +48,7 @@ export default auth((req) => {
     const userRole = req.auth?.user?.systemRole
     if (userRole !== "SUPER_ADMIN" && userRole !== "ADMIN") {
       // Redirect to dashboard if logged in but not admin
-      return withSecurityHeaders(NextResponse.redirect(new URL("/dashboard", req.nextUrl)))
+      return withSecurityHeaders(NextResponse.redirect(new URL("/dashboard_fiscal", req.nextUrl)))
     }
   }
 

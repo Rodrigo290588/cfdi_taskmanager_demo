@@ -41,13 +41,11 @@ import {
   Inbox,
   Receipt,
   Sliders,
-  House,
   Table,
   Calculator,
   Users,
   Scale,
   Activity,
-  CheckCircle,
   XCircle
 } from "lucide-react"
 
@@ -443,18 +441,6 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
           {/* Navigation */}
           <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-            {/* Home link at top */}
-            <Link
-              href="/dashboard"
-              className={cn(
-                buttonVariants({ variant: "ghost" }),
-                "w-full justify-start px-3",
-                pathname === '/dashboard' ? "bg-accent text-accent-foreground" : ""
-              )}
-            >
-              <House className="h-5 w-5 mr-3" />
-              <span>Tablero de ingresos</span>
-            </Link>
             {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={cfdisEmittedOpen} onOpenChange={setCfdisEmittedOpen}>
               <CollapsibleTrigger asChild>
@@ -491,14 +477,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
                 >
                   <Receipt className="h-4 w-4" />
-                  <span>Ingresos parcialmente pagados</span>
-                </Link>
-                <Link
-                  href="/dashboard_fiscal/ingresos-pagados"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <CheckCircle className="h-4 w-4" />
-                  <span>Ingresos pagados</span>
+                  <span>Ingresos parcialmente cobrados</span>
                 </Link>
                 <Link
                   href="/dashboard_fiscal/cancelaciones"

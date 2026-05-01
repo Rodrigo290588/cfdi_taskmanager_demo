@@ -19,6 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Badge } from '@/components/ui/badge'
 // Removed date-fns imports
 import { Loader2, ChevronDown, ChevronRight, FileText, Download } from 'lucide-react'
@@ -101,6 +109,7 @@ export default function PartialIncomePage() {
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [escenarioCobro, setEscenarioCobro] = useState<string[]>([])
 
   // Initialize dates to current month if empty
   useEffect(() => {
@@ -164,6 +173,21 @@ export default function PartialIncomePage() {
 
   const filteredData = React.useMemo(() => {
     return data.filter(invoice => {
+      if (escenarioCobro.length > 0) {
+        const isNoCobrada = invoice.totalPaid <= 0.01;
+        const isTotalmenteCobrada = invoice.saldoInsoluto <= 0.01;
+        const isParcialmenteCobrada = invoice.totalPaid > 0.01 && invoice.saldoInsoluto > 0.01;
+
+        const matchesEscenario = escenarioCobro.some(escenario => {
+          if (escenario === 'NO_COBRADA' && isNoCobrada) return true;
+          if (escenario === 'TOTALMENTE_COBRADA' && isTotalmenteCobrada) return true;
+          if (escenario === 'PARCIALMENTE_COBRADA' && isParcialmenteCobrada) return true;
+          return false;
+        });
+
+        if (!matchesEscenario) return false;
+      }
+
       if (columnFilters.fecha && !formatDate(invoice.issuanceDate).toLowerCase().includes(columnFilters.fecha.toLowerCase())) return false
       const serieFolio = `${invoice.series || ''}-${invoice.folio || ''}`.toLowerCase()
       if (columnFilters.serieFolio && !serieFolio.includes(columnFilters.serieFolio.toLowerCase())) return false
@@ -181,7 +205,7 @@ export default function PartialIncomePage() {
       if (columnFilters.estatus && !estatus.includes(columnFilters.estatus.toLowerCase())) return false
       return true
     })
-  }, [data, columnFilters])
+  }, [data, columnFilters, escenarioCobro])
 
   const handleDownloadZip = async (invoice: PartialIncomeInvoice) => {
     try {
@@ -339,9 +363,9 @@ export default function PartialIncomePage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Ingresos parcialmente pagados</h2>
+            <h2 className="text-3xl font-bold tracking-tight">Ingresos parcialmente cobrados</h2>
             <p className="text-muted-foreground">
-              Gestión de facturas PPD y saldos pendientes
+              CFDI de ingresos parcialmente cobrados 
               {selectedCompany && ` · ${selectedCompany.businessName || selectedCompany.name}`}
             </p>
           </div>
@@ -352,7 +376,7 @@ export default function PartialIncomePage() {
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 border rounded-lg bg-card shadow-sm">
           {/* Invoice Date */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Fecha Emisión (Factura)</label>
@@ -426,6 +450,62 @@ export default function PartialIncomePage() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Escenario de cobro */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Escenario de cobro</label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="h-8 w-full justify-between font-normal px-3">
+                  <span className="truncate">
+                    {escenarioCobro.length === 0 
+                      ? "Todas" 
+                      : escenarioCobro.map(e => {
+                          if (e === 'NO_COBRADA') return 'No cobradas';
+                          if (e === 'PARCIALMENTE_COBRADA') return 'Parcialmente cobradas';
+                          if (e === 'TOTALMENTE_COBRADA') return 'Totalmente cobradas';
+                          return e;
+                        }).join(', ')}
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>Escenario</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={escenarioCobro.includes('NO_COBRADA')}
+                  onCheckedChange={(checked) => {
+                    setEscenarioCobro(prev => 
+                      checked ? [...prev, 'NO_COBRADA'] : prev.filter(e => e !== 'NO_COBRADA')
+                    )
+                  }}
+                >
+                  No cobradas
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={escenarioCobro.includes('PARCIALMENTE_COBRADA')}
+                  onCheckedChange={(checked) => {
+                    setEscenarioCobro(prev => 
+                      checked ? [...prev, 'PARCIALMENTE_COBRADA'] : prev.filter(e => e !== 'PARCIALMENTE_COBRADA')
+                    )
+                  }}
+                >
+                  Parcialmente cobradas
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={escenarioCobro.includes('TOTALMENTE_COBRADA')}
+                  onCheckedChange={(checked) => {
+                    setEscenarioCobro(prev => 
+                      checked ? [...prev, 'TOTALMENTE_COBRADA'] : prev.filter(e => e !== 'TOTALMENTE_COBRADA')
+                    )
+                  }}
+                >
+                  Totalmente cobradas
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -433,7 +513,7 @@ export default function PartialIncomePage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Saldo Insoluto (MXN)</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Saldo por cobrar (MXN)</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -488,7 +568,7 @@ export default function PartialIncomePage() {
       {/* Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Detalle de Facturas PPD</CardTitle>
+          <CardTitle>Reporte de CFDI de ingresos PPD</CardTitle>
           <Button 
             variant="default" 
             size="sm"
@@ -511,7 +591,7 @@ export default function PartialIncomePage() {
                   <TableHead>RFC Receptor</TableHead>
                   <TableHead className="text-right">Total Original</TableHead>
                   <TableHead className="text-right">Total Pagado</TableHead>
-                  <TableHead className="text-right">Saldo Insoluto</TableHead>
+                  <TableHead className="text-right">Saldo por cobrar</TableHead>
                   <TableHead>Moneda</TableHead>
                   <TableHead>Estatus</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>

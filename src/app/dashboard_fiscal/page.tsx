@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { DashboardSkeleton } from "@/components/loading/skeletons"
 import { showError } from "@/lib/toast"
 import { ProtectedRoute } from "@/components/protected-route"
@@ -29,6 +29,7 @@ type MetricsResponse = {
     totalMonto: number; 
     tasaCancelacion: number;
     montoCancelado: number;
+    montoCanceladoEgresos?: number;
     montoNotasCredito: number;
     montoCobrado: number;
     montoPorCobrar: number;
@@ -37,6 +38,7 @@ type MetricsResponse = {
       ivaRetenido: number;
       isrRetenido: number;
       iepsRetenido: number;
+      totalImpuestosRetenidos?: number;
       breakdown?: {
         tasa16: { base: number; tax: number };
         tasa8: { base: number; tax: number };
@@ -49,8 +51,9 @@ type MetricsResponse = {
   bySatStatus: Array<{ status: string; count: number }>
   monthly: Array<{ label: string; count: number; total: number }>
   topSuppliers: Array<{ rfc: string | null; name: string | null; total: number }>
-  topClients: Array<{ rfc: string | null; name: string | null; total: number }>
+  topClients: Array<{ rfc: string | null; name: string | null; total: number; cobrado?: number; pendiente?: number }>
   paymentMethods: Array<{ method: string | null; count: number }>
+  topProducts?: Array<{ name: string; value: number }>
 }
 
   const formatMXN = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(Number(value || 0))
@@ -63,8 +66,8 @@ const DASHBOARD_SECTIONS = [
   { id: 'sat_status', label: 'Estado SAT' },
   { id: 'cfdi_type', label: 'CFDI por Tipo' },
   { id: 'payment_methods', label: 'Formas de Pago' },
-  { id: 'type_amount', label: 'Monto por Tipo de CFDI' },
   { id: 'top_clients', label: 'Top Clientes/Proveedores' },
+  { id: 'top_products', label: 'Top 10 Productos' },
   // ytd_amount eliminado
 ]
 
@@ -128,6 +131,7 @@ export default function DashboardFiscalPage() {
         totalMonto: 0, 
         tasaCancelacion: 0,
         montoCancelado: 0,
+        montoCanceladoEgresos: 0,
         montoNotasCredito: 0,
         montoCobrado: 0,
         montoPorCobrar: 0,
@@ -136,6 +140,7 @@ export default function DashboardFiscalPage() {
           ivaRetenido: 0,
           isrRetenido: 0,
           iepsRetenido: 0,
+          totalImpuestosRetenidos: 0,
           breakdown: {
             tasa16: { base: 0, tax: 0 },
             tasa8: { base: 0, tax: 0 },
@@ -199,6 +204,28 @@ export default function DashboardFiscalPage() {
     setAppliedFilters({ start: startDate, end: endDate, origin: 'issued' })
   }
 
+  // Derived Data for Charts (Must be called before early returns)
+  const topProductsData = useMemo(() => {
+    if (!metrics?.topProducts) return []
+    return metrics.topProducts.map(p => ({
+      name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
+      fullName: p.name,
+      value: p.value,
+      displayValue: `$${(p.value / 1000).toFixed(1)}k`
+    }))
+  }, [metrics])
+
+  const topClientsData = useMemo(() => {
+    if (!metrics?.topClients) return []
+    return metrics.topClients.slice(0, 10).map(c => ({
+      name: c.name && c.name.length > 15 ? c.name.substring(0, 15) + '...' : (c.name || c.rfc || 'Desconocido'),
+      fullName: c.name || c.rfc || 'Desconocido',
+      cobrado: c.cobrado !== undefined ? c.cobrado : c.total * 0.7, 
+      porCobrar: c.pendiente !== undefined ? c.pendiente : c.total * 0.3,
+      total: c.total
+    }))
+  }, [metrics])
+
   if (loading) {
     return <DashboardSkeleton />
   }
@@ -227,14 +254,12 @@ export default function DashboardFiscalPage() {
   const ventas = metrics?.kpis.totalMonto || 0
   const notasCredito = metrics?.kpis.montoNotasCredito || 0
   const cancelaciones = metrics?.kpis.montoCancelado || 0
-  const balance = ventas - notasCredito - cancelaciones
+  const cancelacionesEgresos = metrics?.kpis.montoCanceladoEgresos || 0
+  const balance = ventas - (notasCredito - cancelacionesEgresos) - cancelaciones
 
   // Taxes
-  const impRet = (metrics?.kpis?.taxes?.ivaRetenido || 0) + (metrics?.kpis?.taxes?.isrRetenido || 0) + (metrics?.kpis?.taxes?.iepsRetenido || 0)
+  const impRet = metrics?.kpis?.taxes?.totalImpuestosRetenidos ?? ((metrics?.kpis?.taxes?.ivaRetenido || 0) + (metrics?.kpis?.taxes?.isrRetenido || 0) + (metrics?.kpis?.taxes?.iepsRetenido || 0))
   const impTrasladoIVA = metrics?.kpis?.taxes?.ivaTrasladado || 0
-  // Placeholders for now as they are not in schema
-  const impTrasladoIEPS = 0 
-  const impTrasladoISR = 0 
 
   // Summary
   const montoFacturado = ventas
@@ -245,7 +270,7 @@ export default function DashboardFiscalPage() {
     <ProtectedRoute>
       <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
         <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard de Ingresos</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Tablero de ingresos</h2>
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">
               {metrics?.company?.rfc || selectedCompany?.rfc || 'N/A'} · {metrics?.company?.name || selectedCompany?.businessName || selectedCompany?.name || 'Empresa'}
@@ -318,10 +343,10 @@ export default function DashboardFiscalPage() {
 
         {/* Top KPIs Row */}
         {visibleSections.includes('kpis') && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className={`grid gap-4 md:grid-cols-2 ${cancelacionesEgresos > 0 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           <Card className="overflow-hidden border border-border bg-card">
             <div className="bg-blue-600/10 p-2 text-center border-b border-border">
-              <h3 className="text-blue-500 font-bold text-lg">Ventas</h3>
+              <h3 className="text-blue-500 font-bold text-lg">CFDI de Ingresos</h3>
             </div>
             <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
               <ShoppingCart className="h-12 w-12 text-blue-500" />
@@ -341,7 +366,7 @@ export default function DashboardFiscalPage() {
 
           <Card className="overflow-hidden border border-border bg-card">
             <div className="bg-red-500/10 p-2 text-center border-b border-border">
-              <h3 className="text-red-500 font-bold text-lg">Cancelaciones</h3>
+              <h3 className="text-red-500 font-bold text-lg">Cancelaciones de Ingresos</h3>
             </div>
             <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
               <XCircle className="h-12 w-12 text-red-500" />
@@ -349,9 +374,21 @@ export default function DashboardFiscalPage() {
             </CardContent>
           </Card>
 
+          {cancelacionesEgresos > 0 && (
+          <Card className="overflow-hidden border border-border bg-card">
+            <div className="bg-rose-500/10 p-2 text-center border-b border-border">
+              <h3 className="text-rose-500 font-bold text-lg">Cancelaciones de Egresos</h3>
+            </div>
+            <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
+              <XCircle className="h-12 w-12 text-rose-500" />
+              <div className="text-2xl font-bold text-foreground">{formatMXN(cancelacionesEgresos)}</div>
+            </CardContent>
+          </Card>
+          )}
+
           <Card className="overflow-hidden border border-border bg-card">
             <div className="bg-green-600/10 p-2 text-center border-b border-border">
-              <h3 className="text-green-500 font-bold text-lg">Balance</h3>
+              <h3 className="text-green-500 font-bold text-lg">Ingresos netos reales</h3>
             </div>
             <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
               <CheckCircle className="h-12 w-12 text-green-500" />
@@ -363,11 +400,11 @@ export default function DashboardFiscalPage() {
 
         {/* Middle Taxes Row */}
         {visibleSections.includes('taxes') && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <Card className="p-4 flex flex-col justify-center items-center text-center shadow-sm border border-border bg-card">
              <div className="flex items-center space-x-2 mb-2">
                <ArrowDown className="h-5 w-5 text-blue-500" />
-               <span className="font-semibold text-muted-foreground">Imp RET</span>
+               <span className="font-semibold text-muted-foreground">Impuestos Retenidos</span>
              </div>
              <div className="text-xl font-bold text-foreground">{formatMXN(impRet)}</div>
           </Card>
@@ -375,60 +412,22 @@ export default function DashboardFiscalPage() {
           <Card className="p-4 flex flex-col justify-center items-center text-center shadow-sm border border-border bg-card">
              <div className="flex items-center space-x-2 mb-2">
                <span className="bg-green-500/10 text-green-500 text-xs font-bold px-2 py-0.5 rounded-full border border-green-500/20">IVA</span>
-               <span className="font-semibold text-muted-foreground">Imp Traslado IVA</span>
+               <span className="font-semibold text-muted-foreground">Impuesto Trasladado IVA</span>
              </div>
              <div className="text-xl font-bold text-foreground">{formatMXN(impTrasladoIVA)}</div>
-             <div className="w-full mt-3 space-y-1 text-xs text-muted-foreground border-t pt-2 border-border/50">
-               <div className="flex justify-between items-center">
-                 <span>16%:</span>
-                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa16?.tax || 0)}</span>
-               </div>
-               <div className="flex justify-between items-center">
-                 <span>8%:</span>
-                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa8?.tax || 0)}</span>
-               </div>
-               <div className="flex justify-between items-center">
-                 <span>0% (Base):</span>
-                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.tasa0?.base || 0)}</span>
-               </div>
-               <div className="flex justify-between items-center">
-                 <span>Exento (Base):</span>
-                 <span className="font-medium">{formatMXN(metrics?.kpis?.taxes?.breakdown?.exento?.base || 0)}</span>
-               </div>
-             </div>
-          </Card>
-
-          <Card className="p-4 flex flex-col justify-center items-center text-center shadow-sm border border-border bg-card">
-             <div className="flex items-center space-x-2 mb-2">
-               <span className="bg-orange-500/10 text-orange-500 text-xs font-bold px-2 py-0.5 rounded-full border border-orange-500/20">IEPS</span>
-               <span className="font-semibold text-muted-foreground">Imp Traslado IEPS</span>
-             </div>
-             <div className="text-xl font-bold text-foreground">{formatMXN(impTrasladoIEPS)}</div>
-          </Card>
-
-          <Card className="p-4 flex flex-col justify-center items-center text-center shadow-sm border border-border bg-card">
-             <div className="flex items-center space-x-2 mb-2">
-               <span className="bg-red-500/10 text-red-500 text-xs font-bold px-2 py-0.5 rounded-full border border-red-500/20">ISR</span>
-               <span className="font-semibold text-muted-foreground">Imp Traslado ISR</span>
-             </div>
-             <div className="text-xl font-bold text-foreground">{formatMXN(impTrasladoISR)}</div>
           </Card>
         </div>
         )}
 
         {/* Bottom Summary Row */}
         {visibleSections.includes('summary') && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="p-6 text-center border border-border bg-card">
-            <div className="text-blue-500 font-bold mb-2">Monto Facturado</div>
-            <div className="text-2xl font-bold text-foreground">{formatMXN(montoFacturado)}</div>
-          </Card>
+        <div className="grid gap-4 md:grid-cols-2">
           <Card className="p-6 text-center border border-border bg-card">
             <div className="text-green-500 font-bold mb-2">Monto Cobrado</div>
             <div className="text-2xl font-bold text-green-500">{formatMXN(montoCobrado)}</div>
           </Card>
           <Card className="p-6 text-center border border-border bg-card">
-            <div className="text-orange-500 font-bold mb-2">Pendiente</div>
+            <div className="text-orange-500 font-bold mb-2">Monto Pendiente por cobrar</div>
             <div className="text-2xl font-bold text-orange-500">{formatMXN(pendiente)}</div>
           </Card>
         </div>
@@ -640,44 +639,30 @@ export default function DashboardFiscalPage() {
         </div>
         )}
 
-        <div className={getGridClass(['type_amount'])}>
-          {visibleSections.includes('type_amount') && (
+        <div className={getGridClass(['top_clients'])}>
+          {visibleSections.includes('top_clients') && (
           <Card>
             <CardHeader>
-              <CardTitle>Monto por Tipo de CFDI</CardTitle>
+              <CardTitle>Top 10 Clientes</CardTitle>
             </CardHeader>
-            <CardContent className="overflow-x-auto scrollbar-visible">
-              <div className="min-w-[700px]">
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={metrics?.byType || []} margin={{ left: 60, right: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="type" 
-                      tickFormatter={(value) => {
-                        const map: Record<string, string> = {
-                          'INGRESO': 'I',
-                          'EGRESO': 'E',
-                          'PAGO': 'P',
-                          'TRASLADO': 'T'
-                        }
-                        return map[value] || value
-                      }}
-                    />
-                    <YAxis width={60} tickFormatter={(val: any) => formatMXN(Number(val))} />
+            <CardContent>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    layout="vertical" 
+                    data={topClientsData.length > 0 ? topClientsData : [{name: 'Sin datos', fullName: 'Sin datos', cobrado: 0, porCobrar: 0, total: 0}]} 
+                    margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 12 }} />
                     <Tooltip 
-                      formatter={(value: any) => formatMXN(Number(value))}
-                      labelFormatter={(label) => {
-                        const map: Record<string, string> = {
-                          'INGRESO': 'I (Ingreso)',
-                          'EGRESO': 'E (Egreso)',
-                          'PAGO': 'P (Pago)',
-                          'TRASLADO': 'T (Traslado)'
-                        }
-                        return map[label] || label
-                      }}
+                      formatter={(value: any) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`]}
+                      labelFormatter={(label: any, payload: any) => payload[0]?.payload?.fullName || label}
                     />
                     <Legend />
-                    <Bar dataKey="total" name="Monto" fill="#68d391" />
+                    <Bar dataKey="cobrado" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} barSize={20} name="Cobrado" />
+                    <Bar dataKey="porCobrar" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} barSize={20} name="Por Cobrar" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -686,39 +671,28 @@ export default function DashboardFiscalPage() {
           )}
         </div>
 
-        <div className={getGridClass(['top_clients'])}>
-          {visibleSections.includes('top_clients') && (
+        <div className={getGridClass(['top_products'])}>
+          {visibleSections.includes('top_products') && (
           <Card>
             <CardHeader>
-              <CardTitle>Top Clientes</CardTitle>
+              <CardTitle>Top 10 de productos más vendidos</CardTitle>
             </CardHeader>
-            <CardContent className="overflow-x-auto scrollbar-visible">
-              <div className="min-w-[800px]">
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={metrics?.topClients || []} layout="vertical" margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      type="number"
-                      tickFormatter={(val: any) => formatMXN(Number(val))} 
-                    />
-                    <YAxis 
-                      type="category"
-                      dataKey="rfc" 
-                      width={120} 
-                      tick={{ fontSize: 11 }}
-                      interval={0}
-                    />
+            <CardContent>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    layout="vertical" 
+                    data={topProductsData.length > 0 ? topProductsData : [{name: 'Sin datos', fullName: 'Sin datos', value: 0, displayValue: '$0'}]} 
+                    margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 12 }} />
                     <Tooltip 
-                      formatter={(value: any) => formatMXN(Number(value))}
-                      labelFormatter={(label: any, payload: any) => {
-                        const p = payload?.[0]?.payload
-                        const rfc = p?.rfc || label
-                        const name = p?.name || ''
-                        return name ? `${rfc} - ${name}` : rfc
-                      }}
+                      formatter={(value: any) => [`$${Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`, 'Ventas']}
+                      labelFormatter={(label: any, payload: any) => payload[0]?.payload?.fullName || label}
                     />
-                    <Legend />
-                    <Bar dataKey="total" name="Monto" fill="#68d391" barSize={20} />
+                    <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

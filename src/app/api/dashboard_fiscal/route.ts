@@ -263,11 +263,13 @@ export async function GET(request: NextRequest) {
     }
 
     let totalIvaXml = 0
+    let totalImpuestosRetenidosXml = 0
 
     // Use RegEx for faster parsing of XML contents, scoped to Conceptos to avoid double counting
     const conceptosRegex = /<[^:>]*:?Conceptos[^>]*>([\s\S]*?)<\/[^:>]*:?Conceptos>/i
     const trasladoRegex = /<[^:>]*:?Traslado([^>]+)>/gi
     const attrRegex = /(\w+)="([^"]+)"/g
+    const totalRetenidosRegex = /TotalImpuestosRetenidos=["']([^"']+)["']/i
 
     taxConcepts.forEach(inv => {
       if (!inv.xmlContent) return
@@ -275,6 +277,11 @@ export async function GET(request: NextRequest) {
       const xml = inv.xmlContent
       const conceptosMatch = xml.match(conceptosRegex)
       const parseTarget = conceptosMatch ? conceptosMatch[1] : xml // fallback to full xml if not found
+
+      const retenidosMatch = xml.match(totalRetenidosRegex)
+      if (retenidosMatch) {
+        totalImpuestosRetenidosXml += parseFloat(retenidosMatch[1] || '0')
+      }
 
       for (const m of parseTarget.matchAll(trasladoRegex)) {
         const attrsStr = m[1]
@@ -309,7 +316,7 @@ export async function GET(request: NextRequest) {
     })
 
     const cancelled = await prisma.invoice.aggregate({ 
-      where: { ...baseWhere, satStatus: 'CANCELADO' },
+      where: { ...baseWhere, satStatus: 'CANCELADO', cfdiType: CfdiType.INGRESO },
       _sum: { total: true },
       _count: { _all: true }
     })
@@ -331,6 +338,11 @@ export async function GET(request: NextRequest) {
 
     const egresos = await prisma.invoice.aggregate({
       where: egresosWhere,
+      _sum: { total: true }
+    })
+
+    const cancelledEgresos = await prisma.invoice.aggregate({
+      where: { ...egresosWhere, satStatus: 'CANCELADO' },
       _sum: { total: true }
     })
 
@@ -433,6 +445,7 @@ export async function GET(request: NextRequest) {
         totalMonto: totals._sum.total || 0,
         tasaCancelacion: (totals._count._all || 0) ? Math.round(((cancelled._count._all || 0) / (totals._count._all || 1)) * 100) : 0,
         montoCancelado: cancelled._sum.total || 0,
+        montoCanceladoEgresos: cancelledEgresos._sum.total || 0,
         montoNotasCredito: egresos._sum.total || 0,
         montoCobrado: montoCobrado || 0,
         montoPorCobrar: montoPorCobrar || 0,
@@ -442,6 +455,7 @@ export async function GET(request: NextRequest) {
           ivaRetenido: totals._sum.ivaWithheld || 0,
           isrRetenido: totals._sum.isrWithheld || 0,
           iepsRetenido: totals._sum.iepsWithheld || 0,
+          totalImpuestosRetenidos: totalImpuestosRetenidosXml || (Number(totals._sum.ivaWithheld || 0) + Number(totals._sum.isrWithheld || 0) + Number(totals._sum.iepsWithheld || 0)),
           breakdown: ivaBreakdown
         }
       },

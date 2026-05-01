@@ -21,7 +21,7 @@ export default function SignIn() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard' })
+      await signIn('google', { callbackUrl: '/dashboard_fiscal' })
     } catch {
       setIsLoading(false)
     }
