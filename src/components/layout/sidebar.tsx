@@ -141,11 +141,21 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       if (isValidSaved && savedCompany) {
         // Find the full updated object from the list to ensure freshness
         const updatedSaved = data.companies?.find((c: FiscalEntity) => c.id === savedCompany?.id)
-        setSelectedEntity(updatedSaved || savedCompany)
+        setSelectedEntity(prev => {
+          // Avoid triggering unnecessary updates if the ID hasn't changed
+          if (prev?.id === (updatedSaved?.id || savedCompany?.id)) {
+            return prev;
+          }
+          return updatedSaved || savedCompany;
+        })
       } else if (data.companies && data.companies.length > 0) {
         // Fallback to first active company as selected, or first company if none active
         const activeCompany = data.companies.find((company: FiscalEntity) => company.isActive)
-        setSelectedEntity(activeCompany || data.companies[0])
+        setSelectedEntity(prev => {
+          const newSelection = activeCompany || data.companies![0]
+          if (prev?.id === newSelection?.id) return prev;
+          return newSelection;
+        })
       } else {
         setSelectedEntity(null)
       }

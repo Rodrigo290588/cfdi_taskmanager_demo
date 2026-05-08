@@ -119,7 +119,11 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       // Set first active company as selected, or first company if none active
       if (data.companies && data.companies.length > 0) {
         const activeCompany = data.companies.find((company: FiscalEntity) => company.isActive)
-        setSelectedEntity(activeCompany || data.companies[0])
+        setSelectedEntity(prev => {
+          const newSelection = activeCompany || data.companies![0]
+          if (prev?.id === newSelection?.id) return prev;
+          return newSelection;
+        })
       } else {
         setSelectedEntity(null)
       }

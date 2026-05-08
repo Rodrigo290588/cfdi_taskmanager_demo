@@ -77,4 +77,13 @@ Para evitar errores comunes y mantener la arquitectura sana, sigue siempre estas
      4. `git push origin <rama>`
      5. `git push origin --tags`
    - Esto asegura que siempre haya una foto exacta del código (release/tag) correspondiente a las nuevas funcionalidades subidas.
+
+9. **Patrón de Reportes Desglosados (Drilldown Popups):**
+   - **Regla Obligatoria:** Cuando se implemente un desglose de datos (Drilldown) al hacer clic en una tarjeta o métrica, se debe seguir estrictamente este patrón de UI/UX y Funcionalidad:
+     - **Pantalla Completa:** El Dialog (Modal) debe abarcar el 100% de la pantalla para maximizar el área de datos usando las clases `!max-w-[100vw] !w-screen !max-h-screen !h-screen border-0 rounded-none m-0 inset-0 translate-x-0 translate-y-0`.
+     - **Resumen Superior:** El encabezado debe mostrar claramente qué filtros originaron esa consulta (ej. Empresa, Rango de Fechas exacto de la base de datos) y un desglose de la sumatoria principal (ej. PUE vs CRP).
+     - **Tabla y Scroll:** La tabla debe estar envuelta en un contenedor con `flex-1 min-h-0 overflow-hidden flex flex-col [&_div[data-slot=table-container]]:overflow-auto [&_div[data-slot=table-container]]:h-full` para garantizar que el scroll horizontal siempre se mantenga fijo en la base del monitor y no se pierda al bajar los registros.
+     - **Filtros por Columna:** Debajo de los títulos (`TableHeader`), debe existir una segunda fila (`TableRow`) que contenga un `<Input>` por cada columna. Esto debe filtrar en tiempo real (usando `useMemo` y `.toLowerCase().includes()`) los datos en memoria (`drilldownData`).
+     - **Columnas Comunes:** El campo UUID siempre debe ir con tipografía `font-mono`. Si hay un UUID Relacionado, debe truncarse con `max-w-[120px] truncate` y mostrar su valor completo al hacer hover (`title="..."`). Separar el Folio de la Serie en dos columnas distintas.
+     - **Exportación y Totales:** La fila de "Total" y la función de "Exportar a Excel (CSV)" **solo deben considerar los registros actualmente visibles/filtrados** (`filteredDrilldownData`). El CSV debe inyectar el BOM UTF-8 (`\uFEFF`) antes del contenido para evitar problemas de codificación de caracteres especiales (acentos, ñ) al abrirse en Microsoft Excel.
    

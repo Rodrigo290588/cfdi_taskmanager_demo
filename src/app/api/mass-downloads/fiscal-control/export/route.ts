@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 
 function parseNumber(value: string | null): number | null {
@@ -68,7 +67,8 @@ export async function GET(request: Request) {
       }
     })
 
-    const baseSatWhere: Prisma.SatMetadataWhereInput = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const baseSatWhere: any = {
       OR: [
         { rfcEmisor: targetRfc },
         { rfcReceptor: targetRfc }
@@ -116,7 +116,8 @@ export async function GET(request: Request) {
       
       Object.entries(columnFilters).forEach(([key, value]) => {
         const query = value.toLowerCase()
-        const andArray = baseSatWhere.AND as Prisma.SatMetadataWhereInput[]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const andArray = baseSatWhere.AND as any[]
         
         switch(key) {
           case 'uuid':

@@ -47,8 +47,8 @@ export default function DashboardNominaPage() {
         const raw = localStorage.getItem('selectedCompany')
         if (raw) {
           const parsed = JSON.parse(raw) as SelectedCompany
-          setSelectedCompanyId(parsed?.id || null)
-          setSelectedCompany(parsed || null)
+          setSelectedCompanyId(prev => prev === parsed?.id ? prev : (parsed?.id || null))
+          setSelectedCompany(prev => prev?.id === parsed?.id ? prev : (parsed || null))
         }
       } catch {}
     }

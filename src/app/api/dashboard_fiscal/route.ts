@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Aggregations
-    const [byType, bySatStatus, monthly, topCounterparties, paymentMethods, totals, topProducts, taxConcepts] = await Promise.all([
+    const [byType, bySatStatus, monthly, topCounterparties, paymentMethods, totals, ventasNominativas, ventasGlobales, operacionesIndividuales, ingresosBrutosData, topProducts, taxConcepts, ivaAcreditableConcepts] = await Promise.all([
       // CFDI type counts and sums
       prisma.invoice.groupBy({
         by: ['cfdiType'],
@@ -239,6 +239,55 @@ export async function GET(request: NextRequest) {
           iepsWithheld: true
         },
       }),
+      // Ventas Nominativas
+      prisma.invoice.aggregate({
+        where: {
+          ...baseWhere,
+          cfdiType: CfdiType.INGRESO,
+          satStatus: 'VIGENTE',
+          receiverRfc: {
+            notIn: ['XAXX010101000', 'XEXX010101000']
+          }
+        },
+        _sum: { subtotal: true }
+      }),
+      // Ventas Globales (Público en General)
+      prisma.invoice.aggregate({
+        where: {
+          ...baseWhere,
+          cfdiType: CfdiType.INGRESO,
+          satStatus: 'VIGENTE',
+          receiverRfc: 'XAXX010101000',
+          xmlContent: {
+            contains: 'InformacionGlobal'
+          }
+        },
+        _sum: { subtotal: true }
+      }),
+      // Operaciones Individuales (Público en General)
+      prisma.invoice.aggregate({
+        where: {
+          ...baseWhere,
+          cfdiType: CfdiType.INGRESO,
+          satStatus: 'VIGENTE',
+          receiverRfc: 'XAXX010101000',
+          NOT: {
+            xmlContent: {
+              contains: 'InformacionGlobal'
+            }
+          }
+        },
+        _sum: { subtotal: true }
+      }),
+      // Ingresos Brutos Reales (Brutos y Descuentos)
+      prisma.invoice.aggregate({
+        where: {
+          ...baseWhere,
+          cfdiType: CfdiType.INGRESO,
+          satStatus: 'VIGENTE'
+        },
+        _sum: { subtotal: true, discount: true }
+      }),
       // Top 10 products
       prisma.invoiceConcept.groupBy({
         by: ['description'],
@@ -249,8 +298,18 @@ export async function GET(request: NextRequest) {
       }),
       // Invoices XML for Tax Breakdown
       prisma.invoice.findMany({
-        where: baseWhere,
-        select: { xmlContent: true }
+        where: { ...baseWhere, satStatus: 'VIGENTE' },
+        select: { xmlContent: true, cfdiType: true, paymentMethod: true, currency: true, exchangeRate: true, subtotal: true }
+      }),
+      // Invoices XML for IVA Acreditable (Gastos y Compras)
+      prisma.invoice.findMany({
+        where: { 
+          receiverRfc: rfc, 
+          cfdiType: { in: ['INGRESO', 'EGRESO', 'PAGO'] },
+          satStatus: 'VIGENTE',
+          ...dateFilter
+        },
+        select: { xmlContent: true, cfdiType: true, paymentMethod: true }
       })
     ])
 
@@ -264,12 +323,18 @@ export async function GET(request: NextRequest) {
 
     let totalIvaXml = 0
     let totalImpuestosRetenidosXml = 0
+    let ivaCobradoTotal = 0
+    let ivaCobradoCrp = 0
+    let ivaEnFacturasPpd = 0
+    let ingresosCobradosPue = 0
+    let ingresosCobradosCrp = 0
 
     // Use RegEx for faster parsing of XML contents, scoped to Conceptos to avoid double counting
     const conceptosRegex = /<[^:>]*:?Conceptos[^>]*>([\s\S]*?)<\/[^:>]*:?Conceptos>/i
     const trasladoRegex = /<[^:>]*:?Traslado([^>]+)>/gi
     const attrRegex = /(\w+)="([^"]+)"/g
     const totalRetenidosRegex = /TotalImpuestosRetenidos=["']([^"']+)["']/i
+    const parserForTaxes = new DOMParser()
 
     taxConcepts.forEach(inv => {
       if (!inv.xmlContent) return
@@ -281,6 +346,15 @@ export async function GET(request: NextRequest) {
       const retenidosMatch = xml.match(totalRetenidosRegex)
       if (retenidosMatch) {
         totalImpuestosRetenidosXml += parseFloat(retenidosMatch[1] || '0')
+      }
+
+      // Paso 1.3: Sumatoria de Facturas de Contado (PUE)
+      if (inv.cfdiType === 'INGRESO' && inv.paymentMethod === 'PUE') {
+        let subtotal = Number(inv.subtotal) || 0
+        if (inv.currency && inv.currency !== 'MXN' && inv.exchangeRate) {
+          subtotal = subtotal * Number(inv.exchangeRate)
+        }
+        ingresosCobradosPue += subtotal
       }
 
       for (const m of parseTarget.matchAll(trasladoRegex)) {
@@ -311,6 +385,104 @@ export async function GET(request: NextRequest) {
               ivaBreakdown.tasa0.base += base
             }
           }
+          
+          // Paso A: Sumar IVA de Facturas PUE
+          if (inv.cfdiType === 'INGRESO' && inv.paymentMethod === 'PUE' && attrs['Impuesto'] === '002') {
+            ivaCobradoTotal += tax
+          }
+
+          // Sumar IVA de Facturas PPD (Para IVA Pendiente de Cobro)
+          if (inv.cfdiType === 'INGRESO' && inv.paymentMethod === 'PPD' && attrs['Impuesto'] === '002') {
+            ivaEnFacturasPpd += tax
+          }
+        }
+      }
+
+      // Paso B: Sumar IVA de Complementos (CRP)
+      if (inv.cfdiType === 'PAGO') {
+        try {
+          const doc = parserForTaxes.parseFromString(xml, 'text/xml')
+          const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+          pagos.forEach(pagoNode => {
+            const impuestosP = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':ImpuestosP'))
+            impuestosP.forEach(impNode => {
+               const trasladosP = Array.from(impNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':TrasladoP'))
+               trasladosP.forEach(trasladoP => {
+                  const impuestoP = trasladoP.getAttribute('ImpuestoP')
+                  const importeP = parseFloat(trasladoP.getAttribute('ImporteP') || '0')
+                  const baseP = parseFloat(trasladoP.getAttribute('BaseP') || '0')
+                  if (impuestoP === '002') {
+                     ivaCobradoTotal += importeP
+                     ivaCobradoCrp += importeP
+                     ingresosCobradosCrp += baseP
+                  }
+               })
+            })
+          })
+        } catch {
+          // ignore parse error
+        }
+      }
+    })
+
+    // Calcular IVA Acreditable (Gastos y Compras)
+    let ivaPueRecibido = 0
+    let ivaPpdRecibido = 0
+    let ivaERecibido = 0
+
+    ivaAcreditableConcepts.forEach(inv => {
+      if (!inv.xmlContent) return
+      const xml = inv.xmlContent
+
+      if (inv.cfdiType === 'INGRESO' && inv.paymentMethod === 'PUE') {
+        const conceptosMatch = xml.match(conceptosRegex)
+        const parseTarget = conceptosMatch ? conceptosMatch[1] : xml
+        for (const m of parseTarget.matchAll(trasladoRegex)) {
+          const attrsStr = m[1]
+          const attrs: Record<string, string> = {}
+          for (const attrMatch of attrsStr.matchAll(attrRegex)) {
+            attrs[attrMatch[1]] = attrMatch[2]
+          }
+          if (attrs['Impuesto'] === '002') {
+            ivaPueRecibido += parseFloat(attrs['Importe'] || '0')
+          }
+        }
+      }
+
+      if (inv.cfdiType === 'EGRESO') {
+        const conceptosMatch = xml.match(conceptosRegex)
+        const parseTarget = conceptosMatch ? conceptosMatch[1] : xml
+        for (const m of parseTarget.matchAll(trasladoRegex)) {
+          const attrsStr = m[1]
+          const attrs: Record<string, string> = {}
+          for (const attrMatch of attrsStr.matchAll(attrRegex)) {
+            attrs[attrMatch[1]] = attrMatch[2]
+          }
+          if (attrs['Impuesto'] === '002') {
+            ivaERecibido += parseFloat(attrs['Importe'] || '0')
+          }
+        }
+      }
+
+      if (inv.cfdiType === 'PAGO') {
+        try {
+          const doc = parserForTaxes.parseFromString(xml, 'text/xml')
+          const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+          pagos.forEach(pagoNode => {
+            const impuestosP = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':ImpuestosP'))
+            impuestosP.forEach(impNode => {
+               const trasladosP = Array.from(impNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':TrasladoP'))
+               trasladosP.forEach(trasladoP => {
+                  const impuestoP = trasladoP.getAttribute('ImpuestoP')
+                  const importeP = parseFloat(trasladoP.getAttribute('ImporteP') || '0')
+                  if (impuestoP === '002') {
+                     ivaPpdRecibido += importeP
+                  }
+               })
+            })
+          })
+        } catch {
+          // ignore parse error
         }
       }
     })
@@ -337,8 +509,8 @@ export async function GET(request: NextRequest) {
     }
 
     const egresos = await prisma.invoice.aggregate({
-      where: egresosWhere,
-      _sum: { total: true }
+      where: { ...egresosWhere, satStatus: 'VIGENTE' },
+      _sum: { subtotal: true }
     })
 
     const cancelledEgresos = await prisma.invoice.aggregate({
@@ -422,6 +594,41 @@ export async function GET(request: NextRequest) {
     const montoCobrado = totalPUE + totalPPDFullyPaid
     const montoPorCobrar = totalPPDPending
 
+    // Ingresos Pendientes de Cobro (PPD - CRP - Notas de Crédito)
+    const relatedEgresos = ppdUuids.length > 0 ? await prisma.invoiceRelatedCfdi.findMany({
+      where: {
+        relatedUuid: { in: ppdUuids },
+        invoice: { cfdiType: 'EGRESO', satStatus: 'VIGENTE' }
+      },
+      select: { invoiceId: true, invoice: { select: { total: true, xmlContent: true } } },
+      distinct: ['invoiceId']
+    }) : []
+    const sumNotasCreditoAplicadas = relatedEgresos.reduce((acc, rel) => acc + Number(rel.invoice.total), 0)
+
+    // Calcular IVA de Ajustes (Notas de Crédito relacionadas a PPD)
+    let ivaNotasCreditoPpd = 0
+    relatedEgresos.forEach(rel => {
+      if (!rel.invoice.xmlContent) return
+      const xml = rel.invoice.xmlContent
+      const conceptosMatch = xml.match(conceptosRegex)
+      const parseTarget = conceptosMatch ? conceptosMatch[1] : xml
+      for (const m of parseTarget.matchAll(trasladoRegex)) {
+        const attrsStr = m[1]
+        const attrs: Record<string, string> = {}
+        for (const attrMatch of attrsStr.matchAll(attrRegex)) {
+          attrs[attrMatch[1]] = attrMatch[2]
+        }
+        if (attrs['Impuesto'] === '002') {
+          ivaNotasCreditoPpd += parseFloat(attrs['Importe'] || '0')
+        }
+      }
+    })
+
+    const sumFacturasPPD = ppdInvoicesList.reduce((acc, inv) => acc + Number(inv.total), 0)
+    const sumComplementosPago = Object.values(paidAmountsByUuid).reduce((acc, val) => acc + val, 0)
+    const ingresosPendientesCobro = sumFacturasPPD - sumComplementosPago - sumNotasCreditoAplicadas
+    const ivaPendienteCobro = ivaEnFacturasPpd - ivaCobradoCrp - ivaNotasCreditoPpd
+
     // Resolve display names for top clients by RFC
     const topRfcs = topCounterparties.map(c => 
       originParam === 'received' 
@@ -442,15 +649,30 @@ export async function GET(request: NextRequest) {
       company: { id: companyId, rfc, name: company.businessName },
       kpis: {
         totalCfdis: totals._count._all || 0,
-        totalMonto: totals._sum.total || 0,
+        totalMonto: Number(totals._sum.total || 0),
+        ventasNominativas: Number(ventasNominativas._sum.subtotal || 0),
+        ventasGlobales: Number(ventasGlobales._sum.subtotal || 0),
+        operacionesIndividuales: Number(operacionesIndividuales._sum.subtotal || 0),
+        ingresosBrutos: Number(ingresosBrutosData._sum.subtotal || 0),
+        descuentosYBonificaciones: Number(ingresosBrutosData._sum.discount || 0),
         tasaCancelacion: (totals._count._all || 0) ? Math.round(((cancelled._count._all || 0) / (totals._count._all || 1)) * 100) : 0,
-        montoCancelado: cancelled._sum.total || 0,
-        montoCanceladoEgresos: cancelledEgresos._sum.total || 0,
-        montoNotasCredito: egresos._sum.total || 0,
+        montoCancelado: Number(cancelled._sum.total || 0),
+        montoCanceladoEgresos: Number(cancelledEgresos._sum.total || 0),
+        montoNotasCredito: Number(egresos._sum.subtotal || 0),
         montoCobrado: montoCobrado || 0,
         montoPorCobrar: montoPorCobrar || 0,
         carteraVencida: carteraVencida || 0,
+        ingresosCobradosPue,
+        ingresosCobradosCrp,
+        ingresosCobradosTotal: ingresosCobradosPue + ingresosCobradosCrp,
+        ingresosPendientesCobro,
+        ivaPendienteCobro,
         taxes: {
+          ivaAcreditableTotal: ivaPueRecibido + ivaPpdRecibido - ivaERecibido,
+          ivaPueRecibido: ivaPueRecibido,
+          ivaPpdRecibido: ivaPpdRecibido,
+          ivaERecibido: ivaERecibido,
+          ivaCobradoTotal: ivaCobradoTotal,
           ivaTrasladado: totalIvaXml || totals._sum.ivaTransferred || 0,
           ivaRetenido: totals._sum.ivaWithheld || 0,
           isrRetenido: totals._sum.isrWithheld || 0,
