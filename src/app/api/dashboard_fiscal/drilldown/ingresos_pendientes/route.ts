@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     if (!fiscalEntity) return NextResponse.json({ data: [] })
 
     // Date filters apply to the issuance date of the original PPD invoice
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dateFilter: any = {}
     if (startDateParam && endDateParam) {
       const end = new Date(endDateParam)
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
       dateFilter.issuanceDate = { gte: new Date(startDateParam), lte: end }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let baseWhere: any
     if (originParam === 'received') {
       baseWhere = { receiverRfc: rfc, cfdiType: 'INGRESO', paymentMethod: 'PPD', satStatus: 'VIGENTE', ...dateFilter }

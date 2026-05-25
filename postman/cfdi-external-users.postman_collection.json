@@ -1,0 +1,214 @@
+{
+  "info": {
+    "name": "CFDI External Users API",
+    "_postman_id": "2f89bf2c-6f11-49e0-9fe2-5f458bd2d1c7",
+    "description": "Coleccion para autenticacion OAuth 2.0 Client Credentials y alta externa de usuarios por API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "clientId",
+      "value": "demo-client"
+    },
+    {
+      "key": "clientSecret",
+      "value": "demo-secret"
+    },
+    {
+      "key": "scope",
+      "value": "users:create"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. OAuth Token",
+      "request": {
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "{{clientId}}",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "{{clientSecret}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "client_credentials",
+              "type": "text"
+            },
+            {
+              "key": "scope",
+              "value": "{{scope}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/oauth/token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "oauth",
+            "token"
+          ]
+        },
+        "description": "Obtiene un JWT M2M con el scope users:create."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', function () {",
+              "  pm.response.to.have.status(200)",
+              "})",
+              "",
+              "const data = pm.response.json()",
+              "",
+              "pm.test('Devuelve access_token', function () {",
+              "  pm.expect(data.access_token).to.be.a('string')",
+              "})",
+              "",
+              "if (data.access_token) {",
+              "  pm.collectionVariables.set('accessToken', data.access_token)",
+              "}"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "2. Alta Individual",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user\": {\n    \"correo\": \"proveedor.demo@cliente.com\",\n    \"nombre_usuario\": \"Proveedor Demo\",\n    \"rol_empresa\": \"proveedor\",\n    \"empresas\": [\"AAA010101AAA\"],\n    \"rfc_proveedor\": \"XAXX010101000\",\n    \"nombre_proveedor\": \"Proveedor Demo SA de CV\",\n    \"externalId\": \"ERP-USER-001\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/external/users",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "external",
+            "users"
+          ]
+        },
+        "description": "Crea una invitacion externa individual delegando la creacion de credenciales al flujo interno de invitaciones."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 201', function () {",
+              "  pm.response.to.have.status(201)",
+              "})"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "3. Alta Masiva",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"users\": [\n    {\n      \"correo\": \"auditor.demo@cliente.com\",\n      \"nombre_usuario\": \"Auditor Demo\",\n      \"rol_empresa\": \"auditor\",\n      \"empresas\": [\"AAA010101AAA\"],\n      \"externalId\": \"ERP-USER-002\"\n    },\n    {\n      \"correo\": \"visualizador.demo@cliente.com\",\n      \"nombre_usuario\": \"Visualizador Demo\",\n      \"rol_empresa\": \"visualizador\",\n      \"empresas\": [\"AAA010101AAA\", \"BBB010101BBB\"],\n      \"externalId\": \"ERP-USER-003\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/external/users",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "external",
+            "users"
+          ]
+        },
+        "description": "Crea invitaciones externas en lote. Cada registro valida reglas de negocio y devuelve resumen final."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 201', function () {",
+              "  pm.response.to.have.status(201)",
+              "})"
+            ]
+          }
+        }
+      ],
+      "response": []
+    }
+  ]
+}

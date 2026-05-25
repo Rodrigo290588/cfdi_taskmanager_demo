@@ -1,4 +1,4 @@
-import NextAuth, { User } from "next-auth"
+import NextAuth, { User, NextAuthConfig, Account } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
@@ -6,12 +6,12 @@ import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
 import { JWT } from "next-auth/jwt"
 import { Session } from "next-auth"
-import type { Adapter } from "next-auth/adapters"
+import type { Adapter, AdapterUser } from "next-auth/adapters"
 import { signInSchema } from "@/schemas/auth"
 
 import { rateLimit } from "@/lib/rate-limit"
 
-const authOptions = {
+const authOptions: NextAuthConfig = {
   adapter: PrismaAdapter(prisma) as Adapter,
   providers: [
     GoogleProvider({
@@ -36,7 +36,7 @@ const authOptions = {
 
         // 2. Rate Limiting Check (by email)
         // Using centralized rate limiter
-        const { success } = rateLimit(email, { 
+        const { success } = await rateLimit(email, { 
           interval: 15 * 60 * 1000, // 15 minutes
           limit: 5 // 5 attempts per window
         })
@@ -108,10 +108,27 @@ const authOptions = {
       }
       return session
     },
+    async signIn({ user, account }: { user: User | AdapterUser; account?: Account | null }) {
+      if (account?.provider === "credentials" && user?.id) {
+        // Find if user has any APPROVED membership
+        const membership = await prisma.member.findFirst({
+          where: {
+            userId: user.id,
+            status: 'APPROVED'
+          }
+        })
+        
+        // Block login if user has no approved memberships (e.g. they are INACTIVE or PENDING)
+        // Note: SUPER_ADMINs might not need a membership, so we allow them
+        if (!membership && user.systemRole !== 'SUPER_ADMIN') {
+          return false // This will reject the login
+        }
+      }
+      return true
+    }
   },
   pages: {
     signIn: "/auth/signin",
-    signUp: "/auth/signup",
   },
   trustHost: true,
 }

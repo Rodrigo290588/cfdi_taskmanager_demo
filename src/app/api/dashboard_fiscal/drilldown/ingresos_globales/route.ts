@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const fiscalEntity = await prisma.fiscalEntity.findFirst({ where: { rfc } })
     if (!fiscalEntity) return NextResponse.json({ data: [] })
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dateFilter: any = {}
     if (startDateParam && endDateParam) {
       const end = new Date(endDateParam)
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
       dateFilter.issuanceDate = { gte: new Date(startDateParam), lte: end }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let baseWhere: any
     if (originParam === 'received') {
       baseWhere = { receiverRfc: rfc, ...dateFilter }

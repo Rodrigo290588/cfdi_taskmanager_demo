@@ -97,6 +97,8 @@ model Organization {
   businessType             String?        @map("business_type")
   fiscalEntities           FiscalEntity[]
   members                  Member[]
+  machineClients           MachineClient[]
+  customRoles              CustomRole[]
   companyAccesses          CompanyAccess[]
   satCredentials           SatCredential[]
   users                    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -106,20 +108,68 @@ model Organization {
   @@map("organizations")
 }
 
+model MachineClient {
+  id               String       @id @default(cuid())
+  organizationId   String       @map("organization_id")
+  clientId         String       @unique @map("client_id")
+  clientSecretHash String       @map("client_secret_hash")
+  description      String?
+  scopes           String[]     @default(["users:create"])
+  allowedIps       String[]     @default([]) @map("allowed_ips")
+  isActive         Boolean      @default(true) @map("is_active")
+  expiresAt        DateTime?    @map("expires_at")
+  lastUsedAt       DateTime?    @map("last_used_at")
+  lastUsedIp       String?      @map("last_used_ip")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  createdByUserId  String?      @map("created_by_user_id")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([expiresAt])
+  @@map("machine_clients")
+}
+
+model CustomRole {
+  id                  String       @id @default(cuid())
+  organizationId      String       @map("organization_id")
+  name                String
+  description         String?
+  canViewEmission     Boolean      @default(true)  @map("can_view_emission")
+  canViewReception    Boolean      @default(true)  @map("can_view_reception")
+  canViewPayroll      Boolean      @default(true)  @map("can_view_payroll")
+  canViewSatPortal    Boolean      @default(true)  @map("can_view_sat_portal")
+  canViewMassDownloads Boolean      @default(true)  @map("can_view_mass_downloads")
+  canManageOrg        Boolean      @default(false) @map("can_manage_org")
+  granularPermissions Json?        @default("{}")  @map("granular_permissions")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members             Member[]
+  companyAccesses     CompanyAccess[]
+
+  @@unique([organizationId, name])
+  @@map("custom_roles")
+}
+
 model Member {
   id                  String       @id @default(cuid())
   userId              String       @map("user_id")
   organizationId      String       @map("organization_id")
   role                MemberRole   @default(VIEWER)
+  customRoleId        String?      @map("custom_role_id")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
   status              String       @default("PENDING")
   approvedBy          String?
   approvedAt          DateTime?    @db.Timestamp(6)
-  invitationToken     String?
+  invitationTokenHash String?      @map("invitation_token_hash")
   invitationExpiresAt DateTime?    @db.Timestamp(6)
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRole          CustomRole?  @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
   companyAccesses     CompanyAccess[]
   canViewEmission     Boolean      @default(true)  @map("can_view_emission")
   canViewReception    Boolean      @default(true)  @map("can_view_reception")
@@ -127,9 +177,12 @@ model Member {
   canViewSatPortal    Boolean      @default(true)  @map("can_view_sat_portal")
   canViewMassDownloads Boolean      @default(true)  @map("can_view_mass_downloads")
   canManageOrg        Boolean      @default(false) @map("can_manage_org")
+  granularPermissions Json?        @default("{}")  @map("granular_permissions")
+  providerRfc         String?      @map("provider_rfc")
+  providerName        String?      @map("provider_name")
 
   @@unique([userId, organizationId])
-  @@index([invitationToken])
+  @@index([invitationTokenHash])
   @@index([status])
   @@map("members")
 }
@@ -153,7 +206,7 @@ model FiscalEntity {
 
 model Invoice {
   id                   String        @id @default(cuid())
-  userId               String        @map("user_id")
+  userId               String?       @map("user_id")
   issuerFiscalEntityId String        @map("issuer_fiscal_entity_id")
   uuid                 String        @unique
   cfdiType             CfdiType      @map("cfdi_type")
@@ -189,7 +242,7 @@ model Invoice {
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
   fiscalEntity         FiscalEntity  @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
-  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   concepts             InvoiceConcept[]
   relatedCfdis         InvoiceRelatedCfdi[]
 
@@ -203,7 +256,7 @@ model Invoice {
 
 model SatInvoice {
   id                String        @id @default(cuid())
-  userId            String        @map("user_id")
+  userId            String?       @map("user_id")
   fiscalEntityId    String        @map("fiscal_entity_id")
   uuid              String        @unique
   cfdiType          CfdiType      @map("cfdi_type")
@@ -236,7 +289,7 @@ model SatInvoice {
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
   fiscalEntity      FiscalEntity  @relation(fields: [fiscalEntityId], references: [id], onDelete: Cascade)
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([fiscalEntityId])
   @@index([issuerRfc])
@@ -403,12 +456,14 @@ model CompanyAccess {
   companyId      String             @map("company_id")
   memberId       String             @map("member_id")
   role           CompanyAccessRole  @default(VIEWER)
+  customRoleId   String?            @map("custom_role_id")
   createdAt      DateTime           @default(now()) @map("created_at")
   updatedAt      DateTime           @updatedAt @map("updated_at")
 
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   member         Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  customRole     CustomRole?        @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
   @@unique([memberId, companyId])
   @@map("company_access")

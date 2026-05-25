@@ -33,6 +33,18 @@ export async function GET(request: NextRequest) {
             status: true,
             name: true
           }
+        },
+        customRole: {
+          select: {
+            name: true,
+            canViewEmission: true,
+            canViewReception: true,
+            canViewPayroll: true,
+            canViewSatPortal: true,
+            canViewMassDownloads: true,
+            canManageOrg: true,
+            granularPermissions: true
+          }
         }
       }
     })
@@ -44,7 +56,17 @@ export async function GET(request: NextRequest) {
         rfc: row.company!.rfc,
         businessName: row.company!.businessName || row.company!.name,
         isActive: row.company!.status === 'APPROVED',
-        role: row.role
+        role: row.customRole ? row.customRole.name : row.role,
+        isCustomRole: !!row.customRole,
+        moduleFlags: row.customRole ? {
+          canViewEmission: row.customRole.canViewEmission,
+          canViewReception: row.customRole.canViewReception,
+          canViewPayroll: row.customRole.canViewPayroll,
+          canViewSatPortal: row.customRole.canViewSatPortal,
+          canViewMassDownloads: row.customRole.canViewMassDownloads,
+          canManageOrg: row.customRole.canManageOrg,
+          granularPermissions: row.customRole.granularPermissions || {}
+        } : null
       }))
 
     return NextResponse.json({

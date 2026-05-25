@@ -86,4 +86,11 @@ Para evitar errores comunes y mantener la arquitectura sana, sigue siempre estas
      - **Filtros por Columna:** Debajo de los títulos (`TableHeader`), debe existir una segunda fila (`TableRow`) que contenga un `<Input>` por cada columna. Esto debe filtrar en tiempo real (usando `useMemo` y `.toLowerCase().includes()`) los datos en memoria (`drilldownData`).
      - **Columnas Comunes:** El campo UUID siempre debe ir con tipografía `font-mono`. Si hay un UUID Relacionado, debe truncarse con `max-w-[120px] truncate` y mostrar su valor completo al hacer hover (`title="..."`). Separar el Folio de la Serie en dos columnas distintas.
      - **Exportación y Totales:** La fila de "Total" y la función de "Exportar a Excel (CSV)" **solo deben considerar los registros actualmente visibles/filtrados** (`filteredDrilldownData`). El CSV debe inyectar el BOM UTF-8 (`\uFEFF`) antes del contenido para evitar problemas de codificación de caracteres especiales (acentos, ñ) al abrirse en Microsoft Excel.
+
+10. **Gestión Dinámica de Permisos (Roles Personalizados):**
+    - **Regla Obligatoria:** Cada vez que se desarrolle un nuevo módulo, pantalla o funcionalidad principal en el sistema, esta debe ser registrada obligatoriamente en el sistema de Roles y Permisos.
+    - Se debe actualizar el esquema de `granularPermissions` (JSON) en Prisma y agregar el *Switch* correspondiente en la interfaz de creación/edición de roles (`/admin/roles`) para que los administradores puedan habilitar o deshabilitar dicha funcionalidad a los usuarios.
+
+11. **Compilación Segura (Build Process):**
+    - **Regla Obligatoria:** Cada vez que se necesite realizar la verificación de compilación del código (`npm run build`), el agente **SOLO debe recordarle al usuario** que ejecute el comando de manera manual desde su terminal. El agente NO debe intentar ejecutar o detener procesos de compilación por sí mismo.
    

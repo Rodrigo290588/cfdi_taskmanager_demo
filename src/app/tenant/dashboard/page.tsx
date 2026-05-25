@@ -10,7 +10,7 @@ export default async function TenantDashboardPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8 px-4 md:px-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">
           Bienvenido a Fiscal Vault Intelligence

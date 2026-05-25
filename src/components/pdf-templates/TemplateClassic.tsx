@@ -138,9 +138,9 @@ export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConf
         ${brandConfig?.logoUrl ? `
           <img src="${brandConfig.logoUrl}" alt="Logo" class="max-h-20 object-contain mb-4" />
         ` : `
-          <div class="text-3xl font-bold primary-text mb-4">${emisor['@_Nombre'] || 'EMISOR'}</div>
+          <div class="text-3xl font-bold primary-text mb-4">EMPRESA DEMO</div>
         `}
-        <div class="font-semibold text-lg">${emisor['@_Nombre'] || ''}</div>
+        <div class="font-semibold text-lg">EMPRESA DEMO</div>
         <div class="text-slate-600">RFC: ${emisor['@_Rfc'] || ''}</div>
         <div class="text-slate-600">Régimen Fiscal: ${emisor['@_RegimenFiscal'] || ''}</div>
       </div>

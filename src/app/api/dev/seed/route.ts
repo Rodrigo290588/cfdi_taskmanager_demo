@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { CfdiType, InvoiceStatus, SatStatus } from '@prisma/client'
+import { createMachineClient } from '@/lib/machine-client-service'
 
 function rand(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
@@ -17,6 +18,7 @@ export async function POST() {
 
     // Ensure organization
     let org = await prisma.organization.findFirst({ where: { ownerId: userId } })
+    let createdMachineClient: { clientId: string; clientSecret: string; scopes: string[] } | null = null
     if (!org) {
       org = await prisma.organization.create({
         data: {
@@ -26,6 +28,13 @@ export async function POST() {
           onboardingCompleted: true,
           operationalAccessEnabled: true,
         }
+      })
+
+      createdMachineClient = await createMachineClient(prisma, {
+        organizationId: org.id,
+        organizationSlug: org.slug,
+        createdByUserId: userId,
+        description: `Cliente M2M inicial para ${org.name}`
       })
     }
 
@@ -274,6 +283,7 @@ export async function POST() {
 
     return NextResponse.json({
       organizationId: org.id,
+      machineClient: createdMachineClient,
       companyId: company.id,
       fiscalEntityId: fiscal.id,
       invoicesCreated: countToCreate,

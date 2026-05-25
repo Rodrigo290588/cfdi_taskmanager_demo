@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import crypto from 'crypto'
+import { inviteUserToOrganization } from '@/lib/user-invitation-service'
 
 const inviteUserSchema = z.object({
   email: z.string().email('Correo electrónico inválido'),
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  role: z.enum(['ADMIN', 'AUDITOR', 'VIEWER']).default('VIEWER'),
+  roleId: z.string(), // ID del rol (puede ser del sistema o personalizado)
+  companyIds: z.array(z.string()).optional().default([]),
+  providerRfc: z.string().optional(),
+  providerName: z.string().optional()
 })
 
 export async function POST(request: NextRequest) {
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = inviteUserSchema.parse(body)
-    const { email, name, role } = validatedData
+    const { email, name, roleId, companyIds, providerRfc, providerName } = validatedData
 
     // Get user's organization
     const membership = await prisma.member.findFirst({
@@ -51,75 +54,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
-
-    if (existingUser) {
-      // Check if user is already a member of the organization
-      const existingMembership = await prisma.member.findFirst({
-        where: {
-          userId: existingUser.id,
-          organizationId: membership.organizationId
-        }
-      })
-
-      if (existingMembership) {
-        return NextResponse.json(
-          { error: 'El usuario ya es miembro de esta organización' },
-          { status: 409 }
-        )
-      }
-
-      // Create membership for existing user
-      await prisma.member.create({
-        data: {
-          userId: existingUser.id,
-          organizationId: membership.organizationId,
-          role: role,
-          status: 'PENDING',
-          invitationToken: crypto.randomUUID(),
-        }
-      })
-
-      return NextResponse.json({
-        success: true,
-        message: 'Usuario invitado exitosamente',
-        existingUser: true
-      })
-    }
-
-    // Create new user with PENDING status
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        name,
-        systemRole: 'USER',
-        onboardingStep: 'ORGANIZATION_INVITATION',
-        onboardingData: {
-          invitedBy: session.user.id,
-          invitedAt: new Date(),
-          organizationId: membership.organizationId
-        }
-      }
-    })
-
-    // Create membership
-    await prisma.member.create({
-      data: {
-        userId: newUser.id,
-        organizationId: membership.organizationId,
-        role: role,
-        status: 'PENDING',
-        invitationToken: crypto.randomUUID(),
-      }
+    const invitation = await inviteUserToOrganization({
+      organizationId: membership.organizationId,
+      invitedByUserId: session.user.id,
+      email,
+      name,
+      roleId,
+      companyIds,
+      providerRfc,
+      providerName
     })
 
     return NextResponse.json({
       success: true,
       message: 'Usuario invitado exitosamente',
-      existingUser: false
+      existingUser: invitation.existingUser,
+      invitationToken: invitation.invitationToken // Returned ONLY once so the admin can copy it immediately
     })
 
   } catch (error) {
@@ -185,7 +135,7 @@ export async function GET() {
     const pendingInvitations = await prisma.member.findMany({
       where: {
         organizationId: membership.organizationId,
-        status: 'PENDING'
+        status: { in: ['PENDING', 'ONBOARDING'] }
       },
       include: {
         user: {
@@ -194,6 +144,12 @@ export async function GET() {
             name: true,
             email: true,
             createdAt: true
+          }
+        },
+        customRole: {
+          select: {
+            id: true,
+            name: true
           }
         }
       }
@@ -206,10 +162,12 @@ export async function GET() {
         userId: invitation.userId,
         name: invitation.user.name,
         email: invitation.user.email,
-        role: invitation.role,
+        role: invitation.customRole ? invitation.customRole.name : invitation.role,
+        isCustomRole: !!invitation.customRole,
         status: invitation.status,
         invitedAt: invitation.createdAt,
-        invitationToken: invitation.invitationToken
+        // We do not return the token here because we only store the hash
+        // invitationToken: invitation.invitationTokenHash
       }))
     })
 

@@ -1,36 +1,44 @@
-// Simple in-memory rate limiter for serverless environments (approximate)
-// For production with multiple replicas, use Redis/Upstash
-
-const rateLimitMap = new Map<string, { count: number; expiresAt: number }>()
+import { redis } from '@/lib/redis'
 
 interface RateLimitOptions {
   interval: number // in milliseconds
   limit: number // max requests per interval
 }
 
-export function rateLimit(identifier: string, options: RateLimitOptions = { interval: 60000, limit: 5 }) {
+export async function rateLimit(identifier: string, options: RateLimitOptions = { interval: 60000, limit: 5 }) {
+  const key = `rate_limit:${identifier}`
   const now = Date.now()
-  const record = rateLimitMap.get(identifier)
 
-  // Clean up expired entry
-  if (record && now > record.expiresAt) {
-    rateLimitMap.delete(identifier)
+  const currentCount = await redis.incr(key)
+
+  if (currentCount === 1) {
+    await redis.pexpire(key, options.interval)
   }
 
-  const currentRecord = rateLimitMap.get(identifier)
+  let ttlMs = await redis.pttl(key)
 
-  if (!currentRecord) {
-    rateLimitMap.set(identifier, {
-      count: 1,
-      expiresAt: now + options.interval
-    })
-    return { success: true }
+  if (ttlMs < 0) {
+    await redis.pexpire(key, options.interval)
+    ttlMs = options.interval
   }
 
-  if (currentRecord.count >= options.limit) {
-    return { success: false, expiresAt: currentRecord.expiresAt }
+  const resetAt = now + ttlMs
+
+  if (currentCount > options.limit) {
+    return {
+      success: false,
+      limit: options.limit,
+      remaining: 0,
+      resetAt,
+      retryAfterMs: Math.max(ttlMs, 0)
+    }
   }
 
-  currentRecord.count++
-  return { success: true }
+  return {
+    success: true,
+    limit: options.limit,
+    remaining: Math.max(options.limit - currentCount, 0),
+    resetAt,
+    retryAfterMs: 0
+  }
 }

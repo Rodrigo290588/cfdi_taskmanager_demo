@@ -6,13 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { UserCheck, Shield, Users, Loader2, Building2, Settings } from 'lucide-react'
+import { UserCheck, Shield, Users, Loader2, Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { showSuccess, showError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
-type MemberRole = 'ADMIN' | 'VIEWER'
-type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | 'NONE'
+type MemberRole = 'ADMIN' | 'VIEWER' | string // Permitimos string para roles personalizados
+type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | 'NONE' | string
 
 interface MemberItem {
   id: string
@@ -21,8 +21,17 @@ interface MemberItem {
   email: string
   image?: string | null
   role: MemberRole
+  customRoleId?: string | null
+  customRoleName?: string | null
+  isCustomRole?: boolean
   status: string
   createdAt: string
+}
+
+interface CustomRole {
+  id: string
+  name: string
+  isSystemRole: boolean
 }
 
 export default function ProfilesManagementPage() {
@@ -30,20 +39,45 @@ export default function ProfilesManagementPage() {
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [companies, setCompanies] = useState<Array<{ id: string; rfc: string; businessName: string; isActive: boolean }>>([])
+  const [roles, setRoles] = useState<CustomRole[]>([])
   const [openMemberCompanies, setOpenMemberCompanies] = useState<string | null>(null)
-  const [openMemberModules, setOpenMemberModules] = useState<string | null>(null)
   const [memberAccess, setMemberAccess] = useState<Record<string, Record<string, CompanyRole>>>({})
-  type ModuleFlags = { canViewEmission: boolean; canViewReception: boolean; canViewPayroll: boolean; canViewSatPortal: boolean; canViewMassDownloads: boolean; canManageOrg: boolean }
-  const defaultModuleFlags: ModuleFlags = { canViewEmission: true, canViewReception: true, canViewPayroll: true, canViewSatPortal: true, canViewMassDownloads: true, canManageOrg: false }
-  const [memberModules, setMemberModules] = useState<Record<string, ModuleFlags>>({})
   const [accessError, setAccessError] = useState<string | null>(null)
-  const [modulesError, setModulesError] = useState<string | null>(null)
   const [accessPrefetched, setAccessPrefetched] = useState(false)
 
   useEffect(() => {
     fetchMembers()
     fetchCompanies()
+    fetchRoles()
+
+    const handleRefresh = () => {
+      fetchMembers()
+      // Note: fetchMemberAccess is called lazily per member when expanding the card,
+      // but we could clear the state or let the user click "Actualizar" to see fresh data.
+      // For immediate sync, we can just clear memberAccess state to force a refetch if expanded.
+      setMemberAccess({})
+    }
+
+    window.addEventListener('member-modules-changed', handleRefresh)
+    window.addEventListener('company-access-changed', handleRefresh)
+
+    return () => {
+      window.removeEventListener('member-modules-changed', handleRefresh)
+      window.removeEventListener('company-access-changed', handleRefresh)
+    }
   }, [])
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch('/api/admin/roles', { cache: 'no-store' })
+      const data = await res.json()
+      if (res.ok && data.roles) {
+        setRoles(data.roles)
+      }
+    } catch (error) {
+      console.error('Error fetching roles:', error)
+    }
+  }
 
   useEffect(() => {
     const prefetch = async () => {
@@ -62,7 +96,7 @@ export default function ProfilesManagementPage() {
   const fetchMembers = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/admin/members')
+      const res = await fetch('/api/admin/members', { cache: 'no-store' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error al cargar miembros')
       setMembers(data.members)
@@ -75,8 +109,8 @@ export default function ProfilesManagementPage() {
 
   const fetchCompanies = async () => {
     try {
-      const res = await fetch('/api/companies/tenant')
-      const data = await res.json()
+      const res = await fetch('/api/companies/tenant', { cache: 'no-store' })
+      const data = await res.json() // parse response
       if (!res.ok) throw new Error(data.error || 'Error al cargar empresas')
       setCompanies(data.companies || [])
     } catch (error) {
@@ -105,51 +139,6 @@ export default function ProfilesManagementPage() {
     }
   }
 
-  const fetchMemberModules = async (memberId: string) => {
-    try {
-      const res = await fetch(`/api/admin/members/${memberId}/modules`)
-      const data = await res.json()
-      if (!res.ok) {
-        setModulesError(data.error || 'Error al cargar permisos de módulos')
-        setMemberModules(prev => ({ ...prev, [memberId]: defaultModuleFlags }))
-        return
-      }
-      setMemberModules(prev => ({ ...prev, [memberId]: data.modules as ModuleFlags }))
-      setModulesError(null)
-    } catch {
-      setModulesError('No fue posible cargar permisos de módulos')
-    }
-  }
-
-  const updateMemberModules = async (memberId: string, modules: Partial<ModuleFlags>) => {
-    try {
-      setUpdatingId(memberId)
-      const res = await fetch(`/api/admin/members/${memberId}/modules`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(modules)
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error al actualizar permisos de módulos')
-      setMemberModules(prev => {
-        const prevMods = prev[memberId] || defaultModuleFlags
-        const merged = { ...prevMods, ...modules } as ModuleFlags
-        return { ...prev, [memberId]: merged }
-      })
-      if (typeof window !== 'undefined') {
-        try {
-          window.dispatchEvent(new Event('member-modules-changed'))
-          document.dispatchEvent(new Event('member-modules-changed'))
-        } catch {}
-      }
-      showSuccess('Permisos actualizados', 'Se guardaron los permisos de módulos')
-    } catch (error) {
-      showError('Error al actualizar', error instanceof Error ? error.message : undefined)
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-
   const updateRole = async (id: string, role: MemberRole) => {
     try {
       setUpdatingId(id)
@@ -160,7 +149,20 @@ export default function ProfilesManagementPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error al actualizar rol')
-      setMembers(prev => prev.map(m => (m.id === id ? { ...m, role } : m)))
+      
+      setMembers(prev => prev.map(m => (m.id === id ? { 
+        ...m, 
+        role: data.member.role,
+        customRoleId: data.member.customRoleId,
+        customRoleName: data.member.customRoleName,
+        isCustomRole: data.member.isCustomRole
+      } : m)))
+      
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('member-modules-changed'))
+        document.dispatchEvent(new Event('member-modules-changed'))
+      }
+
       showSuccess('Rol actualizado', 'El rol del miembro se guardó correctamente')
     } catch (error) {
       console.error(error)
@@ -190,6 +192,8 @@ export default function ProfilesManagementPage() {
       if (memberId && typeof window !== 'undefined') {
         window.dispatchEvent(new Event('company-access-changed'))
         document.dispatchEvent(new Event('company-access-changed'))
+        window.dispatchEvent(new Event('member-modules-changed'))
+        document.dispatchEvent(new Event('member-modules-changed'))
       }
       showSuccess('Acceso actualizado', 'Se guardó el rol para la empresa')
     } catch (error) {
@@ -200,7 +204,8 @@ export default function ProfilesManagementPage() {
     }
   }
 
-  const roleLabel = (role: MemberRole) => {
+  const roleLabel = (role: MemberRole, isCustomRole?: boolean, customRoleName?: string | null) => {
+    if (isCustomRole && customRoleName) return customRoleName
     switch (role) {
       case 'ADMIN':
         return 'Administrador'
@@ -211,8 +216,8 @@ export default function ProfilesManagementPage() {
     }
   }
 
-  const companyRoleLabel = (role: CompanyRole) => {
-    switch (role) {
+  const companyRoleLabel = (roleId: CompanyRole) => {
+    switch (roleId) {
       case 'ADMIN':
         return 'Administrador'
       case 'AUDITOR':
@@ -222,11 +227,13 @@ export default function ProfilesManagementPage() {
       case 'NONE':
         return 'Sin acceso'
       default:
-        return role
+        const found = roles.find(r => r.id === roleId)
+        return found ? found.name : roleId
     }
   }
 
-  const roleBadgeVariant = (role: MemberRole) => {
+  const roleBadgeVariant = (role: MemberRole, isCustomRole?: boolean) => {
+    if (isCustomRole) return 'default'
     switch (role) {
       case 'ADMIN':
         return 'destructive'
@@ -238,7 +245,7 @@ export default function ProfilesManagementPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8 px-4 md:px-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Perfiles y Roles</h1>
         <p className="text-muted-foreground mt-2">Asigne roles y permisos a los usuarios invitados</p>
@@ -265,27 +272,29 @@ export default function ProfilesManagementPage() {
           ) : (
             <div className="space-y-4">
               {members.map((m) => {
-                const isActive = openMemberCompanies === m.id || openMemberModules === m.id
+                const isActive = openMemberCompanies === m.id
                 return (
                 <div
                   key={m.id}
                   className={cn(
-                    "flex items-center justify-between p-4 border rounded-lg transition-colors",
+                    "flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-lg transition-colors gap-4",
                     isActive && "border-blue-300 bg-blue-50"
                   )}
                   aria-selected={isActive}
                 >
-                  <div className="flex items-center gap-3">
-                    <Avatar>
+                  <div className="flex items-start md:items-center gap-3 w-full md:w-auto">
+                    <Avatar className="mt-1 md:mt-0">
                       <AvatarImage src={m.image || undefined} />
                       <AvatarFallback>{(m.name || m.email || '').charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{m.name}</p>
-                        <Badge variant={roleBadgeVariant(m.role)}>{roleLabel(m.role)}</Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium truncate">{m.name}</p>
+                        <Badge variant={roleBadgeVariant(m.role, m.isCustomRole)} className="shrink-0">
+                          {roleLabel(m.role, m.isCustomRole, m.customRoleName)}
+                        </Badge>
                       </div>
-                      <p className="text-sm text-gray-500">{m.email}</p>
+                      <p className="text-sm text-gray-500 truncate">{m.email}</p>
                       <p className="text-xs text-gray-400">{m.status === 'APPROVED' ? 'Aprobado' : 'Pendiente'}</p>
                       {memberAccess[m.id] && Object.keys(memberAccess[m.id]).length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -307,49 +316,46 @@ export default function ProfilesManagementPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <Select
-                      value={m.role}
-                      onValueChange={(value) => updateRole(m.id, value as MemberRole)}
-                      disabled={updatingId === m.id}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Seleccionar rol" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ADMIN">Administrador</SelectItem>
-                        <SelectItem value="VIEWER">Usuario</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant="outline" size="sm" disabled={updatingId === m.id}>
-                      <UserCheck className="h-4 w-4 mr-2" />
-                      Asignar
-                    </Button>
-                  <Button
-                    variant={openMemberCompanies === m.id ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={async () => {
-                      const open = openMemberCompanies === m.id ? null : m.id
-                      setOpenMemberCompanies(open)
-                      if (open) await fetchMemberAccess(m.id)
-                    }}
-                  >
-                    <Building2 className="h-4 w-4 mr-2" />
-                    Empresas
-                  </Button>
-                  <Button
-                    variant={openMemberModules === m.id ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={async () => {
-                      const open = openMemberModules === m.id ? null : m.id
-                      setOpenMemberModules(open)
-                      if (open) await fetchMemberModules(m.id)
-                    }}
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Permisos
-                  </Button>
-                </div>
+                  <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+                    <div className="w-full sm:w-auto flex-1 sm:flex-none">
+                      <Select
+                        value={m.isCustomRole && m.customRoleId ? m.customRoleId : m.role}
+                        onValueChange={(value) => updateRole(m.id, value)}
+                        disabled={updatingId === m.id}
+                      >
+                        <SelectTrigger className="w-full sm:w-[180px]">
+                          <SelectValue placeholder="Seleccionar rol" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roles.map(role => (
+                            <SelectItem key={role.id} value={role.id}>
+                              {role.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                      <Button variant="outline" size="sm" disabled={updatingId === m.id} className="flex-1 sm:flex-none">
+                        <UserCheck className="h-4 w-4 mr-2" />
+                        <span className="hidden sm:inline">Asignar</span>
+                      </Button>
+                      <Button
+                        variant={openMemberCompanies === m.id ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={async () => {
+                          const open = openMemberCompanies === m.id ? null : m.id
+                          setOpenMemberCompanies(open)
+                          if (open) await fetchMemberAccess(m.id)
+                        }}
+                        className="flex-1 sm:flex-none"
+                      >
+                        <Building2 className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Empresas</span>
+                      </Button>
+                    </div>
+                  </div>
               </div>
             )})}
           </div>
@@ -398,9 +404,11 @@ export default function ProfilesManagementPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="NONE">Sin acceso</SelectItem>
-                            <SelectItem value="VIEWER">Visualizador</SelectItem>
-                            <SelectItem value="AUDITOR">Auditor</SelectItem>
-                            <SelectItem value="ADMIN">Administrador</SelectItem>
+                            {roles.map((role) => (
+                              <SelectItem key={role.id} value={role.id}>
+                                {role.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <Button
@@ -411,6 +419,8 @@ export default function ProfilesManagementPage() {
                             if (typeof window !== 'undefined') {
                               window.dispatchEvent(new Event('company-access-changed'))
                               document.dispatchEvent(new Event('company-access-changed'))
+                              window.dispatchEvent(new Event('member-modules-changed'))
+                              document.dispatchEvent(new Event('member-modules-changed'))
                             }
                           }}
                         >
@@ -426,102 +436,6 @@ export default function ProfilesManagementPage() {
         </Card>
       )}
 
-      {openMemberModules && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Permisos de Módulos
-            </CardTitle>
-            <CardDescription>Defina qué módulos puede ver el usuario seleccionado</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {modulesError && (
-              <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                {modulesError}
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {(() => {
-                const mods = memberModules[openMemberModules!]
-                const setFlag = (key: keyof typeof mods, value: boolean) => setMemberModules(prev => ({ ...prev, [openMemberModules!]: { ...prev[openMemberModules!], [key]: value } }))
-                return (
-                  <>
-                    <div className="p-3 border rounded-lg flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">Módulo de Emisión</p>
-                        <p className="text-xs text-gray-500">Dashboard y emisión de CFDIs</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canViewEmission ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewEmission', true)}>Ver</Button>
-                        <Button variant={!mods?.canViewEmission ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewEmission', false)}>Ocultar</Button>
-                      </div>
-                    </div>
-                    <div className="p-3 border rounded-lg flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">Módulo de Recepción</p>
-                        <p className="text-xs text-gray-500">Dashboard de recibidos</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canViewReception ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewReception', true)}>Ver</Button>
-                        <Button variant={!mods?.canViewReception ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewReception', false)}>Ocultar</Button>
-                      </div>
-                    </div>
-                    <div className="p-3 border rounded-lg flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">Módulo de Nómina</p>
-                        <p className="text-xs text-gray-500">Dashboard de nómina</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canViewPayroll ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewPayroll', true)}>Ver</Button>
-                        <Button variant={!mods?.canViewPayroll ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewPayroll', false)}>Ocultar</Button>
-                      </div>
-                    </div>
-                    <div className="p-3 border rounded-lg flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">CFDIs en Portal del SAT</p>
-                        <p className="text-xs text-gray-500">Consulta y descargas del SAT</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canViewSatPortal ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewSatPortal', true)}>Ver</Button>
-                        <Button variant={!mods?.canViewSatPortal ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewSatPortal', false)}>Ocultar</Button>
-                      </div>
-                    </div>
-                    <div className="p-3 border rounded-lg flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">Descargas masivas de CFDI</p>
-                        <p className="text-xs text-gray-500">Módulo de descargas masivas</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canViewMassDownloads ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewMassDownloads', true)}>Ver</Button>
-                        <Button variant={!mods?.canViewMassDownloads ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canViewMassDownloads', false)}>Ocultar</Button>
-                      </div>
-                    </div>
-                    <div className="p-3 border rounded-lg flex items-center justify-between md:col-span-2">
-                      <div>
-                        <p className="font-medium">Administración de la Organización</p>
-                        <p className="text-xs text-gray-500">Configuración y gestión avanzada</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={mods?.canManageOrg ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canManageOrg', true)}>Permitir</Button>
-                        <Button variant={!mods?.canManageOrg ? 'default' : 'outline'} size="sm" onClick={() => setFlag('canManageOrg', false)}>Restringir</Button>
-                      </div>
-                    </div>
-                  </>
-                )
-              })()}
-            </div>
-            <div className="flex justify-end mt-4">
-              <Button
-                onClick={() => updateMemberModules(openMemberModules!, memberModules[openMemberModules!] || {})}
-                disabled={updatingId === openMemberModules}
-              >
-                Guardar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

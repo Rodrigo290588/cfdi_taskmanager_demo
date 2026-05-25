@@ -34,13 +34,26 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       return NextResponse.json({ error: 'Sin permisos para ver accesos' }, { status: 403 })
     }
 
-    const assignments = await prisma.$queryRaw<Array<{ company_id: string; role: string }>>`
-      SELECT company_id, role FROM company_access WHERE member_id = ${id}
-    `
+    const assignments = await prisma.companyAccess.findMany({
+      where: { memberId: id },
+      select: {
+        companyId: true,
+        role: true,
+        customRoleId: true,
+        customRole: {
+          select: { name: true }
+        }
+      }
+    })
 
     return NextResponse.json({
       success: true,
-      access: assignments.map(a => ({ companyId: a.company_id, role: a.role }))
+      access: assignments.map(a => ({ 
+        companyId: a.companyId, 
+        role: a.customRoleId ? a.customRoleId : a.role,
+        isCustomRole: !!a.customRoleId,
+        customRoleName: a.customRole?.name
+      }))
     })
   } catch (error) {
     console.error('Error fetching company access:', error)
@@ -57,8 +70,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { id } = await context.params
     const body = await request.json()
-    const { companyId, role } = body as { companyId?: string; role?: 'ADMIN' | 'AUDITOR' | 'VIEWER' | 'NONE' }
-    if (!companyId || !role) {
+    const { companyId, role: roleId } = body as { companyId?: string; role?: string }
+    if (!companyId || !roleId) {
       return NextResponse.json({ error: 'Parámetros inválidos' }, { status: 400 })
     }
 
@@ -90,10 +103,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: 'Sin permisos para asignar empresas' }, { status: 403 })
     }
 
-    if (role === 'NONE') {
+    if (roleId === 'NONE') {
       await prisma.companyAccess.deleteMany({ where: { memberId: id, companyId } })
       return NextResponse.json({ success: true })
     }
+
+    const isSystemRole = ['ADMIN', 'AUDITOR', 'VIEWER'].includes(roleId)
+    const systemRole = isSystemRole ? roleId as 'ADMIN' | 'AUDITOR' | 'VIEWER' : 'VIEWER'
+    const customRoleId = isSystemRole ? null : roleId
 
     const existing = await prisma.companyAccess.findUnique({
       where: { memberId_companyId: { memberId: id, companyId } }
@@ -102,7 +119,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (existing) {
       await prisma.companyAccess.update({
         where: { memberId_companyId: { memberId: id, companyId } },
-        data: { role }
+        data: { 
+          role: systemRole,
+          customRoleId: customRoleId
+        }
       })
     } else {
       await prisma.companyAccess.create({
@@ -110,7 +130,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           organizationId: requester.organization.id,
           companyId,
           memberId: id,
-          role
+          role: systemRole,
+          customRoleId: customRoleId
         }
       })
     }

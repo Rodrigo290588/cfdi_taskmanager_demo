@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
         userId: session.user.id,
         status: 'APPROVED',
         ...(orgId ? { organizationId: orgId } : {})
+      },
+      include: {
+        customRole: true
       }
     })
 
@@ -23,17 +26,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
     }
 
+    const granularPerms = member.customRole 
+      ? member.customRole.granularPermissions 
+      : member.granularPermissions
+
     return NextResponse.json({
       success: true,
       member: {
         id: member.id,
         organizationId: member.organizationId,
-        canViewEmission: member.canViewEmission,
-        canViewReception: member.canViewReception,
-        canViewPayroll: member.canViewPayroll,
-        canViewSatPortal: member.canViewSatPortal,
-        canViewMassDownloads: member.canViewMassDownloads,
-        canManageOrg: member.canManageOrg,
+        canViewEmission: member.customRole ? member.customRole.canViewEmission : member.canViewEmission,
+        canViewReception: member.customRole ? member.customRole.canViewReception : member.canViewReception,
+        canViewPayroll: member.customRole ? member.customRole.canViewPayroll : member.canViewPayroll,
+        canViewSatPortal: member.customRole ? member.customRole.canViewSatPortal : member.canViewSatPortal,
+        canViewMassDownloads: member.customRole ? member.customRole.canViewMassDownloads : member.canViewMassDownloads,
+        canManageOrg: member.customRole ? member.customRole.canManageOrg : member.canManageOrg,
+        granularPermissions: granularPerms || {}
       }
     })
   } catch (error) {

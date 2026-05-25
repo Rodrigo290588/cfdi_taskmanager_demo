@@ -24,8 +24,12 @@ Este módulo centraliza la gestión multi-tenant, permitiendo a los usuarios adm
 ## 2. Tablero de Ingresos (Dashboard Fiscal)
 Dashboard analítico y visual que resume la salud fiscal y el comportamiento de facturación (CFDIs emitidos) de la empresa activa.
 
-* **KPIs Dinámicos:** Tarjetas resumen calculadas en tiempo real desde la base de datos (Total Facturado, Impuestos Trasladados, Impuestos Retenidos).
+* **KPIs Dinámicos:** Tarjetas resumen calculadas en tiempo real desde la base de datos (Total Facturado, Impuestos Trasladados, Impuestos Retenidos, etc).
 * **Filtro Temporal:** Selector de rangos de fechas (Mes actual, Año actual, Histórico) que actualiza todas las gráficas y KPIs.
+* **Filtro de Escenario de Cobro:** Filtro múltiple (Totalmente cobradas, Parcialmente cobradas, No cobradas) para el análisis avanzado de ingresos PPD.
+* **Agrupación de Tarjetas:** Capacidad para alternar la visualización entre diferentes grupos de análisis (Ingresos Netos Reales, Ingresos Brutos Reales, Ingresos Efectivamente Cobrados, Impuestos).
+* **Reportes Desglosados Dinámicos (Drilldown Popups):** Ventanas emergentes a pantalla completa al dar clic en tarjetas específicas (ej. Ingresos Cobrados, Descuentos, Ingresos Nominativos). Muestran una tabla detallada con filtros individuales por columna y sumatorias dinámicas exactas basadas en la vista actual.
+* **Exportación a Excel en Drilldowns:** Botón para descargar en CSV con codificación (BOM UTF-8) el detalle exacto del reporte en pantalla, respetando los filtros de búsqueda aplicados por el usuario.
 * **Gráficas de Análisis:**
   * **Ingresos vs Gastos:** Comparativa visual de flujo (usando Recharts).
   * **Métodos de Pago:** Gráfica de pastel mostrando la proporción de pagos en una sola exhibición (PUE) vs parcialidades (PPD).

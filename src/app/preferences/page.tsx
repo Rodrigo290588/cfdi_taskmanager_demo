@@ -96,7 +96,7 @@ export default function PreferencesPage() {
 
   if (!tenant) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="container mx-auto py-8 px-4 md:px-8">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -111,7 +111,7 @@ export default function PreferencesPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="container mx-auto py-8 px-4 md:px-8 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

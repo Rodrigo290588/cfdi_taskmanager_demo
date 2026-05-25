@@ -28,6 +28,9 @@ export async function GET() {
       include: {
         user: {
           select: { id: true, name: true, email: true, image: true }
+        },
+        customRole: {
+          select: { id: true, name: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -41,6 +44,9 @@ export async function GET() {
         email: m.user.email,
         image: m.user.image,
         role: m.role === 'AUDITOR' ? 'VIEWER' : m.role,
+        customRoleId: m.customRoleId,
+        customRoleName: m.customRole?.name,
+        isCustomRole: !!m.customRole,
         status: m.status,
         createdAt: m.createdAt
       }))

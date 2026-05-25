@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { SystemRole } from '@prisma/client'
 import { signUpSchema } from '@/schemas/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { createMachineClient } from '@/lib/machine-client-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
        console.warn('Registration attempt with unknown IP')
     }
 
-    const limitResult = rateLimit(ip, { interval: 60 * 60 * 1000, limit: 5 }) // 5 attempts per hour
+    const limitResult = await rateLimit(ip, { interval: 60 * 60 * 1000, limit: 5 }) // 5 attempts per hour
 
     if (!limitResult.success) {
       return NextResponse.json(
@@ -119,6 +120,13 @@ export async function POST(request: NextRequest) {
         }
       })
 
+      const machineClient = await createMachineClient(tx, {
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+        createdByUserId: user.id,
+        description: `Cliente M2M inicial para ${organization.name}`
+      })
+
       // Create Membership
       await tx.member.create({
         data: {
@@ -136,16 +144,26 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      return user
+      return {
+        user,
+        organization,
+        machineClient
+      }
     })
 
     // 7. Secure Response (No sensitive data)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...userWithoutPassword } = result
+    const { password: _, ...userWithoutPassword } = result.user
     
     return NextResponse.json({
       success: true,
       user: userWithoutPassword,
+      organizationId: result.organization.id,
+      machineClient: {
+        clientId: result.machineClient.clientId,
+        clientSecret: result.machineClient.clientSecret,
+        scopes: result.machineClient.scopes
+      },
       message: 'Usuario creado exitosamente'
     })
 

@@ -20,7 +20,8 @@ import {
   Edit3,
   ChevronDown,
   ChevronRight,
-  ListChecks
+  ListChecks,
+  FileUp
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -40,6 +41,7 @@ interface NavItem {
   variant?: 'default' | 'ghost'
   requiresOperationalAccess?: boolean
   requiresOwner?: boolean
+  requiresPermission?: Permission
 }
 
 export function TenantNavigation() {
@@ -75,6 +77,9 @@ export function TenantNavigation() {
     if (item.requiresOwner && !isTenantAdmin()) {
       return false
     }
+    if (item.requiresPermission && !hasAnyPermission([item.requiresPermission], tenantState?.organizationId)) {
+      return false
+    }
     return true
   }
 
@@ -83,6 +88,7 @@ export function TenantNavigation() {
       title: 'Progreso de Configuración',
       icon: ListChecks,
       href: '/tenant/dashboard',
+      requiresOwner: true
     },
     {
       title: 'Mi Organización',
@@ -93,7 +99,8 @@ export function TenantNavigation() {
     {
       title: 'Registrar Empresas',
       icon: Plus,
-      href: '/companies'
+      href: '/companies',
+      requiresPermission: Permission.COMPANY_CREATE
     },
     {
       title: 'Usuarios',
@@ -102,9 +109,21 @@ export function TenantNavigation() {
       requiresOwner: true
     },
     {
+      title: 'Alta de Usuarios Layout',
+      icon: FileUp,
+      href: '/admin/users-bulk',
+      requiresOwner: true
+    },
+    {
       title: 'Perfiles',
       icon: UserCheck,
       href: '/admin/profiles',
+      requiresOwner: true
+    },
+    {
+      title: 'Roles y Permisos',
+      icon: Settings,
+      href: '/admin/roles',
       requiresOwner: true
     },
     {
@@ -128,43 +147,47 @@ export function TenantNavigation() {
             'Mi Organización',
             'Registrar Empresas',
             'Usuarios',
+            'Alta de Usuarios Layout',
             'Perfiles',
+            'Roles y Permisos',
             'Configuración del Sistema'
           ])
           const orgItems = filteredItems.filter(i => orgTitles.has(i.title))
           const extraItems = filteredItems.filter(i => !orgTitles.has(i.title))
           return (
             <>
-              <Collapsible open={orgOpen} onOpenChange={setOrgOpen}>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start px-3">
-                  <Settings className="mr-3 h-5 w-5" />
-                  <span className="flex-1 text-left">Administración de la<br />Organización</span>
-                  {orgOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-                <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                  {orgItems.map((item, index) => (
-                    <Link
-                      key={`org-${index}`}
-                      href={item.href}
-                      className={cn(
-                        'flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
-                        isActive(item.href)
-                          ? "bg-white/20 text-white font-semibold shadow-inner"
-                          : "text-blue-200 hover:bg-white/10 hover:text-white"
+              {orgItems.length > 0 && (
+                <Collapsible open={orgOpen} onOpenChange={setOrgOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-start px-3">
+                      <Settings className="mr-3 h-5 w-5" />
+                      <span className="flex-1 text-left">Administración de la<br />Organización</span>
+                      {orgOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
                       )}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  ))}
-                </CollapsibleContent>
-              </Collapsible>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+                    {orgItems.map((item, index) => (
+                      <Link
+                        key={`org-${index}`}
+                        href={item.href}
+                        className={cn(
+                          'flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
+                          isActive(item.href)
+                            ? "bg-white/20 text-white font-semibold shadow-inner"
+                            : "text-blue-200 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
 
               {extraItems.map((item, index) => (
                 <Tooltip key={`extra-${index}`}>

@@ -10,8 +10,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const body = await request.json()
-    const { role } = body as { role?: 'ADMIN' | 'VIEWER' }
-    if (!role || !['ADMIN', 'VIEWER'].includes(role)) {
+    const { role: roleId } = body as { role?: string }
+    if (!roleId) {
       return NextResponse.json({ error: 'Rol inválido' }, { status: 400 })
     }
 
@@ -45,10 +45,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: 'Sin permisos para asignar roles' }, { status: 403 })
     }
 
+    const isSystemRole = ['ADMIN', 'AUDITOR', 'VIEWER'].includes(roleId)
+    const systemRole = isSystemRole ? roleId as 'ADMIN' | 'AUDITOR' | 'VIEWER' : 'VIEWER'
+    const customRoleId = isSystemRole ? null : roleId
+
     const updated = await prisma.member.update({
       where: { id: targetMember.id },
-      data: { role },
-      include: { user: { select: { name: true, email: true } } }
+      data: { 
+        role: systemRole,
+        customRoleId: customRoleId
+      },
+      include: { 
+        user: { select: { name: true, email: true } },
+        customRole: { select: { name: true } }
+      }
     })
 
     return NextResponse.json({
@@ -59,6 +69,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         name: updated.user?.name || updated.userId,
         email: updated.user?.email,
         role: updated.role,
+        customRoleId: updated.customRoleId,
+        customRoleName: updated.customRole?.name,
+        isCustomRole: !!updated.customRole,
         status: updated.status
       }
     })

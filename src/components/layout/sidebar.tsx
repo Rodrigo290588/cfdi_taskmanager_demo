@@ -71,13 +71,23 @@ const navigation: Array<{ name: string; href: string; icon: NavIcon; required?: 
   },
 ]
 
-type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER'
+type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | string
 interface FiscalEntity {
   id: string
   rfc: string
   businessName: string
   isActive: boolean
   role?: CompanyRole
+  isCustomRole?: boolean
+  moduleFlags?: {
+    canViewEmission: boolean
+    canViewReception: boolean
+    canViewPayroll: boolean
+    canViewSatPortal: boolean
+    canViewMassDownloads: boolean
+    canManageOrg?: boolean
+    granularPermissions?: Record<string, boolean>
+  } | null
 }
 
 interface SidebarProps {
@@ -103,10 +113,16 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const [massDownloadsOpen, setMassDownloadsOpen] = useState(false)
   const [requestsOpen, setRequestsOpen] = useState(false)
   const [materialityOpen, setMaterialityOpen] = useState(false)
+  const [providerOpen, setProviderOpen] = useState(false)
   const [cfdisSatPortalOpen, setCfdisSatPortalOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [moduleFlags, setModuleFlags] = useState<{ canViewEmission: boolean; canViewReception: boolean; canViewPayroll: boolean; canViewSatPortal: boolean; canViewMassDownloads: boolean } | null>(null)
+  const [globalModuleFlags, setGlobalModuleFlags] = useState<{ canViewEmission: boolean; canViewReception: boolean; canViewPayroll: boolean; canViewSatPortal: boolean; canViewMassDownloads: boolean; canManageOrg?: boolean; granularPermissions?: Record<string, boolean> } | null>(null)
+
+  // Use selected company flags if it has a custom role, otherwise fallback to global flags
+  const moduleFlags = selectedEntity?.isCustomRole && selectedEntity.moduleFlags 
+    ? selectedEntity.moduleFlags 
+    : globalModuleFlags
 
   // Fetch companies the current user has access to
   const fetchTenantCompanies = useCallback(async () => {
@@ -185,12 +201,14 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`)
         const data = await res.json()
         if (res.ok && data?.member) {
-          setModuleFlags({
+          setGlobalModuleFlags({
             canViewEmission: data.member.canViewEmission,
             canViewReception: data.member.canViewReception,
             canViewPayroll: data.member.canViewPayroll,
             canViewSatPortal: data.member.canViewSatPortal,
             canViewMassDownloads: data.member.canViewMassDownloads,
+            canManageOrg: data.member.canManageOrg,
+            granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
           })
         }
       } catch {}
@@ -219,12 +237,14 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`)
           const data = await res.json()
           if (res.ok && data?.member) {
-            setModuleFlags({
+            setGlobalModuleFlags({
               canViewEmission: data.member.canViewEmission,
               canViewReception: data.member.canViewReception,
               canViewPayroll: data.member.canViewPayroll,
               canViewSatPortal: data.member.canViewSatPortal,
               canViewMassDownloads: data.member.canViewMassDownloads,
+              canManageOrg: data.member.canManageOrg,
+              granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
             })
           }
         } catch {}
@@ -376,7 +396,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                             <p className="text-xs font-medium truncate text-white">{selectedEntity.rfc}</p>
                             {selectedEntity.role && (
                               <Badge className="text-[10px] bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-2" variant="secondary">
-                                {selectedEntity.role === 'ADMIN' ? 'Admin' : selectedEntity.role === 'AUDITOR' ? 'Auditor' : 'Vis'}
+                                {selectedEntity.isCustomRole ? selectedEntity.role : selectedEntity.role === 'ADMIN' ? 'Admin' : selectedEntity.role === 'AUDITOR' ? 'Auditor' : 'Vis'}
                               </Badge>
                             )}
                           </div>
@@ -418,7 +438,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                         <div className="flex items-center gap-2">
                           {entity.role && (
                             <Badge className="text-[10px]" variant="secondary">
-                              {entity.role === 'ADMIN' ? 'Administrador' : entity.role === 'AUDITOR' ? 'Auditor' : 'Visualizador'}
+                              {entity.isCustomRole ? entity.role : entity.role === 'ADMIN' ? 'Administrador' : entity.role === 'AUDITOR' ? 'Auditor' : 'Visualizador'}
                             </Badge>
                           )}
                           {!entity.isActive && (
@@ -451,7 +471,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
           {/* Navigation */}
           <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
+            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && moduleFlags?.granularPermissions?.emissionDashboard !== false && (
             <Collapsible open={cfdisEmittedOpen} onOpenChange={setCfdisEmittedOpen}>
               <CollapsibleTrigger asChild>
                 <Button
@@ -500,7 +520,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             </Collapsible>
             )}
 
-            {hasPermission(Permission.MODULE_RECEPTION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewReception !== false && (
+            {hasPermission(Permission.MODULE_RECEPTION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewReception !== false && moduleFlags?.granularPermissions?.receptionDashboard !== false && (
             <Collapsible open={cfdisReceivedOpen} onOpenChange={setCfdisReceivedOpen}>
               <CollapsibleTrigger asChild>
                 <Button
@@ -563,6 +583,35 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             </Collapsible>
             )}
 
+            {moduleFlags?.granularPermissions?.providerDashboard !== false && (
+            <Collapsible open={providerOpen} onOpenChange={setProviderOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start px-3"
+                >
+                  <Building2 className="h-5 w-5 mr-3" />
+                  <span className="flex-1 text-left">Proveedor</span>
+                  {providerOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+                <Link
+                  href="/provider/cfdis-report"
+                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Reporte CFDI´s</span>
+                </Link>
+              </CollapsibleContent>
+            </Collapsible>
+            )}
+
+            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={cfdisTaxesOpen} onOpenChange={setCfdisTaxesOpen}>
               <CollapsibleTrigger asChild>
                 <Button
@@ -588,7 +637,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 </Link>
               </CollapsibleContent>
             </Collapsible>
+            )}
 
+            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={clientsOpen} onOpenChange={setClientsOpen}>
               <CollapsibleTrigger asChild>
                 <Button
@@ -614,6 +665,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 </Link>
               </CollapsibleContent>
             </Collapsible>
+            )}
 
             {hasPermission(Permission.MODULE_MASS_DOWNLOADS_VIEW, tenantState?.organizationId) && moduleFlags?.canViewMassDownloads !== false && (
             <Collapsible open={massDownloadsOpen} onOpenChange={setMassDownloadsOpen}>
@@ -696,6 +748,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             </Collapsible>
             )}
 
+            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Link
               href="/dashboard/import-monitor"
               className={cn(
@@ -707,7 +760,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               <Activity className="h-5 w-5 mr-3" />
               <span>Monitor de Importación</span>
             </Link>
+            )}
 
+            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
             <Collapsible open={materialityOpen} onOpenChange={setMaterialityOpen}>
               <CollapsibleTrigger asChild>
                 <Button
@@ -740,6 +795,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 </Link>
               </CollapsibleContent>
             </Collapsible>
+            )}
 
             {hasPermission(Permission.MODULE_SAT_PORTAL_VIEW, tenantState?.organizationId) && moduleFlags?.canViewSatPortal !== false && (
             <Collapsible open={cfdisSatPortalOpen} onOpenChange={setCfdisSatPortalOpen}>
@@ -788,6 +844,10 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   // Special handling for Empresas submenu
                   if (item.name === 'Empresas') {
                     if (!permitted) return null
+                    // If the user has a custom role that explicitly disables managing orgs and doesn't explicitly allow org companies, we might want to hide it if they are restricted
+                    if (moduleFlags?.granularPermissions?.providerDashboard === true && moduleFlags?.canViewEmission === false && moduleFlags?.canViewReception === false) {
+                      return null
+                    }
                     return (
                       <Collapsible key={item.name} open={companiesOpen} onOpenChange={setCompaniesOpen}>
                         <CollapsibleTrigger asChild>
@@ -844,6 +904,11 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   const requiresCompanyAssignment = ['Bóveda Fiscal', 'CFDIs en el SAT', 'Reportes'].includes(item.name)
                   if (!permitted) return null
                   if (requiresCompanyAssignment && !hasCompanyAccess) return null
+                  
+                  // Specific checks for custom roles
+                  if ((item.name === 'Bóveda Fiscal' || item.name === 'Reportes') && moduleFlags?.canViewEmission === false && moduleFlags?.canViewReception === false) return null
+                  if (item.name === 'Empresas' && moduleFlags?.canManageOrg === false && moduleFlags?.granularPermissions?.orgCompanies === false) return null
+
                   return (
                     <Link
                       key={item.name}

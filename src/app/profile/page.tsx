@@ -117,7 +117,7 @@ export default function ProfilePage() {
 
   if (!profile) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="container mx-auto py-8 px-4 md:px-8">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -132,7 +132,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="container mx-auto py-8 px-4 md:px-8 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

@@ -7,7 +7,7 @@ export default function RegisterCompanyPage() {
   return (
     <ProtectedRoute>
       <PermissionRequired permission={Permission.COMPANY_CREATE}>
-        <div className="container mx-auto py-8">
+        <div className="container mx-auto py-8 px-4 md:px-8">
           <CompanyRegistrationForm />
         </div>
       </PermissionRequired>

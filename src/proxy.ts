@@ -16,6 +16,8 @@ export default auth((req) => {
   const isOnDashboard = req.nextUrl.pathname.startsWith("/dashboard")
   const isOnAdmin = req.nextUrl.pathname.startsWith("/admin")
   const isOnApi = req.nextUrl.pathname.startsWith("/api")
+  const isMachineToMachineApi = req.nextUrl.pathname.startsWith("/api/oauth/token")
+    || req.nextUrl.pathname.startsWith("/api/external/users")
 
   // 1. API Protection
   if (isOnApi) {
@@ -30,6 +32,11 @@ export default auth((req) => {
 
     // Permitir ingesta masiva (podría requerir API Key en el futuro, pero por ahora whitelisted)
     if (req.nextUrl.pathname.startsWith("/api/import")) {
+      return withSecurityHeaders(NextResponse.next())
+    }
+
+    // M2M APIs are public at the proxy layer but protected in-route by OAuth/JWT scope validation.
+    if (isMachineToMachineApi) {
       return withSecurityHeaders(NextResponse.next())
     }
     
@@ -48,7 +55,14 @@ export default auth((req) => {
     const userRole = req.auth?.user?.systemRole
     if (userRole !== "SUPER_ADMIN" && userRole !== "ADMIN") {
       // Redirect to dashboard if logged in but not admin
-      return withSecurityHeaders(NextResponse.redirect(new URL("/dashboard_fiscal", req.nextUrl)))
+      return withSecurityHeaders(NextResponse.redirect(new URL("/dashboard", req.nextUrl)))
+    }
+  }
+
+  // 3. App Routes Protection (Dashboard, Settings, etc)
+  if (isOnDashboard) {
+    if (!isLoggedIn) {
+      return withSecurityHeaders(NextResponse.redirect(new URL("/auth/signin", req.nextUrl)))
     }
   }
 
