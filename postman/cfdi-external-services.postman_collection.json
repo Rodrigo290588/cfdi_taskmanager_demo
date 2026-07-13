@@ -1,0 +1,430 @@
+{
+  "info": {
+    "name": "CFDI External Services API",
+    "_postman_id": "3dfba8c0-c4e9-4cab-a7c1-0c31d9f4f9d0",
+    "description": "Coleccion unificada para autenticacion OAuth 2.0 Client Credentials, alta externa de usuarios y actualizacion de pagos de proveedor. Incluye scopes separados, tokens independientes por flujo y rate limiting de 5 peticiones por segundo por cliente.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "clientId",
+      "value": "demo-client"
+    },
+    {
+      "key": "clientSecret",
+      "value": "demo-secret"
+    },
+    {
+      "key": "usersScope",
+      "value": "users:create"
+    },
+    {
+      "key": "paymentsScope",
+      "value": "payments:update"
+    },
+    {
+      "key": "accessTokenUsers",
+      "value": ""
+    },
+    {
+      "key": "accessTokenPayments",
+      "value": ""
+    },
+    {
+      "key": "invoiceUuid",
+      "value": "11111111-2222-3333-4444-555555555555"
+    },
+    {
+      "key": "paymentDateIso",
+      "value": "2026-06-01T18:30:00Z"
+    }
+  ],
+  "item": [
+    {
+      "name": "OAuth",
+      "description": "Solicitudes para obtener tokens M2M por scope. Cada token se guarda en una variable separada para no mezclar credenciales entre servicios.",
+      "item": [
+        {
+          "name": "1. Token users:create",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{clientId}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{clientSecret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "{{usersScope}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oauth",
+                "token"
+              ]
+            },
+            "description": "Obtiene un JWT M2M con el scope users:create."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200)",
+                  "})",
+                  "",
+                  "const data = pm.response.json()",
+                  "",
+                  "pm.test('Devuelve access_token', function () {",
+                  "  pm.expect(data.access_token).to.be.a('string')",
+                  "})",
+                  "",
+                  "if (data.access_token) {",
+                  "  pm.collectionVariables.set('accessTokenUsers', data.access_token)",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2. Token payments:update",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{clientId}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{clientSecret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "{{paymentsScope}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oauth",
+                "token"
+              ]
+            },
+            "description": "Obtiene un JWT M2M con el scope payments:update."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200)",
+                  "})",
+                  "",
+                  "const data = pm.response.json()",
+                  "",
+                  "pm.test('Devuelve access_token', function () {",
+                  "  pm.expect(data.access_token).to.be.a('string')",
+                  "})",
+                  "",
+                  "if (data.access_token) {",
+                  "  pm.collectionVariables.set('accessTokenPayments', data.access_token)",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Usuarios Externos",
+      "description": "Solicitudes para el alta externa de usuarios usando el scope users:create.",
+      "item": [
+        {
+          "name": "1. Alta Individual",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessTokenUsers}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": {\n    \"correo\": \"proveedor.demo@cliente.com\",\n    \"nombre_usuario\": \"Proveedor Demo\",\n    \"rol_empresa\": \"proveedor\",\n    \"empresas\": [\"AAA010101AAA\"],\n    \"rfc_proveedor\": \"XAXX010101000\",\n    \"nombre_proveedor\": \"Proveedor Demo SA de CV\",\n    \"externalId\": \"ERP-USER-001\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/external/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "external",
+                "users"
+              ]
+            },
+            "description": "Crea una invitacion externa individual. Este flujo no recibe contrasenas en claro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "  pm.response.to.have.status(201)",
+                  "})"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2. Alta Masiva",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessTokenUsers}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    {\n      \"correo\": \"auditor.demo@cliente.com\",\n      \"nombre_usuario\": \"Auditor Demo\",\n      \"rol_empresa\": \"auditor\",\n      \"empresas\": [\"AAA010101AAA\"],\n      \"externalId\": \"ERP-USER-002\"\n    },\n    {\n      \"correo\": \"visualizador.demo@cliente.com\",\n      \"nombre_usuario\": \"Visualizador Demo\",\n      \"rol_empresa\": \"visualizador\",\n      \"empresas\": [\"AAA010101AAA\", \"BBB010101BBB\"],\n      \"externalId\": \"ERP-USER-003\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/external/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "external",
+                "users"
+              ]
+            },
+            "description": "Crea invitaciones externas en lote con validacion por registro y resumen final."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "  pm.response.to.have.status(201)",
+                  "})"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pagos de Proveedor",
+      "description": "Solicitudes para actualizar el estatus de pago y la fecha de pago usando el scope payments:update.",
+      "item": [
+        {
+          "name": "1. Actualizar a PAGADO",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessTokenPayments}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{invoiceUuid}}\",\n  \"estatus_pago\": \"PAGADO\",\n  \"fecha_pago\": \"{{paymentDateIso}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/external/provider-payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "external",
+                "provider-payments"
+              ]
+            },
+            "description": "Actualiza el CFDI indicado a estatus PAGADO y registra fecha_pago."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200)",
+                  "})"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2. Actualizar a EN_PROCESO",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessTokenPayments}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{invoiceUuid}}\",\n  \"estatus_pago\": \"EN_PROCESO\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/external/provider-payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "external",
+                "provider-payments"
+              ]
+            },
+            "description": "Actualiza el CFDI indicado a estatus EN_PROCESO. No debe enviarse fecha_pago."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200)",
+                  "})"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

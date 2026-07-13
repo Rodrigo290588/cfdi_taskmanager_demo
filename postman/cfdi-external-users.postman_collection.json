@@ -2,7 +2,7 @@
   "info": {
     "name": "CFDI External Users API",
     "_postman_id": "2f89bf2c-6f11-49e0-9fe2-5f458bd2d1c7",
-    "description": "Coleccion para autenticacion OAuth 2.0 Client Credentials y alta externa de usuarios por API.",
+    "description": "Coleccion para autenticacion OAuth 2.0 Client Credentials y alta externa de usuarios por API. Incluye control por scopes, rate limiting de 5 peticiones por segundo por cliente y flujo seguro sin contrasenas en claro.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -79,7 +79,7 @@
             "token"
           ]
         },
-        "description": "Obtiene un JWT M2M con el scope users:create."
+        "description": "Obtiene un JWT M2M con el scope users:create. El endpoint aplica rate limiting por cliente."
       },
       "event": [
         {
@@ -141,7 +141,7 @@
             "users"
           ]
         },
-        "description": "Crea una invitacion externa individual delegando la creacion de credenciales al flujo interno de invitaciones."
+        "description": "Crea una invitacion externa individual delegando la creacion de credenciales al flujo interno de invitaciones. No recibe contrasenas en claro y aplica rate limiting por cliente."
       },
       "event": [
         {
@@ -193,7 +193,7 @@
             "users"
           ]
         },
-        "description": "Crea invitaciones externas en lote. Cada registro valida reglas de negocio y devuelve resumen final."
+        "description": "Crea invitaciones externas en lote. Cada registro valida reglas de negocio y devuelve resumen final. No recibe contrasenas en claro y aplica rate limiting por cliente."
       },
       "event": [
         {

@@ -6,16 +6,25 @@ function isSensitiveAuditKey(key: string) {
 
   return [
     'password',
+    'passwd',
+    'passphrase',
     'passwordhash',
     'secret',
+    'secretkey',
     'clientsecret',
+    'credential',
+    'credentials',
     'token',
     'invitationtoken',
     'invitationtokenhash',
     'authorization',
     'authorizationheader',
     'accesstoken',
-    'refreshtoken'
+    'refreshtoken',
+    'apikey',
+    'privatekey',
+    'sessiontoken',
+    'cookie'
   ].some(sensitiveKey => normalizedKey.includes(sensitiveKey))
 }
 

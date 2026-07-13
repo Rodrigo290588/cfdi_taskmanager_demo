@@ -25,11 +25,26 @@ if (REDIS_URL.startsWith('redis://')) {
 
 export const MASS_DOWNLOAD_QUEUE_NAME = 'mass-download-queue'
 export const MASS_VERIFICATION_QUEUE_NAME = 'mass-verification-queue'
+export const PROVIDER_PAYMENT_COMPLIANCE_QUEUE_NAME = 'provider-payment-compliance-queue'
+export const SAT_69B_BLACKLIST_QUEUE_NAME = 'sat-69b-blacklist-queue'
+export const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME = 'provider-post-load-cancellation-alerts-queue'
 
 export const massDownloadQueue = new Queue(MASS_DOWNLOAD_QUEUE_NAME, {
   connection,
 })
 
 export const massVerificationQueue = new Queue(MASS_VERIFICATION_QUEUE_NAME, {
+  connection,
+})
+
+export const providerPaymentComplianceQueue = new Queue(PROVIDER_PAYMENT_COMPLIANCE_QUEUE_NAME, {
+  connection,
+})
+
+export const sat69BBlacklistQueue = new Queue(SAT_69B_BLACKLIST_QUEUE_NAME, {
+  connection,
+})
+
+export const providerPostLoadCancellationAlertsQueue = new Queue(PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME, {
   connection,
 })

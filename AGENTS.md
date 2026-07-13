@@ -94,3 +94,65 @@ Para evitar errores comunes y mantener la arquitectura sana, sigue siempre estas
 11. **Compilación Segura (Build Process):**
     - **Regla Obligatoria:** Cada vez que se necesite realizar la verificación de compilación del código (`npm run build`), el agente **SOLO debe recordarle al usuario** que ejecute el comando de manera manual desde su terminal. El agente NO debe intentar ejecutar o detener procesos de compilación por sí mismo.
    
+12. **Arquitectura de Datos Escalable y Segura (CFDI Big Data):**
+    - **Regla Obligatoria:** Todo nuevo desarrollo que persista, consulte o explote CFDI debe diseñarse considerando desde el inicio que el sistema procesará **más de 1 millón de CFDI por año**.
+    - **Separación de Responsabilidades:** No mezclar en una misma tabla, salvo necesidad transicional justificada, datos operativos/analíticos con blobs pesados o contenido sensible. Los XML cifrados, archivos grandes o payloads voluminosos deben almacenarse en tablas hijas o estructuras separadas del modelo analítico principal.
+    - **OLTP vs Analítica:** Los dashboards, KPIs, reportes agregados y estadísticas **no deben** calcularse leyendo masivamente documentos crudos en tiempo real si existe riesgo de crecimiento. Deben preferirse tablas resumen, agregaciones incrementales, vistas materializadas o estrategias equivalentes.
+    - **Índices por Patrón de Consulta:** Todo diseño nuevo debe definir índices compuestos basados en filtros reales de negocio (`organizationId`, empresa, RFC, fechas, estatus, tipo de CFDI, etc.), evitando depender solo de índices de una sola columna.
+    - **Columnas de Alta Cardinalidad y Estados:** Los campos críticos de búsqueda y clasificación deben modelarse de forma consistente, preferentemente con enums, catálogos controlados o restricciones equivalentes para evitar degradación por datos sucios.
+    - **Migraciones Seguras por Etapas:** Cuando se rediseñe una tabla crítica, se debe seguir un enfoque por fases: compatibilidad transicional, backfill histórico, validación funcional, limpieza lógica y solo al final eliminación física del legado.
+    - **Seguridad del XML:** El resguardo de XML y datos sensibles debe mantenerse cifrado y desacoplado del acceso analítico. Nunca exponer XML completo al frontend salvo mediante rutas server-side autorizadas.
+    - **Escalabilidad Futura:** Antes de implementar nuevos módulos fiscales o reportes masivos, evaluar siempre si corresponde particionamiento, tablas resumen adicionales, workers de sincronización o procesos batch para evitar cuellos de botella futuros.
+
+13. **Separación de Runtime Entre Next y Procesos en Segundo Plano:**
+   - **Regla Obligatoria:** Los helpers compartidos en `src/lib` y `src/services` deben ser reutilizables desde rutas Next, workers BullMQ, scripts operativos y procesos ejecutados con Node.js o `tsx`.
+   - **Prohibición Explícita:** No colocar `import 'server-only'` dentro de módulos compartidos que puedan ser consumidos por workers, scripts o servicios reutilizables. Ese marcador debe reservarse para archivos realmente exclusivos del runtime de Next.js.
+   - **Ubicación Correcta de Barreras de Framework:** Las restricciones específicas de Next.js deben vivir en el borde de entrada del framework, por ejemplo en `route.ts`, `page.tsx`, server actions o wrappers delgados creados específicamente para Next.
+   - **Patrón Requerido:** La lógica de negocio, integración SAT, cifrado, parseo XML, sincronizaciones, cálculos analíticos y utilidades reutilizables deben permanecer desacopladas de marcadores exclusivos del framework.
+   - **Validación Obligatoria:** Antes de introducir un helper server-side nuevo o reutilizar uno existente, validar explícitamente si también será consumido por workers o scripts. Si la respuesta es sí, ese helper no debe depender de `server-only`.
+   - **Criterio de Diseño:** Si se requiere una protección específica para Next.js, crear un wrapper delgado cercano a la ruta o página y mantener el núcleo reusable libre de dependencias del framework.
+
+## ✅ Checklist Obligatorio para Nuevos Desarrollos
+
+Cada vez que se implemente un nuevo módulo, API, dashboard, reporte, worker o proceso masivo relacionado con CFDI, el diseño y la implementación deben validar explícitamente esta checklist:
+
+1. **Checklist de Datos y Persistencia:**
+   - ¿La solución distingue claramente entre datos operativos, datos analíticos y blobs pesados/sensibles?
+   - ¿Los XML, archivos grandes o payloads sensibles quedan cifrados y fuera del modelo analítico principal?
+   - ¿Las columnas críticas de búsqueda, filtros y estados están normalizadas y controladas?
+
+2. **Checklist de Escalabilidad:**
+   - ¿La solución soporta el crecimiento esperado de **más de 1 millón de CFDI por año** sin depender de lecturas completas de tablas transaccionales?
+   - ¿Los dashboards o KPIs usan resúmenes, agregaciones incrementales, vistas materializadas o estrategias equivalentes en lugar de calcular todo sobre documentos crudos?
+   - ¿Se evaluó si el caso requiere particionamiento, tablas resumen o procesos batch?
+
+3. **Checklist de Consultas e Índices:**
+   - ¿Se definieron índices compuestos basados en los filtros reales del negocio?
+   - ¿Se evitó depender únicamente de índices de una sola columna?
+   - ¿Se evitó cualquier patrón `N+1` o lectura masiva innecesaria desde Prisma o SQL?
+
+4. **Checklist de Migraciones y Evolución:**
+   - ¿La migración está diseñada por etapas seguras cuando se toca una tabla crítica?
+   - ¿Existe plan de backfill histórico si se crea una tabla nueva o resumen analítico?
+   - ¿Se contempló validación funcional antes de eliminar legado físico?
+
+5. **Checklist de Seguridad:**
+   - ¿Los datos sensibles quedan cifrados o protegidos por acceso server-side?
+   - ¿Los logs y auditorías evitan exponer secretos, tokens, contraseñas o XML completos?
+   - ¿Las rutas de descarga o consulta sensible validan permisos y contexto organizacional?
+
+6. **Checklist de Procesamiento Masivo:**
+   - ¿El trabajo pesado fue movido a workers o procesos asíncronos cuando aplica?
+   - ¿Se evitó cargar archivos completos en memoria si el volumen puede crecer significativamente?
+   - ¿Se definieron límites de concurrencia, chunking o streaming donde sea necesario?
+
+7. **Checklist de Entrega Técnica:**
+   - ¿Se actualizó la documentación técnica o arquitectónica si el cambio modifica el modelo de datos?
+   - ¿Se dejó documentado el procedimiento manual de migración, backfill, regeneración de Prisma y validación?
+   - ¿Se registró la nueva funcionalidad en permisos/roles si impacta módulos de usuario?
+   - ¿Los helpers compartidos que viven en `src/lib` o `src/services` permanecen desacoplados de marcadores exclusivos de Next.js cuando también serán usados por workers o scripts?
+
+**Regla Obligatoria de Aplicación:**
+- Esta checklist debe considerarse parte del diseño por defecto en todo desarrollo nuevo del proyecto.
+- Si una implementación decide no aplicar uno de estos puntos, debe existir una justificación técnica explícita y documentada dentro de la solución o su documentación asociada.
+   

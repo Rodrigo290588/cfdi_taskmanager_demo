@@ -30,6 +30,12 @@ const DEFAULT_GRANULAR_PERMISSIONS = {
   emissionPartial: true,
   emissionCancelations: true,
   receptionDashboard: true,
+  receptionFiscalAudit: true,
+  receptionCancellationAlerts: true,
+  receptionBusinessRules: true,
+  receptionBusinessRulePueForma99: true,
+  receptionBusinessRuleResicoRetention: true,
+  receptionBusinessRuleObjetoImpVsIva: true,
   receptionWorkpaper: true,
   payrollDashboard: true,
   payrollReceipts: true,
@@ -45,7 +51,12 @@ const DEFAULT_GRANULAR_PERMISSIONS = {
   orgProfiles: false,
   orgRoles: false,
   orgSettings: false,
-  providerDashboard: true
+  providerDashboard: true,
+  providerPaymentsUpdate: true,
+  providerBusinessRules: true,
+  providerBusinessRulePueForma99: false,
+  providerBusinessRuleResicoRetention: false,
+  providerBusinessRuleObjetoImpVsIva: false
 }
 
 const DEFAULT_PERMISSIONS = {
@@ -363,6 +374,37 @@ export default function RolesManagementPage() {
                       <Switch size="sm" checked={formData.granularPermissions.receptionDashboard} onCheckedChange={() => toggleGranularPermission('receptionDashboard')} disabled={!formData.permissions.canViewReception} />
                     </div>
                     <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground font-normal">Auditoría fiscal y detección de riesgos</Label>
+                      <Switch size="sm" checked={formData.granularPermissions.receptionFiscalAudit} onCheckedChange={() => toggleGranularPermission('receptionFiscalAudit')} disabled={!formData.permissions.canViewReception} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground font-normal">Alertas de cancelación post-carga</Label>
+                      <Switch size="sm" checked={formData.granularPermissions.receptionCancellationAlerts} onCheckedChange={() => toggleGranularPermission('receptionCancellationAlerts')} disabled={!formData.permissions.canViewReception} />
+                    </div>
+                    <div className="space-y-3 rounded-lg border border-indigo-200/70 bg-indigo-50/40 p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-sm font-medium text-foreground">Coherencia de datos / reglas de negocio</Label>
+                          <p className="text-xs text-muted-foreground">Módulo padre para validaciones parametrizadas en CFDI recibidos.</p>
+                        </div>
+                        <Switch size="sm" checked={formData.granularPermissions.receptionBusinessRules} onCheckedChange={() => toggleGranularPermission('receptionBusinessRules')} disabled={!formData.permissions.canViewReception} />
+                      </div>
+                      <div className="ml-4 space-y-2 border-l border-indigo-200 pl-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: MetodoPago PUE vs FormaPago 99</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.receptionBusinessRulePueForma99} onCheckedChange={() => toggleGranularPermission('receptionBusinessRulePueForma99')} disabled={!formData.granularPermissions.receptionBusinessRules || !formData.permissions.canViewReception} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: Proveedores RESICO con retención ISR</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.receptionBusinessRuleResicoRetention} onCheckedChange={() => toggleGranularPermission('receptionBusinessRuleResicoRetention')} disabled={!formData.granularPermissions.receptionBusinessRules || !formData.permissions.canViewReception} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: ObjetoImp vs Traslados IVA</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.receptionBusinessRuleObjetoImpVsIva} onCheckedChange={() => toggleGranularPermission('receptionBusinessRuleObjetoImpVsIva')} disabled={!formData.granularPermissions.receptionBusinessRules || !formData.permissions.canViewReception} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <Label className="text-sm text-muted-foreground font-normal">Hoja de trabajo de egresos</Label>
                       <Switch size="sm" checked={formData.granularPermissions.receptionWorkpaper} onCheckedChange={() => toggleGranularPermission('receptionWorkpaper')} disabled={!formData.permissions.canViewReception} />
                     </div>
@@ -473,6 +515,33 @@ export default function RolesManagementPage() {
                     <div className="flex items-center justify-between">
                       <Label className="text-sm text-muted-foreground font-normal">Reporte CFDI&apos;s</Label>
                       <Switch size="sm" checked={formData.granularPermissions.providerDashboard} onCheckedChange={() => toggleGranularPermission('providerDashboard')} disabled={!formData.granularPermissions.providerDashboard} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground font-normal">API actualización de pagos</Label>
+                      <Switch size="sm" checked={formData.granularPermissions.providerPaymentsUpdate} onCheckedChange={() => toggleGranularPermission('providerPaymentsUpdate')} disabled={!formData.granularPermissions.providerDashboard} />
+                    </div>
+                    <div className="space-y-3 rounded-lg border border-indigo-200/70 bg-indigo-50/40 p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-sm font-medium text-foreground">Coherencia de datos / reglas de negocio</Label>
+                          <p className="text-xs text-muted-foreground">Módulo padre para validaciones aplicables durante la carga del proveedor.</p>
+                        </div>
+                        <Switch size="sm" checked={formData.granularPermissions.providerBusinessRules} onCheckedChange={() => toggleGranularPermission('providerBusinessRules')} disabled={!formData.granularPermissions.providerDashboard} />
+                      </div>
+                      <div className="ml-4 space-y-2 border-l border-indigo-200 pl-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: MetodoPago PUE vs FormaPago 99</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.providerBusinessRulePueForma99} onCheckedChange={() => toggleGranularPermission('providerBusinessRulePueForma99')} disabled={!formData.granularPermissions.providerBusinessRules || !formData.granularPermissions.providerDashboard} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: Proveedores RESICO con retención ISR</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.providerBusinessRuleResicoRetention} onCheckedChange={() => toggleGranularPermission('providerBusinessRuleResicoRetention')} disabled={!formData.granularPermissions.providerBusinessRules || !formData.granularPermissions.providerDashboard} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm text-muted-foreground font-normal">Hija: ObjetoImp vs Traslados IVA</Label>
+                          <Switch size="sm" checked={formData.granularPermissions.providerBusinessRuleObjetoImpVsIva} onCheckedChange={() => toggleGranularPermission('providerBusinessRuleObjetoImpVsIva')} disabled={!formData.granularPermissions.providerBusinessRules || !formData.granularPermissions.providerDashboard} />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

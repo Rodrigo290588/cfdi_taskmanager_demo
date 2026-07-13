@@ -1,0 +1,1 @@
+export const MAX_PROVIDER_CFDI_UPLOAD = 3000

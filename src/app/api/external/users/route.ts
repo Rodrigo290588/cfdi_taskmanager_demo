@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { withMachineScope } from '@/lib/m2m-route'
 import { createExternalUserSchema, provisionExternalUsers } from '@/lib/external-user-provisioning'
 import { rateLimit } from '@/lib/rate-limit'
+import { getM2MRateLimitConfig, getM2MRateLimitHeaders } from '@/lib/m2m-rate-limit'
 
 function getRequestIp(request: NextRequest) {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -13,22 +14,17 @@ function getRequestIp(request: NextRequest) {
 
 export const POST = withMachineScope('users:create', async (request: NextRequest, authContext) => {
   try {
-    const limiter = await rateLimit(`m2m:users:create:${authContext.clientId}`, {
-      interval: 1000,
-      limit: 10
-    })
+    const limiter = await rateLimit(
+      `m2m:users:create:${authContext.clientId}`,
+      getM2MRateLimitConfig()
+    )
 
     if (!limiter.success) {
       return NextResponse.json(
         { error: 'Demasiadas peticiones para este cliente' },
         {
           status: 429,
-          headers: {
-            'Retry-After': String(Math.ceil(limiter.retryAfterMs / 1000)),
-            'X-RateLimit-Limit': String(limiter.limit),
-            'X-RateLimit-Remaining': String(limiter.remaining),
-            'X-RateLimit-Reset': String(limiter.resetAt)
-          }
+          headers: getM2MRateLimitHeaders(limiter)
         }
       )
     }

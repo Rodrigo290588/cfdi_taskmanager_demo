@@ -13,7 +13,9 @@ Este documento describe la integracion de alta externa de usuarios para ERPs, PA
    - `src/lib/external-user-provisioning.ts`
 3. Handler del endpoint de alta:
    - `src/app/api/external/users/route.ts`
-4. Coleccion Postman:
+4. Coleccion Postman unificada:
+   - `postman/cfdi-external-services.postman_collection.json`
+5. Coleccion Postman legacy de solo usuarios:
    - `postman/cfdi-external-users.postman_collection.json`
 
 ## Endpoints
@@ -221,7 +223,8 @@ Campos sensibles como `password`, `token`, `authorization`, `client_secret`, `ac
 
 La API aplica una estructura de rate limiting por `clientId`:
 
-- maximo `10` peticiones por segundo en `/api/external/users`
+- maximo `5` peticiones por segundo en `/api/external/users`
+- maximo `5` peticiones por segundo en `/api/oauth/token`
 - respuesta `429` con headers `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` y `X-RateLimit-Reset`
 - autenticacion M2M limitada por cliente en `/api/oauth/token`
 - contadores centralizados en Redis mediante `REDIS_URL`
@@ -253,7 +256,8 @@ M2M_OAUTH_CLIENTS_JSON=[{"clientId":"demo-client","clientSecret":"demo-secret","
 
 ## Uso en Postman
 
-1. Importar `postman/cfdi-external-users.postman_collection.json`
+1. Importar `postman/cfdi-external-services.postman_collection.json`
 2. Ajustar `baseUrl`, `clientId` y `clientSecret`
-3. Ejecutar `1. OAuth Token`
-4. Ejecutar `2. Alta Individual` o `3. Alta Masiva`
+3. Ejecutar `OAuth > 1. Token users:create`
+4. Ejecutar `Usuarios Externos > 1. Alta Individual` o `Usuarios Externos > 2. Alta Masiva`
+5. Si el cliente solo quiere este modulo, opcionalmente puede seguir usando `postman/cfdi-external-users.postman_collection.json`

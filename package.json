@@ -11,7 +11,8 @@
     "rebuild": "npm run clean:next && npm run build",
     "migrate:cfdis-to-invoices": "node scripts/migrate-cfdis-to-invoices.mjs",
     "seed:dev": "node scripts/seed-dev.mjs",
-    "worker:verify": "npx tsx src/scripts/start-worker.ts"
+    "worker:verify": "npx tsx src/scripts/start-worker.ts",
+    "sync:sat-69b": "npx tsx src/scripts/sync-sat-69b.ts"
   },
   "overrides": {
     "baseline-browser-mapping": "^2.9.9"

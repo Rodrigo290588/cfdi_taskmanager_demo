@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose'
 import { rateLimit } from '@/lib/rate-limit'
+import { getM2MRateLimitConfig } from '@/lib/m2m-rate-limit'
 import { prisma } from '@/lib/prisma'
 
 export interface MachineClientConfig {
@@ -27,6 +28,30 @@ interface MachineClientIdentity {
 const DEFAULT_ISSUER = process.env.M2M_JWT_ISSUER || 'cfdi-platform'
 const DEFAULT_AUDIENCE = process.env.M2M_JWT_AUDIENCE || 'cfdi-external-users'
 const DEFAULT_EXPIRES_IN = process.env.M2M_JWT_EXPIRES_IN || '5m'
+
+function resolveExpiresInSeconds(value: string) {
+  const normalizedValue = value.trim().toLowerCase()
+  const match = normalizedValue.match(/^(\d+)([smhd]?)$/)
+
+  if (!match) {
+    return 300
+  }
+
+  const amount = Number(match[1])
+  const unit = match[2] || 's'
+
+  switch (unit) {
+    case 'm':
+      return amount * 60
+    case 'h':
+      return amount * 60 * 60
+    case 'd':
+      return amount * 60 * 60 * 24
+    case 's':
+    default:
+      return amount
+  }
+}
 
 function getJwtSecret() {
   const secret = process.env.M2M_JWT_SECRET
@@ -93,10 +118,10 @@ export async function authenticateMachineClient(params: {
 }) {
   const { clientId, clientSecret, requestedScopes = [], sourceIp } = params
 
-  const limiter = await rateLimit(`m2m:${clientId}`, {
-    interval: 60 * 1000,
-    limit: 10
-  })
+  const limiter = await rateLimit(
+    `m2m:oauth:token:${clientId}`,
+    getM2MRateLimitConfig()
+  )
 
   if (!limiter.success) {
     return {
@@ -240,6 +265,7 @@ export async function authenticateMachineClient(params: {
 
 export async function issueMachineToken(client: MachineClientIdentity, scopes: string[]) {
   const now = Math.floor(Date.now() / 1000)
+  const expiresIn = resolveExpiresInSeconds(DEFAULT_EXPIRES_IN)
   const payload: MachineTokenPayload = {
     sub: client.clientId,
     org_id: client.organizationId,
@@ -260,7 +286,7 @@ export async function issueMachineToken(client: MachineClientIdentity, scopes: s
   return {
     accessToken: token,
     tokenType: 'Bearer',
-    expiresIn: 300,
+    expiresIn,
     scope: scopes.join(' ')
   }
 }

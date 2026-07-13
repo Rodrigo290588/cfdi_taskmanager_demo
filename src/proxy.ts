@@ -18,6 +18,7 @@ export default auth((req) => {
   const isOnApi = req.nextUrl.pathname.startsWith("/api")
   const isMachineToMachineApi = req.nextUrl.pathname.startsWith("/api/oauth/token")
     || req.nextUrl.pathname.startsWith("/api/external/users")
+    || req.nextUrl.pathname.startsWith("/api/external/provider-payments")
 
   // 1. API Protection
   if (isOnApi) {

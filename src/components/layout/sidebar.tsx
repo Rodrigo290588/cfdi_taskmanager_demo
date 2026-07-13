@@ -542,14 +542,14 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                   className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
                 >
                   <BarChart3 className="h-4 w-4" />
-                  <span>Dashboard</span>
+                  <span>Tablero de Egresos</span>
                 </Link>
                 <Link
                   href="/dashboard_recibidos/workpaper"
                   className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
                 >
                   <Table className="h-4 w-4" />
-                  <span>Hoja de trabajo</span>
+                  <span>Reporte de Egresos</span>
                 </Link>
               </CollapsibleContent>
             </Collapsible>

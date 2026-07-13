@@ -42,6 +42,12 @@ export async function GET() {
           emissionPartial: true,
           emissionCancelations: true,
           receptionDashboard: true,
+          receptionFiscalAudit: true,
+          receptionCancellationAlerts: true,
+          receptionBusinessRules: true,
+          receptionBusinessRulePueForma99: true,
+          receptionBusinessRuleResicoRetention: true,
+          receptionBusinessRuleObjetoImpVsIva: true,
           receptionWorkpaper: true,
           payrollDashboard: true,
           payrollReceipts: true,
@@ -56,7 +62,13 @@ export async function GET() {
           orgUsers: true,
           orgProfiles: true,
           orgRoles: true,
-          orgSettings: true
+          orgSettings: true,
+          providerDashboard: true,
+          providerPaymentsUpdate: true,
+          providerBusinessRules: true,
+          providerBusinessRulePueForma99: false,
+          providerBusinessRuleResicoRetention: false,
+          providerBusinessRuleObjetoImpVsIva: false
         }
       },
       {
@@ -76,6 +88,12 @@ export async function GET() {
           emissionPartial: true,
           emissionCancelations: true,
           receptionDashboard: true,
+          receptionFiscalAudit: true,
+          receptionCancellationAlerts: true,
+          receptionBusinessRules: true,
+          receptionBusinessRulePueForma99: true,
+          receptionBusinessRuleResicoRetention: true,
+          receptionBusinessRuleObjetoImpVsIva: true,
           receptionWorkpaper: true,
           payrollDashboard: true,
           payrollReceipts: true,
@@ -90,7 +108,13 @@ export async function GET() {
           orgUsers: false,
           orgProfiles: false,
           orgRoles: false,
-          orgSettings: false
+          orgSettings: false,
+          providerDashboard: true,
+          providerPaymentsUpdate: true,
+          providerBusinessRules: true,
+          providerBusinessRulePueForma99: false,
+          providerBusinessRuleResicoRetention: false,
+          providerBusinessRuleObjetoImpVsIva: false
         }
       },
       {
@@ -110,6 +134,12 @@ export async function GET() {
           emissionPartial: false,
           emissionCancelations: false,
           receptionDashboard: true,
+          receptionFiscalAudit: true,
+          receptionCancellationAlerts: true,
+          receptionBusinessRules: true,
+          receptionBusinessRulePueForma99: true,
+          receptionBusinessRuleResicoRetention: true,
+          receptionBusinessRuleObjetoImpVsIva: true,
           receptionWorkpaper: false,
           payrollDashboard: true,
           payrollReceipts: false,
@@ -124,7 +154,13 @@ export async function GET() {
           orgUsers: false,
           orgProfiles: false,
           orgRoles: false,
-          orgSettings: false
+          orgSettings: false,
+          providerDashboard: true,
+          providerPaymentsUpdate: false,
+          providerBusinessRules: false,
+          providerBusinessRulePueForma99: false,
+          providerBusinessRuleResicoRetention: false,
+          providerBusinessRuleObjetoImpVsIva: false
         }
       }
     ]

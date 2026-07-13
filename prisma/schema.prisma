@@ -51,6 +51,7 @@ model User {
   accounts       Account[]
   apiKeys        ApiKey[]
   invoices       Invoice[]
+  providerUploadedCfdis ProviderUploadedCfdi[] @relation("ProviderUploadedCfdiUser")
   satInvoices    SatInvoice[]
   memberships    Member[]
   organizations  Organization?
@@ -98,6 +99,8 @@ model Organization {
   fiscalEntities           FiscalEntity[]
   members                  Member[]
   machineClients           MachineClient[]
+  providerUploadedCfdis    ProviderUploadedCfdi[]
+  providerReceivedCfdiDailySummaries ProviderReceivedCfdiDailySummary[]
   customRoles              CustomRole[]
   companyAccesses          CompanyAccess[]
   satCredentials           SatCredential[]
@@ -171,6 +174,7 @@ model Member {
   user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   customRole          CustomRole?  @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
   companyAccesses     CompanyAccess[]
+  providerUploadedCfdis ProviderUploadedCfdi[]
   canViewEmission     Boolean      @default(true)  @map("can_view_emission")
   canViewReception    Boolean      @default(true)  @map("can_view_reception")
   canViewPayroll      Boolean      @default(true)  @map("can_view_payroll")
@@ -180,10 +184,15 @@ model Member {
   granularPermissions Json?        @default("{}")  @map("granular_permissions")
   providerRfc         String?      @map("provider_rfc")
   providerName        String?      @map("provider_name")
+  providerUploadBlockedAt DateTime? @map("provider_upload_blocked_at")
+  providerUploadBlockedReason String? @map("provider_upload_blocked_reason")
+  providerUploadBlockedBySystem Boolean @default(false) @map("provider_upload_blocked_by_system")
 
   @@unique([userId, organizationId])
   @@index([invitationTokenHash])
   @@index([status])
+  @@index([organizationId, providerRfc])
+  @@index([providerUploadBlockedBySystem])
   @@map("members")
 }
 
@@ -379,6 +388,8 @@ model Company {
   updatedBy           String        @map("updated_by")
   auditLogs           AuditLog[]
   companyAccesses     CompanyAccess[]
+  providerUploadedCfdis ProviderUploadedCfdi[]
+  providerReceivedCfdiDailySummaries ProviderReceivedCfdiDailySummary[]
   massDownloadRequests MassDownloadRequest[]
 
   @@index([rfc])
@@ -496,6 +507,174 @@ model AuditLog {
   @@index([timestamp])
   @@index([companyId])
   @@map("audit_logs")
+}
+
+model SatValidationErrorKnowledge {
+  id                 String   @id @default(cuid())
+  sourceSystem       String   @map("source_system")
+  rawErrorHash       String   @unique @map("raw_error_hash")
+  rawErrorText       String   @map("raw_error_text")
+  normalizedErrorText String  @map("normalized_error_text")
+  detectedCode       String   @default("N/A") @map("detected_code")
+  humanMessage       String   @map("human_message")
+  correctiveAction   String   @map("corrective_action")
+  responsible        String
+  aiProvider         String?  @map("ai_provider")
+  aiModel            String?  @map("ai_model")
+  usageCount         Int      @default(1) @map("usage_count")
+  lastSeenAt         DateTime @default(now()) @map("last_seen_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([sourceSystem])
+  @@index([detectedCode])
+  @@index([lastSeenAt])
+  @@map("sat_validation_error_knowledge")
+}
+
+model ProviderUploadedCfdi {
+  id                     String   @id @default(cuid())
+  organizationId         String   @map("organization_id")
+  memberId               String   @map("member_id")
+  uploadedByUserId       String?  @map("uploaded_by_user_id")
+  receiverCompanyId      String?  @map("receiver_company_id")
+  fileName               String   @map("file_name")
+  uuid                   String
+  providerRfc            String   @map("provider_rfc")
+  providerName           String?  @map("provider_name")
+  issuerRfc              String   @map("issuer_rfc")
+  issuerName             String?  @map("issuer_name")
+  receiverRfc            String   @map("receiver_rfc")
+  receiverName           String?  @map("receiver_name")
+  cfdiType               String   @map("cfdi_type")
+  series                 String?
+  folio                  String?
+  paymentMethod          String?  @map("payment_method")
+  paymentForm            String?  @map("payment_form")
+  issuerFiscalRegime     String?  @map("issuer_fiscal_regime")
+  hasResicoIsrRetention  Boolean  @default(false) @map("has_resico_isr_retention")
+  hasObjetoImpTaxMismatch Boolean @default(false) @map("has_objetoimp_tax_mismatch")
+  objetoImpTaxMismatchReason String? @map("objetoimp_tax_mismatch_reason")
+  currency               String   @default("MXN")
+  subtotal               Decimal? @db.Decimal(18, 6)
+  transferredTaxesTotal  Decimal? @map("transferred_taxes_total") @db.Decimal(18, 6)
+  withheldTaxesTotal     Decimal? @map("withheld_taxes_total") @db.Decimal(18, 6)
+  discount               Decimal? @db.Decimal(18, 6)
+  total                  Decimal   @db.Decimal(18, 6)
+  issuanceDate           DateTime? @map("issuance_date")
+  certificationDate      DateTime? @map("certification_date")
+  validationStatus       String   @default("APPROVED") @map("validation_status")
+  validationAnexo20      String?  @map("validation_anexo20")
+  validationSat          String?  @map("validation_sat")
+  satCodigoEstatus       String?  @map("sat_codigo_estatus")
+  satEstado              String?  @map("sat_estado")
+  satInitialEstado       String?  @map("sat_initial_estado")
+  satEsCancelable        String?  @map("sat_es_cancelable")
+  satEstatusCancelacion  String?  @map("sat_estatus_cancelacion")
+  satValidacionEFOS      String?  @map("sat_validacion_efos")
+  satStatusLastCheckedAt DateTime? @map("sat_status_last_checked_at")
+  satStatusChangedAt     DateTime? @map("sat_status_changed_at")
+  satCancellationDetectedAt DateTime? @map("sat_cancellation_detected_at")
+  paymentLinksJson       Json?    @map("payment_links_json")
+  paymentStatusManual    String?  @map("payment_status_manual")
+  paymentDateManual      DateTime? @map("payment_date_manual")
+  paymentStatusUpdatedAt DateTime? @map("payment_status_updated_at")
+  paymentStatusUpdatedByClientId String? @map("payment_status_updated_by_client_id")
+  paymentComplementDueDate DateTime? @map("payment_complement_due_date")
+  xmlSha256              String   @map("xml_sha256")
+  firstValidatedAt       DateTime @default(now()) @map("first_validated_at")
+  lastValidatedAt        DateTime @default(now()) @map("last_validated_at")
+  uploadCount            Int      @default(1) @map("upload_count")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  member                 Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receiverCompany        Company? @relation(fields: [receiverCompanyId], references: [id], onDelete: SetNull)
+  uploadedByUser         User?    @relation("ProviderUploadedCfdiUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  xmlBlob                ProviderUploadedCfdiBlob?
+
+  @@unique([organizationId, uuid])
+  @@index([organizationId, providerRfc])
+  @@index([organizationId, receiverRfc])
+  @@index([organizationId, cfdiType])
+  @@index([receiverCompanyId])
+  @@index([issuanceDate])
+  @@index([lastValidatedAt])
+  @@index([validationStatus])
+  @@index([satEstado])
+  @@index([paymentStatusManual])
+  @@index([paymentDateManual])
+  @@index([paymentComplementDueDate])
+  @@index([organizationId, receiverCompanyId, issuerRfc, issuanceDate], map: "provider_uploaded_cfdis_org_company_issuer_date_idx")
+  @@index([organizationId, receiverCompanyId, validationStatus, cfdiType], map: "provider_uploaded_cfdis_org_company_validation_type_idx")
+  @@index([organizationId, receiverCompanyId, paymentMethod, paymentForm], map: "provider_uploaded_cfdis_org_company_payment_rule_idx")
+  @@index([organizationId, receiverCompanyId, issuerFiscalRegime, hasResicoIsrRetention], map: "provider_uploaded_cfdis_org_company_resico_rule_idx")
+  @@index([organizationId, receiverCompanyId, hasObjetoImpTaxMismatch], map: "provider_uploaded_cfdis_org_company_objetoimp_rule_idx")
+  @@index([organizationId, receiverCompanyId, satCancellationDetectedAt], map: "provider_uploaded_cfdis_org_company_cancel_detected_idx")
+  @@index([validationStatus, satInitialEstado, satEstado, satStatusLastCheckedAt], map: "provider_uploaded_cfdis_sat_monitor_scan_idx")
+  @@map("provider_uploaded_cfdis")
+}
+
+model ProviderUploadedCfdiBlob {
+  providerUploadedCfdiId String             @id @map("provider_uploaded_cfdi_id")
+  xmlCiphertext          String             @map("xml_ciphertext")
+  xmlIv                  String             @map("xml_iv")
+  xmlAuthTag             String             @map("xml_auth_tag")
+  xmlEncryptionAlg       String             @default("aes-256-gcm") @map("xml_encryption_alg")
+  xmlKeyVersion          String             @default("v1") @map("xml_key_version")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+  providerUploadedCfdi   ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
+
+  @@map("provider_uploaded_cfdi_blobs")
+}
+
+model ProviderReceivedCfdiDailySummary {
+  id                  String       @id @default(cuid())
+  organizationId      String       @map("organization_id")
+  receiverCompanyId   String       @map("receiver_company_id")
+  summaryDate         DateTime     @map("summary_date") @db.Date
+  cfdiType            String       @map("cfdi_type")
+  satEstado           String       @default("SIN_ESTATUS") @map("sat_estado")
+  issuerRfc           String       @default("") @map("issuer_rfc")
+  issuerName          String       @default("") @map("issuer_name")
+  paymentMethod       String       @default("") @map("payment_method")
+  paymentStatusBucket String       @default("NO_APLICA") @map("payment_status_bucket")
+  cfdiCount           Int          @default(0) @map("cfdi_count")
+  totalAmount         Decimal      @default(0) @map("total_amount") @db.Decimal(18, 6)
+  transferredTaxesTotal Decimal    @default(0) @map("transferred_taxes_total") @db.Decimal(18, 6)
+  withheldTaxesTotal  Decimal      @default(0) @map("withheld_taxes_total") @db.Decimal(18, 6)
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receiverCompany     Company      @relation(fields: [receiverCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, receiverCompanyId, summaryDate, cfdiType, satEstado, issuerRfc, paymentMethod, paymentStatusBucket], map: "provider_received_cfdi_daily_summary_unique_dim_idx")
+  @@index([organizationId, receiverCompanyId, summaryDate], map: "provider_received_cfdi_daily_summary_company_date_idx")
+  @@index([organizationId, receiverCompanyId, cfdiType], map: "provider_received_cfdi_daily_summary_company_type_idx")
+  @@index([organizationId, receiverCompanyId, satEstado], map: "provider_received_cfdi_daily_summary_company_status_idx")
+  @@index([organizationId, receiverCompanyId, issuerRfc], map: "provider_received_cfdi_daily_summary_company_supplier_idx")
+  @@index([organizationId, receiverCompanyId, paymentStatusBucket], map: "provider_received_cfdi_daily_summary_company_payment_bucket_idx")
+  @@map("provider_received_cfdi_daily_summary")
+}
+
+model Sat69BBlacklistEntry {
+  rfc             String   @id
+  taxpayerName    String?  @map("taxpayer_name")
+  statusLabel     String   @map("status_label")
+  statusBucket    String   @map("status_bucket")
+  isActiveRisk    Boolean  @default(false) @map("is_active_risk")
+  publicationDate DateTime? @map("publication_date") @db.Date
+  removalDate     DateTime? @map("removal_date") @db.Date
+  sourceType      String   @default("SAT_69B") @map("source_type")
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([statusBucket], map: "sat_69b_blacklist_entries_status_bucket_idx")
+  @@index([isActiveRisk, rfc], map: "sat_69b_blacklist_entries_active_rfc_idx")
+  @@index([lastSeenAt], map: "sat_69b_blacklist_entries_last_seen_idx")
+  @@map("sat_69b_blacklist_entries")
 }
 
 enum MemberRole {
