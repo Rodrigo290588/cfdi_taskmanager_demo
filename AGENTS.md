@@ -70,12 +70,14 @@ Para evitar errores comunes y mantener la arquitectura sana, sigue siempre estas
 
 8. **Control de Versiones y Despliegues (GitHub):**
    - **Regla Obligatoria:** Cada vez que se finalice una característica importante y se suban los cambios a GitHub (`git push`), es estrictamente necesario **versionar** el listado de cambios.
+   - **Archivo Obligatorio de Versionado:** Antes de crear el commit final y subir cambios, se debe actualizar el archivo raíz `CHANGELOG.md` con la **versión**, la **fecha** (`YYYY-MM-DD`) y un resumen claro de los cambios incluidos en esa entrega.
    - **Flujo Requerido:**
      1. `git add .`
-     2. `git commit -m "feat/fix: descripción clara de los cambios"`
-     3. `git tag -a vX.X.X -m "Descripción de la versión"` (Usando Versionamiento Semántico: Mayor.Menor.Parche).
-     4. `git push origin <rama>`
-     5. `git push origin --tags`
+     2. Actualizar `CHANGELOG.md` con versión, fecha y cambios de la entrega.
+     3. `git commit -m "feat/fix: descripción clara de los cambios"`
+     4. `git tag -a vX.X.X -m "Descripción de la versión"` (Usando Versionamiento Semántico: Mayor.Menor.Parche).
+     5. `git push origin <rama>`
+     6. `git push origin --tags`
    - Esto asegura que siempre haya una foto exacta del código (release/tag) correspondiente a las nuevas funcionalidades subidas.
 
 9. **Patrón de Reportes Desglosados (Drilldown Popups):**
