@@ -28,26 +28,30 @@ interface TenantData {
   }
 }
 
+const allowedPreferenceTabs = ['theme', 'font', 'locale', 'currency', 'timezone', 'session']
+
+function getInitialPreferenceTab() {
+  if (typeof window === 'undefined') {
+    return 'theme'
+  }
+
+  try {
+    const url = new URL(window.location.href)
+    const tab = url.searchParams.get('tab') || (window.location.hash ? window.location.hash.replace('#', '') : null)
+    return tab && allowedPreferenceTabs.includes(tab) ? tab : 'theme'
+  } catch {
+    return 'theme'
+  }
+}
+
 export default function PreferencesPage() {
   const [tenant, setTenant] = useState<TenantData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const { setTheme } = useTheme()
-  const [tab, setTab] = useState<string>('theme')
+  const [tab, setTab] = useState<string>(getInitialPreferenceTab)
 
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  useEffect(() => {
-    try {
-      const url = new URL(window.location.href)
-      const t = url.searchParams.get('tab') || (window.location.hash ? window.location.hash.replace('#', '') : null)
-      if (t) setTab(t)
-    } catch {}
-  }, [])
-
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       setLoading(true)
       const res = await fetch('/api/tenant')
@@ -59,6 +63,14 @@ export default function PreferencesPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchData()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const updateTenant = async () => {
     if (!tenant) return

@@ -66,23 +66,18 @@ export default function TenantManagementPage() {
   const [showForm, setShowForm] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
 
-  useEffect(() => {
-    fetchTenantData()
-  }, [])
-
-  const fetchTenantData = async () => {
+  async function fetchTenantData() {
     try {
       setLoading(true)
       const response = await fetch('/api/tenant')
-      
+
       if (!response.ok) {
         throw new Error('Error al cargar la información del tenant')
       }
 
       const data = await response.json()
       setTenant(data.tenant)
-      
-      // Show form if no tenant data exists
+
       if (!data.tenant || !data.tenant.name) {
         setShowForm(true)
       }
@@ -92,6 +87,14 @@ export default function TenantManagementPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchTenantData()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const handleFormSuccess = (data: TenantFormData) => {
     // Update tenant with form data

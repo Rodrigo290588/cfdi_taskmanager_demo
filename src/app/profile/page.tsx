@@ -28,6 +28,10 @@ interface UserProfile {
   }
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -35,23 +39,35 @@ export default function ProfilePage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
-  useEffect(() => {
-    fetchProfile()
-  }, [])
-
-  const fetchProfile = async () => {
+  async function fetchProfile(signal?: AbortSignal) {
     try {
       setLoading(true)
-      const res = await fetch('/api/user/profile')
+      const res = await fetch('/api/user/profile', { signal })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error al cargar perfil')
       setProfile(data.user)
     } catch (e) {
-      showError('Error al cargar perfil', e instanceof Error ? e.message : undefined)
+      if (!isAbortError(e)) {
+        showError('Error al cargar perfil', e instanceof Error ? e.message : undefined)
+      }
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) {
+        setLoading(false)
+      }
     }
   }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      void fetchProfile(controller.signal)
+    }, 0)
+
+    return () => {
+      clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [])
 
   const saveProfile = async () => {
     if (!profile) return

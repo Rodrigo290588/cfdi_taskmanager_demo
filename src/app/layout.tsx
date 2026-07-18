@@ -16,7 +16,7 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "PlatFi Intelligence - Inteligencia Fiscal",
+  title: "CFDI Task Manager - Inteligencia Fiscal",
   description: "Plataforma de inteligencia financiera para auditoría y conciliación de CFDI",
 };
 

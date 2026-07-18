@@ -82,11 +82,7 @@ export default function RolesManagementPage() {
   })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetchRoles()
-  }, [])
-
-  const fetchRoles = async () => {
+  async function fetchRoles() {
     try {
       setLoading(true)
       const res = await fetch('/api/admin/roles')
@@ -100,6 +96,14 @@ export default function RolesManagementPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchRoles()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const handleOpenDialog = (role?: CustomRole) => {
     if (role) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,6 @@ export function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isMounted, setIsMounted] = useState(false)
-
-  // Asegurar que el componente esté montado en el cliente
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,23 +49,6 @@ export function SignInForm() {
     } finally {
       setIsLoading(false)
     }
-  }
-
-  // Evitar renderizar contenido interactivo hasta que esté montado
-  if (!isMounted) {
-    return (
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
-          <div className="h-10 bg-gray-200 rounded-lg animate-pulse" />
-        </div>
-        <div className="space-y-2">
-          <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
-          <div className="h-10 bg-gray-200 rounded-lg animate-pulse" />
-        </div>
-        <div className="h-10 bg-gray-200 rounded-lg animate-pulse" />
-      </div>
-    )
   }
 
   return (

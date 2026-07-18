@@ -294,9 +294,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           <div className="h-16 flex items-center justify-between px-4 border-b border-white/10 shrink-0">
             <div className="flex items-center space-x-3 min-w-0">
               <div className="flex items-center justify-center">
-                 {/* Factronica Logo Small */}
+                 {/* CFDI Task Manager Logo Small */}
                  <div className="flex items-start">
-                   <span className="text-lg font-heading font-bold text-white">Factronica</span>
+                   <span className="text-lg font-heading font-bold text-white">CFDI Task Manager</span>
                    <div className="flex ml-1 mt-1.5 space-x-0.5">
                      <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
                      <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1"></span>

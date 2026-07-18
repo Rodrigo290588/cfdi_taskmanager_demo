@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -140,7 +140,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<CompanyFormData>({
     resolver: zodResolver(companyFormSchema),
@@ -148,6 +148,10 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
       country: 'México',
     },
   })
+
+  const rfcValue = useWatch({ control, name: 'rfc' })
+  const taxRegimeValue = useWatch({ control, name: 'taxRegime' })
+  const industryValue = useWatch({ control, name: 'industry' })
 
   useEffect(() => {
     if (!initialData) return
@@ -371,7 +375,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
               <div className="space-y-2">
                 <Label htmlFor="rfc">RFC *</Label>
                 <RFCValidator
-                  value={watch('rfc') || ''}
+                  value={rfcValue || ''}
                   onChange={(value) => setValue('rfc', value)}
                   onValidation={(result) => {
                     if (!result.isValid) {
@@ -419,7 +423,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
 
               <div className="space-y-2">
                 <Label htmlFor="taxRegime">Régimen Fiscal *</Label>
-                <Select value={watch('taxRegime') || undefined} onValueChange={(value) => setValue('taxRegime', value)}>
+                <Select value={taxRegimeValue || undefined} onValueChange={(value) => setValue('taxRegime', value)}>
                   <SelectTrigger className={fieldErrors.taxRegime ? 'border-red-500' : ''}>
                     <SelectValue placeholder="Seleccione régimen fiscal" />
                   </SelectTrigger>
@@ -534,7 +538,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
 
               <div className="space-y-2">
                 <Label htmlFor="industry">Industria</Label>
-                <Select value={watch('industry') || undefined} onValueChange={(value) => setValue('industry', value)}>
+                <Select value={industryValue || undefined} onValueChange={(value) => setValue('industry', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione industria" />
                   </SelectTrigger>

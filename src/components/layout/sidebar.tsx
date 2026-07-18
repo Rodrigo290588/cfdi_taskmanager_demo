@@ -49,6 +49,10 @@ import {
   XCircle
 } from "lucide-react"
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 type NavIcon = React.ComponentType<{ className?: string }>
 const navigation: Array<{ name: string; href: string; icon: NavIcon; required?: Permission | Permission[] }> = [
   {
@@ -125,11 +129,11 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     : globalModuleFlags
 
   // Fetch companies the current user has access to
-  const fetchTenantCompanies = useCallback(async () => {
+  const fetchTenantCompanies = useCallback(async (signal?: AbortSignal) => {
     try {
       const orgId = tenantState?.organizationId
       const url = orgId ? `/api/user/company-access?orgId=${orgId}` : '/api/user/company-access'
-      const response = await fetch(url, { cache: 'no-store' })
+      const response = await fetch(url, { cache: 'no-store', signal })
       let data: { companies?: FiscalEntity[]; hasAccess?: boolean } = { companies: [] }
       try {
         data = await response.json()
@@ -176,6 +180,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         setSelectedEntity(null)
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        return
+      }
       console.error('Error fetching tenant companies:', error)
       // Fallback to empty array
       setFiscalEntities([])
@@ -188,17 +195,22 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     const id = setTimeout(() => {
       setIsClient(true)
       if (session?.user) {
-        fetchTenantCompanies()
+        void fetchTenantCompanies()
       }
     }, 0)
-    return () => clearTimeout(id)
+    return () => {
+      clearTimeout(id)
+    }
   }, [session?.user, tenantState?.organizationId, fetchTenantCompanies])
 
   useEffect(() => {
+    const controller = new AbortController()
     const loadFlags = async () => {
       try {
         if (!tenantState?.organizationId) return
-        const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`)
+        const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`, {
+          signal: controller.signal
+        })
         const data = await res.json()
         if (res.ok && data?.member) {
           setGlobalModuleFlags({
@@ -211,9 +223,15 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
           })
         }
-      } catch {}
+      } catch (error) {
+        if (!isAbortError(error)) {
+          console.error('Error fetching member flags:', error)
+        }
+      }
     }
-    loadFlags()
+    void loadFlags()
+
+    return () => controller.abort()
   }, [tenantState?.organizationId])
 
   // Persist selected company and notify dashboard
@@ -265,18 +283,24 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   }, [tenantState?.organizationId, fetchTenantCompanies])
 
   useEffect(() => {
+    const controller = new AbortController()
     const fetchAvatar = async () => {
       try {
-        const res = await fetch('/api/user/profile')
+        const res = await fetch('/api/user/profile', { signal: controller.signal })
         const data = await res.json()
         if (res.ok && data?.user?.image) {
           setAvatarUrl(data.user.image as string)
         }
-      } catch {}
+      } catch (error) {
+        if (!isAbortError(error)) {
+          console.error('Error fetching avatar:', error)
+        }
+      }
     }
     if (session?.user) {
-      fetchAvatar()
+      void fetchAvatar()
     }
+    return () => controller.abort()
   }, [session?.user])
 
   const handleLogout = async () => {
@@ -361,9 +385,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           <div className="h-16 flex items-center justify-between px-4 border-b border-white/10 shrink-0">
             <div className="flex items-center space-x-3 min-w-0">
               <div className="flex items-center justify-center">
-                 {/* Factronica Logo Small */}
+                 {/* CFDI Task Manager Logo Small */}
                  <div className="flex items-start">
-                   <span className="text-lg font-heading font-bold text-white">Factronica</span>
+                   <span className="text-lg font-heading font-bold text-white">CFDI Task Manager</span>
                    <div className="flex ml-1 mt-1.5 space-x-0.5">
                      <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
                      <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1"></span>

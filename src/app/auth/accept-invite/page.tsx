@@ -26,29 +26,34 @@ function AcceptInviteContent() {
 
   useEffect(() => {
     if (!token) {
-      setError('Enlace de invitación no válido o incompleto.')
-      setLoading(false)
-      return
-    }
-
-    const verifyToken = async () => {
-      try {
-        const res = await fetch(`/api/auth/invite/verify?token=${token}`)
-        const data = await res.json()
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Error al verificar la invitación')
-        }
-
-        setInviteData(data.data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error desconocido')
-      } finally {
+      const timeoutId = setTimeout(() => {
+        setError('Enlace de invitación no válido o incompleto.')
         setLoading(false)
-      }
+      }, 0)
+
+      return () => clearTimeout(timeoutId)
     }
 
-    verifyToken()
+    const timeoutId = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/auth/invite/verify?token=${token}`)
+          const data = await res.json()
+
+          if (!res.ok) {
+            throw new Error(data.error || 'Error al verificar la invitación')
+          }
+
+          setInviteData(data.data)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Error desconocido')
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [token])
 
   const handleAccept = async (e: React.FormEvent) => {

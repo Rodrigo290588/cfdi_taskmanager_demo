@@ -75,11 +75,7 @@ export default function AdminDashboardPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  const fetchDashboardData = async () => {
+  async function fetchDashboardData() {
     try {
       const response = await fetch('/api/admin/dashboard', {
         method: 'GET',
@@ -104,6 +100,14 @@ export default function AdminDashboardPage() {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchDashboardData()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const getStatusBadge = (status: string) => {
     const variants = {

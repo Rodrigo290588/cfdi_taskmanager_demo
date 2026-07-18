@@ -3,7 +3,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route"
 import { MassDownloadRequestForm } from "@/components/mass-downloads/request-form"
 
 export const metadata: Metadata = {
-  title: "Solicitud de Descargas - PlatFi Intelligence",
+  title: "Solicitud de Descargas - CFDI Task Manager",
   description: "Solicita y gestiona tus descargas masivas de CFDI",
 }
 

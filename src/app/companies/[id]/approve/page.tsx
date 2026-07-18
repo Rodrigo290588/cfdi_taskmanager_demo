@@ -58,28 +58,29 @@ export default function CompanyApprovalPage() {
   const [showRejectionForm, setShowRejectionForm] = useState(false)
 
   useEffect(() => {
-    fetchCompanyDetails()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    const timeoutId = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/companies/${companyId}`)
+          if (!response.ok) {
+            throw new Error('Error al cargar los detalles de la empresa')
+          }
 
-  const fetchCompanyDetails = async () => {
-    try {
-      const response = await fetch(`/api/companies/${companyId}`)
-      if (!response.ok) {
-        throw new Error('Error al cargar los detalles de la empresa')
-      }
-      
-      const data = await response.json()
-      setCompany(data.company)
-      setAuditLogs(data.auditLogs || [])
-    } catch (error) {
-      console.error('Error fetching company details:', error)
-      toast.error('Error al cargar los detalles de la empresa')
-      router.push('/companies/search')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+          const data = await response.json()
+          setCompany(data.company)
+          setAuditLogs(data.auditLogs || [])
+        } catch (error) {
+          console.error('Error fetching company details:', error)
+          toast.error('Error al cargar los detalles de la empresa')
+          router.push('/companies/search')
+        } finally {
+          setIsLoading(false)
+        }
+      })()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [companyId, router])
 
   const handleApprove = async () => {
     setIsProcessing(true)

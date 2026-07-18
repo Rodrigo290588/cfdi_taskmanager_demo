@@ -1,6 +1,6 @@
- 'use client'
+'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,6 +58,32 @@ function getProgressFromEstado(code: number) {
   return 0
 }
 
+async function loadPackageRequests(
+  rfc: string,
+  setLoading: (value: boolean) => void,
+  setRequests: (value: PackageRequest[]) => void
+) {
+  setLoading(true)
+  try {
+    const params = new URLSearchParams()
+    params.append('rfc', rfc)
+
+    const res = await fetch(`/api/mass-downloads/package-downloads?${params.toString()}`, { cache: 'no-store' })
+    if (!res.ok) throw new Error('Error al cargar solicitudes de paquetes')
+    const data: PackageRequest[] = await res.json()
+    const normalized = data.map((item) => ({
+      ...item,
+      progreso: item.progreso ?? getProgressFromEstado(item.estado_code),
+    }))
+    setRequests(normalized)
+  } catch (error) {
+    console.error(error)
+    toast.error('Error al cargar la información de paquetes')
+  } finally {
+    setLoading(false)
+  }
+}
+
 export default function PackageDownloadsPage() {
   const [requests, setRequests] = useState<PackageRequest[]>([])
   const [loading, setLoading] = useState(false)
@@ -71,10 +97,14 @@ export default function PackageDownloadsPage() {
     try {
       setIsDownloadingZip(idPaquete)
       const url = `/api/mass-downloads/download-zip?rfc=${encodeURIComponent(rfc)}&idPaquete=${encodeURIComponent(idPaquete)}`
-      
-      // Intentamos abrir la descarga en la misma ventana para que el navegador inicie la descarga
-      window.location.href = url
-      
+
+      const link = document.createElement('a')
+      link.href = url
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
       toast.success(`Descargando paquete ${idPaquete}...`)
     } catch (error) {
       console.error(error)
@@ -106,44 +136,32 @@ export default function PackageDownloadsPage() {
     return () => window.removeEventListener('company-selected', updateCompany)
   }, [])
 
-  const fetchData = useCallback(async () => {
+  async function fetchData() {
     if (!selectedCompany?.rfc) return
 
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.append('rfc', selectedCompany.rfc)
-
-      const res = await fetch(`/api/mass-downloads/package-downloads?${params.toString()}`, { cache: 'no-store' })
-      if (!res.ok) throw new Error('Error al cargar solicitudes de paquetes')
-      const data: PackageRequest[] = await res.json()
-      const normalized = data.map((item) => ({
-        ...item,
-        progreso: item.progreso ?? getProgressFromEstado(item.estado_code),
-      }))
-      setRequests(normalized)
-    } catch (error) {
-      console.error(error)
-      toast.error('Error al cargar la información de paquetes')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedCompany?.rfc])
+    await loadPackageRequests(selectedCompany.rfc, setLoading, setRequests)
+  }
 
   // Auto-fetch when company changes
   useEffect(() => {
-    if (selectedCompany?.rfc) {
-      fetchData()
-    }
-  }, [selectedCompany, fetchData])
+    if (!selectedCompany?.rfc) return
+
+    const rfc = selectedCompany.rfc
+    const timeoutId = setTimeout(() => {
+      void loadPackageRequests(rfc, setLoading, setRequests)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [selectedCompany?.rfc])
 
   useEffect(() => {
     if (!autoRefresh || !selectedCompany?.rfc) return
+    const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
-      fetchData()
+      void loadPackageRequests(rfc, setLoading, setRequests)
     }, 5000)
     return () => clearInterval(interval)
-  }, [autoRefresh, fetchData, selectedCompany?.rfc])
+  }, [autoRefresh, selectedCompany?.rfc])
 
   const cfdiRequests = requests.filter(r => r.requestType !== 'metadata')
   const metadataRequests = requests.filter(r => r.requestType === 'metadata')
@@ -165,7 +183,7 @@ export default function PackageDownloadsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading || !selectedCompany}>
+            <Button variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading || !selectedCompany}>
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
               Actualizar
             </Button>

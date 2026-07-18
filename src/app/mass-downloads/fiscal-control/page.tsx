@@ -421,7 +421,11 @@ export default function MassDownloadsFiscalControlPage() {
 
   useEffect(() => {
     if (selectedCompanyId) {
-      fetchData(1)
+      const timeoutId = setTimeout(() => {
+        void fetchData(1)
+      }, 0)
+
+      return () => clearTimeout(timeoutId)
     }
   }, [selectedCompanyId, fetchData])
 

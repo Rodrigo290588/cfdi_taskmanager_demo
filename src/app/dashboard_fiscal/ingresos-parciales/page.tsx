@@ -42,6 +42,26 @@ const formatDate = (date: string | Date) => {
   }
 }
 
+const getCurrentMonthRange = () => {
+  const now = new Date()
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+
+  return {
+    dateFrom: firstDay.toISOString().split('T')[0],
+    dateTo: lastDay.toISOString().split('T')[0]
+  }
+}
+
+const readSelectedCompanyFromStorage = (): SelectedCompany | null => {
+  try {
+    const stored = localStorage.getItem('selectedCompany')
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
 type PaymentDetail = {
   paymentUuid: string
   paymentDate: string
@@ -95,9 +115,9 @@ const formatCurrency = (value: number, currency: string = 'MXN') => {
 }
 
 export default function PartialIncomePage() {
-  const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>('')
-  const [dateTo, setDateTo] = useState<string>('')
+  const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(() => readSelectedCompanyFromStorage())
+  const [dateFrom, setDateFrom] = useState<string>(() => getCurrentMonthRange().dateFrom)
+  const [dateTo, setDateTo] = useState<string>(() => getCurrentMonthRange().dateTo)
   
   const [paymentDateFrom, setPaymentDateFrom] = useState<string>('')
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
@@ -111,24 +131,15 @@ export default function PartialIncomePage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [escenarioCobro, setEscenarioCobro] = useState<string[]>([])
 
-  // Initialize dates to current month if empty
   useEffect(() => {
-    const now = new Date()
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    setDateFrom(firstDay.toISOString().split('T')[0])
-    setDateTo(lastDay.toISOString().split('T')[0])
-  }, [])
+    const updateSelectedCompany = () => {
+      setSelectedCompany(readSelectedCompanyFromStorage())
+    }
 
-  // Load selected company from localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem('selectedCompany')
-    if (stored) {
-      try {
-        setSelectedCompany(JSON.parse(stored))
-      } catch (e) {
-        console.error('Error parsing selectedCompany', e)
-      }
+    window.addEventListener('company-selected', updateSelectedCompany)
+
+    return () => {
+      window.removeEventListener('company-selected', updateSelectedCompany)
     }
   }, [])
 
@@ -161,7 +172,11 @@ export default function PartialIncomePage() {
   }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
 
   useEffect(() => {
-    fetchData()
+    const timeoutId = setTimeout(() => {
+      void fetchData()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [fetchData])
 
   const toggleRow = (uuid: string) => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 // Removed date-fns imports
 // Dummy utility to format dates
 const format = (date: string | Date, fmt?: string) => {
@@ -67,6 +67,30 @@ interface MassDownloadRequest {
   packageIds: string[] | null
 }
 
+async function loadVerificationRequests(
+  rfc: string,
+  setLoading: (value: boolean) => void,
+  setRequests: (value: MassDownloadRequest[]) => void
+) {
+  setLoading(true)
+  try {
+    const params = new URLSearchParams()
+    params.append('rfc', rfc)
+
+    const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
+    if (!res.ok) throw new Error('Error al cargar peticiones')
+
+    const data: MassDownloadRequest[] = await res.json()
+    const relevant = data.filter(r => r.satPackageId !== null)
+    setRequests(relevant)
+  } catch (error) {
+    console.error(error)
+    toast.error('Error al cargar la información')
+  } finally {
+    setLoading(false)
+  }
+}
+
 export default function VerificationMonitorPage() {
   const [requests, setRequests] = useState<MassDownloadRequest[]>([])
   const [loading, setLoading] = useState(false)
@@ -99,49 +123,33 @@ export default function VerificationMonitorPage() {
   }, [])
 
   // Fetch data
-  const fetchRequests = useCallback(async () => {
+  async function fetchRequests() {
     if (!selectedCompany?.rfc) return
 
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.append('rfc', selectedCompany.rfc) // Filter by the selected RFC
-      
-      // We might want to filter by requests that HAVE a satPackageId
-      // But the API might not support that specific filter yet.
-      // For now, we fetch all and filter client side or assume API returns relevant ones.
-      
-      const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
-      if (!res.ok) throw new Error('Error al cargar peticiones')
-      
-      const data: MassDownloadRequest[] = await res.json()
-      
-      // Filter for verification relevance (has satPackageId)
-      const relevant = data.filter(r => r.satPackageId !== null)
-      setRequests(relevant)
-    } catch (error) {
-      console.error(error)
-      toast.error('Error al cargar la información')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedCompany?.rfc])
+    await loadVerificationRequests(selectedCompany.rfc, setLoading, setRequests)
+  }
 
   // Auto-fetch when company changes
   useEffect(() => {
-    if (selectedCompany?.rfc) {
-      fetchRequests()
-    }
-  }, [selectedCompany, fetchRequests])
+    if (!selectedCompany?.rfc) return
+
+    const rfc = selectedCompany.rfc
+    const timeoutId = setTimeout(() => {
+      void loadVerificationRequests(rfc, setLoading, setRequests)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [selectedCompany?.rfc])
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
     if (!selectedCompany?.rfc) return
+    const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
-      fetchRequests()
+      void loadVerificationRequests(rfc, setLoading, setRequests)
     }, 5000)
     return () => clearInterval(interval)
-  }, [selectedCompany?.rfc, fetchRequests])
+  }, [selectedCompany?.rfc])
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -178,7 +186,7 @@ export default function VerificationMonitorPage() {
               Consulta el estado de las solicitudes enviadas y descarga los paquetes listos.
             </p>
           </div>
-          <Button onClick={fetchRequests} disabled={loading} className="gap-2">
+          <Button onClick={() => void fetchRequests()} disabled={loading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Actualizando...' : 'Actualizar Estado'}
           </Button>

@@ -2,6 +2,27 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { JsonValue } from '@prisma/client/runtime/library'
 
+let tenantStatusRequest: Promise<TenantState | null> | null = null
+
+async function requestTenantStatus() {
+  if (!tenantStatusRequest) {
+    tenantStatusRequest = fetch('/api/tenant/status')
+      .then(async response => {
+        if (!response.ok) {
+          throw new Error('Error al obtener estado del tenant')
+        }
+
+        const data = await response.json()
+        return data.tenant as TenantState
+      })
+      .finally(() => {
+        tenantStatusRequest = null
+      })
+  }
+
+  return tenantStatusRequest
+}
+
 export interface TenantState {
   organizationId: string
   organizationName: string
@@ -40,32 +61,18 @@ export interface TenantState {
 }
 
 export function useTenant() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [tenantState, setTenantState] = useState<TenantState | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchTenantStatus()
-    } else {
-      setLoading(false)
-    }
-  }, [session])
-
-  const fetchTenantStatus = async () => {
+  async function fetchTenantStatus() {
     try {
       setLoading(true)
       setError(null)
 
-      const response = await fetch('/api/tenant/status')
-      
-      if (!response.ok) {
-        throw new Error('Error al obtener estado del tenant')
-      }
-
-      const data = await response.json()
-      setTenantState(data.tenant)
+      const tenant = await requestTenantStatus()
+      setTenantState(tenant)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
       setTenantState(null)
@@ -74,8 +81,40 @@ export function useTenant() {
     }
   }
 
+  useEffect(() => {
+    if (session?.user) {
+      let isDisposed = false
+      const timeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            setLoading(true)
+            setError(null)
+            const tenant = await requestTenantStatus()
+            if (!isDisposed) {
+              setTenantState(tenant)
+            }
+          } catch (err) {
+            if (!isDisposed) {
+              setError(err instanceof Error ? err.message : 'Error desconocido')
+              setTenantState(null)
+            }
+          } finally {
+            if (!isDisposed) {
+              setLoading(false)
+            }
+          }
+        })()
+      }, 0)
+
+      return () => {
+        isDisposed = true
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [session])
+
   const refreshTenantStatus = () => {
-    fetchTenantStatus()
+    void fetchTenantStatus()
   }
 
   const canAccessOperationalFeatures = (): boolean => {
@@ -106,10 +145,14 @@ export function useTenant() {
     return null
   }
 
+  const effectiveTenantState = session?.user ? tenantState : null
+  const effectiveError = session?.user ? error : null
+  const effectiveLoading = status === 'loading' || (Boolean(session?.user) && loading)
+
   return {
-    tenantState,
-    loading,
-    error,
+    tenantState: effectiveTenantState,
+    loading: effectiveLoading,
+    error: effectiveError,
     refreshTenantStatus,
     canAccessOperationalFeatures,
     isTenantOwner,

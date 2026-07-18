@@ -44,26 +44,7 @@ export default function UsersManagementPage() {
   const [companies, setCompanies] = useState<Array<{ id: string; businessName: string; rfc: string }>>([])
   const [savingEdit, setSavingEdit] = useState(false)
 
-  useEffect(() => {
-    fetchInvitations()
-    fetchActiveUsers()
-    fetchCompanies()
-    fetchRoles()
-
-    const handleRefresh = () => {
-      fetchActiveUsers()
-    }
-
-    window.addEventListener('member-modules-changed', handleRefresh)
-    window.addEventListener('company-access-changed', handleRefresh)
-
-    return () => {
-      window.removeEventListener('member-modules-changed', handleRefresh)
-      window.removeEventListener('company-access-changed', handleRefresh)
-    }
-  }, [])
-
-  const fetchRoles = async () => {
+  async function fetchRoles() {
     try {
       const res = await fetch('/api/admin/roles', { cache: 'no-store' })
       const data = await res.json()
@@ -73,7 +54,7 @@ export default function UsersManagementPage() {
     }
   }
 
-  const fetchCompanies = async () => {
+  async function fetchCompanies() {
     try {
       const res = await fetch('/api/user/company-access')
       const data = await res.json()
@@ -83,7 +64,7 @@ export default function UsersManagementPage() {
     }
   }
 
-  const fetchInvitations = async () => {
+  async function fetchInvitations() {
     try {
       const response = await fetch('/api/admin/users/invite')
       const data = await response.json()
@@ -100,7 +81,7 @@ export default function UsersManagementPage() {
     }
   }
 
-  const fetchActiveUsers = async () => {
+  async function fetchActiveUsers() {
     try {
       const response = await fetch('/api/admin/users', { cache: 'no-store' })
       const data = await response.json()
@@ -116,6 +97,28 @@ export default function UsersManagementPage() {
       setLoadingUsers(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchInvitations()
+      void fetchActiveUsers()
+      void fetchCompanies()
+      void fetchRoles()
+    }, 0)
+
+    const handleRefresh = () => {
+      void fetchActiveUsers()
+    }
+
+    window.addEventListener('member-modules-changed', handleRefresh)
+    window.addEventListener('company-access-changed', handleRefresh)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('member-modules-changed', handleRefresh)
+      window.removeEventListener('company-access-changed', handleRefresh)
+    }
+  }, [])
 
   const getRoleBadgeVariant = (role: string, isCustomRole?: boolean) => {
     if (isCustomRole) return 'default'

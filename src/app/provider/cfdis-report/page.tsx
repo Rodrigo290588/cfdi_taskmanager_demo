@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, FileCode, FileText, Loader2, RefreshCw, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProtectedRoute } from '@/components/protected-route'
@@ -272,6 +272,53 @@ function getStatusBadgeVariant(status: string): 'default' | 'secondary' | 'destr
   return 'outline'
 }
 
+async function fetchProviderContextData(params: {
+  tenantLoading: boolean
+  organizationId?: string
+  setContextLoading: (value: boolean) => void
+  setContextError: (value: string) => void
+  setProviderContext: (value: ProviderContext | null) => void
+  setRows: (value: ProviderReportRow[]) => void
+}) {
+  const {
+    tenantLoading,
+    organizationId,
+    setContextLoading,
+    setContextError,
+    setProviderContext,
+    setRows
+  } = params
+
+  if (tenantLoading) return
+
+  setContextLoading(true)
+  setContextError('')
+
+  try {
+    const searchParams = new URLSearchParams()
+    if (organizationId) {
+      searchParams.set('orgId', organizationId)
+    }
+
+    const response = await fetch(`/api/provider/cfdis-report${searchParams.toString() ? `?${searchParams.toString()}` : ''}`, {
+      cache: 'no-store'
+    })
+    const result = await response.json()
+
+    if (!response.ok) {
+      throw new Error(result.error || 'No fue posible obtener el contexto del proveedor')
+    }
+
+    setProviderContext(result.provider)
+    setRows(Array.isArray(result.rows) ? result.rows : [])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No fue posible obtener el contexto del proveedor'
+    setContextError(message)
+  } finally {
+    setContextLoading(false)
+  }
+}
+
 export default function ProviderCfdisReportPage() {
   const { tenantState, loading: tenantLoading } = useTenant()
   const [providerContext, setProviderContext] = useState<ProviderContext | null>(null)
@@ -285,40 +332,20 @@ export default function ProviderCfdisReportPage() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const loadProviderContext = useCallback(async () => {
-    if (tenantLoading) return
-
-    setContextLoading(true)
-    setContextError('')
-
-    try {
-      const params = new URLSearchParams()
-      if (tenantState?.organizationId) {
-        params.set('orgId', tenantState.organizationId)
-      }
-
-      const response = await fetch(`/api/provider/cfdis-report${params.toString() ? `?${params.toString()}` : ''}`, {
-        cache: 'no-store'
-      })
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'No fue posible obtener el contexto del proveedor')
-      }
-
-      setProviderContext(result.provider)
-      setRows(Array.isArray(result.rows) ? result.rows : [])
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'No fue posible obtener el contexto del proveedor'
-      setContextError(message)
-    } finally {
-      setContextLoading(false)
-    }
-  }, [tenantLoading, tenantState?.organizationId])
-
   useEffect(() => {
-    loadProviderContext()
-  }, [loadProviderContext])
+    const timeoutId = setTimeout(() => {
+      void fetchProviderContextData({
+        tenantLoading,
+        organizationId: tenantState?.organizationId,
+        setContextLoading,
+        setContextError,
+        setProviderContext,
+        setRows
+      })
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [tenantLoading, tenantState?.organizationId])
 
   useEffect(() => {
     const loadMemberFlags = async () => {

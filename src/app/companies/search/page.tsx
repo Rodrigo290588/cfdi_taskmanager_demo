@@ -56,6 +56,18 @@ interface SearchResponse {
   filters: FilterOptions
 }
 
+const initialSearchFilters: SearchFilters = {
+  query: '',
+  status: '',
+  taxRegime: '',
+  industry: '',
+  state: '',
+  dateFrom: '',
+  dateTo: '',
+  employeesMin: '',
+  employeesMax: ''
+}
+
 export default function CompaniesSearchPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -71,17 +83,7 @@ export default function CompaniesSearchPage() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [currentFilters, setCurrentFilters] = useState<SearchFilters>({
-    query: '',
-    status: '',
-    taxRegime: '',
-    industry: '',
-    state: '',
-    dateFrom: '',
-    dateTo: '',
-    employeesMin: '',
-    employeesMax: ''
-  })
+  const [currentFilters, setCurrentFilters] = useState<SearchFilters>(initialSearchFilters)
 
   const fetchCompanies = async (filters: SearchFilters, page: number = 1) => {
     setIsLoading(true)
@@ -202,8 +204,11 @@ export default function CompaniesSearchPage() {
   }
 
   useEffect(() => {
-    fetchCompanies(currentFilters)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timeoutId = setTimeout(() => {
+      void fetchCompanies(initialSearchFilters)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [])
 
   return (

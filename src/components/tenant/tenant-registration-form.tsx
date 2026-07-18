@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
@@ -128,7 +128,7 @@ export function TenantRegistrationForm({
     formState: { errors, isSubmitted },
     setValue,
     trigger,
-    watch
+    control
   } = useForm<TenantFormData>({
     resolver: zodResolver(tenantFormSchema),
     defaultValues: initialData || {
@@ -137,6 +137,11 @@ export function TenantRegistrationForm({
     mode: 'onSubmit',
     reValidateMode: 'onBlur'
   })
+
+  const industryValue = useWatch({ control, name: 'industry' })
+  const companySizeValue = useWatch({ control, name: 'companySize' })
+  const businessTypeValue = useWatch({ control, name: 'businessType' })
+  const stateValue = useWatch({ control, name: 'state' })
 
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -437,7 +442,7 @@ export function TenantRegistrationForm({
                   <Tag className="h-4 w-4" />
                   Industria
                 </Label>
-                <Select value={watch('industry') || undefined} onValueChange={(value) => setValue('industry', value)}>
+                <Select value={industryValue || undefined} onValueChange={(value) => setValue('industry', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione una industria" />
                   </SelectTrigger>
@@ -459,7 +464,7 @@ export function TenantRegistrationForm({
                   <Users className="h-4 w-4" />
                   Tamaño de la Empresa
                 </Label>
-                <Select value={watch('companySize') || undefined} onValueChange={(value) => setValue('companySize', value)}>
+                <Select value={companySizeValue || undefined} onValueChange={(value) => setValue('companySize', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione tamaño" />
                   </SelectTrigger>
@@ -495,7 +500,7 @@ export function TenantRegistrationForm({
 
               <div>
                 <Label>Tipo de Negocio</Label>
-                <Select value={watch('businessType') || undefined} onValueChange={(value) => setValue('businessType', value)}>
+                <Select value={businessTypeValue || undefined} onValueChange={(value) => setValue('businessType', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione tipo" />
                   </SelectTrigger>
@@ -536,7 +541,7 @@ export function TenantRegistrationForm({
 
                 <div>
                   <Label>Estado</Label>
-                  <Select value={watch('state') || undefined} onValueChange={(value) => setValue('state', value)}>
+                  <Select value={stateValue || undefined} onValueChange={(value) => setValue('state', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccione un estado" />
                     </SelectTrigger>

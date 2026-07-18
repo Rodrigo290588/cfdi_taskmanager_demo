@@ -10,14 +10,35 @@ interface MainLayoutProps {
   children: React.ReactNode
 }
 
+const desktopSidebarQuery = '(min-width: 1024px)'
+
 export function MainLayout({ children }: MainLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const pathname = usePathname()
 
   // Asegurar que el componente esté montado en el cliente
   useEffect(() => {
-    setIsClient(true) // eslint-disable-line react-hooks/set-state-in-effect
+    const mediaQuery = window.matchMedia(desktopSidebarQuery)
+    const syncSidebarState = (matches: boolean) => {
+      setSidebarOpen(matches)
+    }
+
+    const timeoutId = setTimeout(() => {
+      syncSidebarState(mediaQuery.matches)
+      setIsClient(true)
+    }, 0)
+
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      syncSidebarState(event.matches)
+    }
+
+    mediaQuery.addEventListener('change', handleViewportChange)
+
+    return () => {
+      clearTimeout(timeoutId)
+      mediaQuery.removeEventListener('change', handleViewportChange)
+    }
   }, [])
   
   // No mostrar sidebar en páginas de autenticación
@@ -52,7 +73,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <Menu className="h-5 w-5" />
               </Button>
               <h1 className="ml-4 text-xl font-heading font-semibold text-white truncate">
-                Plataforma de Inteligencia Fiscal Mexicana
+                CFDI Task Manager
               </h1>
             </div>
             

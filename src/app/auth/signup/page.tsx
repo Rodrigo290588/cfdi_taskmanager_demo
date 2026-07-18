@@ -36,7 +36,7 @@ export default function SignUp() {
           <Card className="bg-gradient-to-b from-primary to-[#0f172a] text-primary-foreground shadow-2xl border-none h-full flex flex-col justify-between">
             <CardHeader>
               <div className="flex items-start mb-2">
-                 <span className="text-3xl font-heading font-bold text-white">Factronica</span>
+                 <span className="text-3xl font-heading font-bold text-white">CFDI Task Manager</span>
                  <div className="flex ml-1 mt-2 space-x-0.5">
                    <span className="w-2 h-2 rounded-full bg-secondary"></span>
                    <span className="w-2 h-2 rounded-full bg-secondary mt-1"></span>
@@ -73,6 +73,7 @@ export default function SignUp() {
                       src="/images/certifications/pac-sat.webp" 
                       alt="PAC SAT 10235" 
                       fill 
+                      sizes="48px"
                       className="object-contain"
                     />
                   </div>
@@ -84,6 +85,7 @@ export default function SignUp() {
                       src="/images/certifications/pci-dss.jpg" 
                       alt="PCI DSS" 
                       fill 
+                      sizes="48px"
                       className="object-contain rounded-sm"
                     />
                   </div>

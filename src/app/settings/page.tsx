@@ -52,41 +52,103 @@ interface TenantStatus {
   }
 }
 
+const allowedConfigTabs = ['smtp', 'notifications', 'operational', 'webservice', 'smtp-test']
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function getInitialConfigTab() {
+  if (typeof window === 'undefined') {
+    return 'smtp'
+  }
+
+  try {
+    const url = new URL(window.location.href)
+    const tab = url.searchParams.get('tab') || (window.location.hash ? window.location.hash.replace('#', '') : null)
+    return tab && allowedConfigTabs.includes(tab) ? tab : 'smtp'
+  } catch {
+    return 'smtp'
+  }
+}
+
 export default function SettingsPage() {
   const [tenant, setTenant] = useState<TenantData | null>(null)
   const [status, setStatus] = useState<TenantStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [configTab, setConfigTab] = useState<string>('smtp')
+  const [configTab, setConfigTab] = useState<string>(getInitialConfigTab)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [keyLoading, setKeyLoading] = useState(false)
   const [keyRotating, setKeyRotating] = useState(false)
 
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  useEffect(() => {
-    if (configTab === 'webservice' && !apiKey) {
-      fetchApiKey()
-    }
-  }, [configTab, apiKey])
-
-  const fetchApiKey = async () => {
+  async function fetchApiKey(signal?: AbortSignal) {
     try {
       setKeyLoading(true)
-      const res = await fetch('/api/tenant/api-key')
+      const res = await fetch('/api/tenant/api-key', { signal })
       if (res.ok) {
         const data = await res.json()
         setApiKey(data.key)
       }
     } catch (error) {
-      console.error('Error fetching API key:', error)
+      if (!isAbortError(error)) {
+        console.error('Error fetching API key:', error)
+      }
     } finally {
-      setKeyLoading(false)
+      if (!signal?.aborted) {
+        setKeyLoading(false)
+      }
     }
   }
+
+  async function fetchData(signal?: AbortSignal) {
+    try {
+      setLoading(true)
+      const [tenantRes, statusRes] = await Promise.all([
+        fetch('/api/tenant', { signal }),
+        fetch('/api/tenant/status', { signal })
+      ])
+      const tenantData = await tenantRes.json()
+      const statusData = await statusRes.json()
+      if (tenantRes.ok) setTenant(tenantData.tenant)
+      if (statusRes.ok) setStatus({ hasOperationalAccess: statusData.tenant.hasOperationalAccess, status: { setupProgress: statusData.tenant.status.setupProgress } })
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.error(error)
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      void fetchData(controller.signal)
+    }, 0)
+
+    return () => {
+      clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (configTab === 'webservice' && !apiKey) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        void fetchApiKey(controller.signal)
+      }, 0)
+
+      return () => {
+        clearTimeout(timeoutId)
+        controller.abort()
+      }
+    }
+  }, [configTab, apiKey])
 
   const rotateApiKey = async () => {
     toast('¿Estás seguro?', {
@@ -116,35 +178,6 @@ export default function SettingsPage() {
         onClick: () => {},
       },
     })
-  }
-
-  useEffect(() => {
-    try {
-      const url = new URL(window.location.href)
-      const t = url.searchParams.get('tab') || (window.location.hash ? window.location.hash.replace('#', '') : null)
-      if (t) {
-        const configTabs = ['smtp', 'notifications', 'operational', 'webservice', 'smtp-test']
-        if (configTabs.includes(t)) setConfigTab(t)
-      }
-    } catch {}
-  }, [])
-
-  const fetchData = async () => {
-    try {
-      setLoading(true)
-      const [tenantRes, statusRes] = await Promise.all([
-        fetch('/api/tenant'),
-        fetch('/api/tenant/status')
-      ])
-      const tenantData = await tenantRes.json()
-      const statusData = await statusRes.json()
-      if (tenantRes.ok) setTenant(tenantData.tenant)
-      if (statusRes.ok) setStatus({ hasOperationalAccess: statusData.tenant.hasOperationalAccess, status: { setupProgress: statusData.tenant.status.setupProgress } })
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoading(false)
-    }
   }
 
   const updateTenant = async () => {

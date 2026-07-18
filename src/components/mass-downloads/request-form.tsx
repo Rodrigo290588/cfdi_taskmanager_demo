@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -174,8 +174,10 @@ export function MassDownloadRequestForm() {
     },
   })
 
-  const { watch } = form
-  const retrievalType = watch('retrievalType')
+  const retrievalType = useWatch({
+    control: form.control,
+    name: 'retrievalType'
+  })
   const isFolio = retrievalType === 'folio'
 
   useEffect(() => {

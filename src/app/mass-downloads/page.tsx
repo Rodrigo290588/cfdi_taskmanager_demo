@@ -7,7 +7,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route"
 import { PrivateKeyForm } from "@/components/mass-downloads/private-key-form"
 
 export const metadata: Metadata = {
-  title: "Configuración de Llaves Privadas - PlatFi Intelligence",
+  title: "Configuración de Llaves Privadas - CFDI Task Manager",
   description: "Configura tus llaves privadas para descargas masivas de CFDI",
 }
 

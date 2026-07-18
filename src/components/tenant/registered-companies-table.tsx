@@ -40,17 +40,13 @@ export function RegisteredCompaniesTable({ onViewDetails }: RegisteredCompaniesT
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchCompanies()
-  }, [])
-
-  const fetchCompanies = async () => {
+  async function fetchCompanies() {
     try {
       setIsLoading(true)
       setError(null)
 
       const response = await fetch('/api/companies/tenant')
-      
+
       if (!response.ok) {
         throw new Error('Error al cargar las empresas')
       }
@@ -77,6 +73,14 @@ export function RegisteredCompaniesTable({ onViewDetails }: RegisteredCompaniesT
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchCompanies()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const getStatusBadge = (status: string) => {
     switch (status) {

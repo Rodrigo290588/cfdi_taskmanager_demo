@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { CompaniesPageClient } from '@/components/companies/companies-page-client'
 
 export const metadata: Metadata = {
-  title: 'Gestión de Empresas - PlatFi Intelligence',
+  title: 'Gestión de Empresas - CFDI Task Manager',
   description: 'Administra el registro y validación de empresas con RFC mexicano',
 }
 

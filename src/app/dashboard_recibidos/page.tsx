@@ -535,7 +535,11 @@ export default function DashboardRecibidosPage() {
   }, [appliedFilters.end, appliedFilters.start, normalizeMetrics, selectedCompanyId, zeroMetrics])
 
   useEffect(() => {
-    fetchMetrics()
+    const timeoutId = setTimeout(() => {
+      void fetchMetrics()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [fetchMetrics])
 
   const topSuppliersData = useMemo(() => {

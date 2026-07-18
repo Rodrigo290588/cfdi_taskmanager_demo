@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 // Removed date-fns imports
 // Dummy utility to format dates
 const format = (date: string | Date, fmt?: string) => {
@@ -64,6 +64,42 @@ interface MassDownloadRequest {
   errorLog: Record<string, unknown> | null
 }
 
+async function loadMonitorRequests(
+  rfc: string,
+  filters: {
+    requestType: string
+    status: string
+    startDate: string
+    endDate: string
+    folio: string
+  },
+  setLoading: (value: boolean) => void,
+  setRequests: (value: MassDownloadRequest[]) => void
+) {
+  setLoading(true)
+  try {
+    const params = new URLSearchParams()
+    params.append('rfc', rfc)
+
+    if (filters.requestType !== 'all') params.append('requestType', filters.requestType)
+    if (filters.status !== 'Todos') params.append('status', filters.status)
+    if (filters.startDate) params.append('startDate', filters.startDate)
+    if (filters.endDate) params.append('endDate', filters.endDate)
+    if (filters.folio) params.append('folio', filters.folio)
+
+    const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
+    if (!res.ok) throw new Error('Error al cargar peticiones')
+
+    const data = await res.json()
+    setRequests(data)
+  } catch (error) {
+    console.error(error)
+    toast.error('Error al cargar la información')
+  } finally {
+    setLoading(false)
+  }
+}
+
 export default function MonitorPage() {
   const [requests, setRequests] = useState<MassDownloadRequest[]>([])
   const [loading, setLoading] = useState(false)
@@ -100,43 +136,27 @@ export default function MonitorPage() {
   }, [])
 
   // Fetch data
-  const fetchRequests = useCallback(async () => {
+  async function fetchRequests() {
     if (!selectedCompany?.rfc) return
 
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.append('rfc', selectedCompany.rfc) // Filter by the selected RFC
-      
-      if (filters.requestType !== 'all') params.append('requestType', filters.requestType)
-      if (filters.status !== 'Todos') params.append('status', filters.status)
-      if (filters.startDate) params.append('startDate', filters.startDate)
-      if (filters.endDate) params.append('endDate', filters.endDate)
-      if (filters.folio) params.append('folio', filters.folio)
-
-      const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
-      if (!res.ok) throw new Error('Error al cargar peticiones')
-      
-      const data = await res.json()
-      setRequests(data)
-    } catch (error) {
-      console.error(error)
-      toast.error('Error al cargar la información')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedCompany?.rfc, filters])
+    await loadMonitorRequests(selectedCompany.rfc, filters, setLoading, setRequests)
+  }
 
   // Auto-fetch when company changes
   useEffect(() => {
-    if (selectedCompany?.rfc) {
-      fetchRequests()
-    }
-  }, [selectedCompany, fetchRequests])
+    if (!selectedCompany?.rfc) return
+
+    const rfc = selectedCompany.rfc
+    const timeoutId = setTimeout(() => {
+      void loadMonitorRequests(rfc, filters, setLoading, setRequests)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [filters, selectedCompany?.rfc])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    fetchRequests()
+    void fetchRequests()
   }
 
   const getStatusBadge = (status: string) => {

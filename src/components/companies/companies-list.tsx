@@ -85,7 +85,11 @@ export function CompaniesList({ companies, pagination, isLoading, onPageChange, 
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    setList(companies)
+    const timeoutId = setTimeout(() => {
+      setList(companies)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [companies])
 
   useEffect(() => {

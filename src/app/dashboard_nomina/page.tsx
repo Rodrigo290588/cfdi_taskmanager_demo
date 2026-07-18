@@ -35,6 +35,36 @@ type Metrics = {
   }>
 }
 
+type KpiCardProps = {
+  title: string
+  value: string
+  subtext?: string
+  color?: 'blue' | 'green' | 'orange' | 'red' | 'purple'
+}
+
+function KPICard({ title, value, subtext, color = 'blue' }: KpiCardProps) {
+  const colorStyles = {
+    blue: { border: 'border-l-blue-500', text: 'text-blue-600' },
+    green: { border: 'border-l-green-500', text: 'text-green-600' },
+    orange: { border: 'border-l-orange-500', text: 'text-orange-600' },
+    red: { border: 'border-l-red-500', text: 'text-red-600' },
+    purple: { border: 'border-l-purple-500', text: 'text-purple-600' },
+  }
+  const styles = colorStyles[color] || colorStyles.blue
+
+  return (
+    <Card className={`border-l-4 ${styles.border} shadow-sm`}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground text-center">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold text-center ${styles.text}`}>{value}</div>
+        {subtext && <div className="text-xs text-muted-foreground mt-1 text-center">{subtext}</div>}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function DashboardNominaPage() {
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -75,7 +105,11 @@ export default function DashboardNominaPage() {
   }, [selectedCompanyId])
 
   useEffect(() => {
-    fetchMetrics()
+    const timeoutId = setTimeout(() => {
+      void fetchMetrics()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
   }, [fetchMetrics])
 
   if (!selectedCompanyId) {
@@ -112,39 +146,6 @@ export default function DashboardNominaPage() {
     costoPorEmpleado: 0,
     pctDeducciones: 0,
     indiceAusentismo: 0
-  }
-
-  const KPICard = ({ 
-    title, 
-    value, 
-    subtext, 
-    color = 'blue' 
-  }: { 
-    title: string
-    value: string
-    subtext?: string
-    color?: 'blue' | 'green' | 'orange' | 'red' | 'purple'
-  }) => {
-    const colorStyles = {
-      blue: { border: 'border-l-blue-500', text: 'text-blue-600' },
-      green: { border: 'border-l-green-500', text: 'text-green-600' },
-      orange: { border: 'border-l-orange-500', text: 'text-orange-600' },
-      red: { border: 'border-l-red-500', text: 'text-red-600' },
-      purple: { border: 'border-l-purple-500', text: 'text-purple-600' },
-    }
-    const styles = colorStyles[color] || colorStyles.blue
-
-    return (
-      <Card className={`border-l-4 ${styles.border} shadow-sm`}>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground text-center">{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className={`text-2xl font-bold text-center ${styles.text}`}>{value}</div>
-          {subtext && <div className="text-xs text-muted-foreground mt-1 text-center">{subtext}</div>}
-        </CardContent>
-      </Card>
-    )
   }
 
   return (

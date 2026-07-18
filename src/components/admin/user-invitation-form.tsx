@@ -56,12 +56,7 @@ export function UserInvitationForm({ onSuccess }: UserInvitationFormProps) {
   const selectedRoleName = roles.find(r => r.id === formData.roleId)?.name?.toLowerCase() || ''
   const isProvider = selectedRoleName.includes('proveedor')
 
-  useEffect(() => {
-    fetchRoles()
-    fetchCompanies()
-  }, [])
-
-  const fetchRoles = async () => {
+  async function fetchRoles() {
     try {
       const res = await fetch('/api/admin/roles')
       const data = await res.json()
@@ -73,7 +68,7 @@ export function UserInvitationForm({ onSuccess }: UserInvitationFormProps) {
     }
   }
 
-  const fetchCompanies = async () => {
+  async function fetchCompanies() {
     try {
       const res = await fetch('/api/user/company-access')
       const data = await res.json()
@@ -84,6 +79,15 @@ export function UserInvitationForm({ onSuccess }: UserInvitationFormProps) {
       console.error('Error fetching companies:', error)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchRoles()
+      void fetchCompanies()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const toggleCompany = (companyId: string) => {
     setFormData(prev => {

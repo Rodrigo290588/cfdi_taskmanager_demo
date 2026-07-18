@@ -1,20 +1,80 @@
+import { existsSync } from 'node:fs'
 import { XMLParser } from 'fast-xml-parser'
 import QRCode from 'qrcode'
-import puppeteer from 'puppeteer'
-import type { Browser, Page } from 'puppeteer'
+import puppeteer from 'puppeteer-core'
+import type { Browser, Page, LaunchOptions } from 'puppeteer-core'
 import { generateTemplateClassicHtml } from '@/components/pdf-templates/TemplateClassic'
 
 let cachedBrowser: Browser | null = null
+
+const defaultBrowserPathsByPlatform: Record<NodeJS.Platform, string[]> = {
+  win32: [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ],
+  darwin: [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ],
+  linux: [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/usr/bin/microsoft-edge',
+    '/usr/bin/microsoft-edge-stable',
+  ],
+  aix: [],
+  android: [],
+  freebsd: [],
+  haiku: [],
+  openbsd: [],
+  sunos: [],
+  cygwin: [],
+  netbsd: [],
+}
+
+function resolveBrowserExecutablePath() {
+  const browserPathFromEnv = process.env.PUPPETEER_EXECUTABLE_PATH?.trim()
+
+  if (browserPathFromEnv) {
+    return browserPathFromEnv
+  }
+
+  const candidates = defaultBrowserPathsByPlatform[process.platform] || []
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
 
 async function getBrowserInstance(): Promise<Browser> {
   if (cachedBrowser && cachedBrowser.isConnected()) {
     return cachedBrowser
   }
 
-  cachedBrowser = await puppeteer.launch({
+  const executablePath = resolveBrowserExecutablePath()
+
+  if (!executablePath) {
+    throw new Error(
+      'No se encontro un navegador compatible para generar PDFs. Instala Google Chrome o Microsoft Edge en el servidor, o define la variable PUPPETEER_EXECUTABLE_PATH con la ruta del ejecutable.'
+    )
+  }
+
+  const launchOptions: LaunchOptions = {
+    executablePath,
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-  })
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+  }
+
+  cachedBrowser = await puppeteer.launch(launchOptions)
 
   return cachedBrowser
 }

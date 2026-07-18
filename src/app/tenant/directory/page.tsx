@@ -123,21 +123,7 @@ export default function TenantDirectoryPage() {
   })
   const [showFilters, setShowFilters] = useState(false)
 
-  useEffect(() => {
-    fetchTenants()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchTenants()
-    }, 500) // Debounce search
-
-    return () => clearTimeout(timeoutId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, pagination.page])
-
-  const fetchTenants = async () => {
+  async function fetchTenants() {
     try {
       setLoading(true)
       setError(null)
@@ -151,7 +137,7 @@ export default function TenantDirectoryPage() {
       params.append('limit', pagination.limit.toString())
 
       const response = await fetch(`/api/tenant/search?${params.toString()}`)
-      
+
       if (!response.ok) {
         throw new Error('Error al cargar los tenants')
       }
@@ -159,13 +145,30 @@ export default function TenantDirectoryPage() {
       const data = await response.json()
       setTenants(data.organizations)
       setPagination(data.pagination)
-
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Error desconocido')
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchTenants()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchTenants()
+    }, 500) // Debounce search
+
+    return () => clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, pagination.page])
 
   const handleFilterChange = (key: keyof SearchFilters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }))

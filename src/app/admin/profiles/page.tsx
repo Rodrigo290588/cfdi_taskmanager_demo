@@ -45,29 +45,7 @@ export default function ProfilesManagementPage() {
   const [accessError, setAccessError] = useState<string | null>(null)
   const [accessPrefetched, setAccessPrefetched] = useState(false)
 
-  useEffect(() => {
-    fetchMembers()
-    fetchCompanies()
-    fetchRoles()
-
-    const handleRefresh = () => {
-      fetchMembers()
-      // Note: fetchMemberAccess is called lazily per member when expanding the card,
-      // but we could clear the state or let the user click "Actualizar" to see fresh data.
-      // For immediate sync, we can just clear memberAccess state to force a refetch if expanded.
-      setMemberAccess({})
-    }
-
-    window.addEventListener('member-modules-changed', handleRefresh)
-    window.addEventListener('company-access-changed', handleRefresh)
-
-    return () => {
-      window.removeEventListener('member-modules-changed', handleRefresh)
-      window.removeEventListener('company-access-changed', handleRefresh)
-    }
-  }, [])
-
-  const fetchRoles = async () => {
+  async function fetchRoles() {
     try {
       const res = await fetch('/api/admin/roles', { cache: 'no-store' })
       const data = await res.json()
@@ -93,7 +71,7 @@ export default function ProfilesManagementPage() {
     prefetch()
   }, [members, companies, accessPrefetched])
 
-  const fetchMembers = async () => {
+  async function fetchMembers() {
     try {
       setLoading(true)
       const res = await fetch('/api/admin/members', { cache: 'no-store' })
@@ -107,7 +85,7 @@ export default function ProfilesManagementPage() {
     }
   }
 
-  const fetchCompanies = async () => {
+  async function fetchCompanies() {
     try {
       const res = await fetch('/api/companies/tenant', { cache: 'no-store' })
       const data = await res.json() // parse response
@@ -118,7 +96,7 @@ export default function ProfilesManagementPage() {
     }
   }
 
-  const fetchMemberAccess = async (memberId: string) => {
+  async function fetchMemberAccess(memberId: string) {
     try {
       const res = await fetch(`/api/admin/members/${memberId}/access`)
       const data = await res.json()
@@ -138,6 +116,31 @@ export default function ProfilesManagementPage() {
       setAccessError('No fue posible cargar los accesos de empresas')
     }
   }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchMembers()
+      void fetchCompanies()
+      void fetchRoles()
+    }, 0)
+
+    const handleRefresh = () => {
+      void fetchMembers()
+      // Note: fetchMemberAccess is called lazily per member when expanding the card,
+      // but we could clear the state or let the user click "Actualizar" to see fresh data.
+      // For immediate sync, we can just clear memberAccess state to force a refetch if expanded.
+      setMemberAccess({})
+    }
+
+    window.addEventListener('member-modules-changed', handleRefresh)
+    window.addEventListener('company-access-changed', handleRefresh)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('member-modules-changed', handleRefresh)
+      window.removeEventListener('company-access-changed', handleRefresh)
+    }
+  }, [])
 
   const updateRole = async (id: string, role: MemberRole) => {
     try {
