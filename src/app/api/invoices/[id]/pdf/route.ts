@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { prisma } from '@/lib/prisma'
 import { generateCfdiPdfFromXml } from '@/lib/cfdi-pdf'
+import { getInvoiceXmlRecordById } from '@/lib/invoice-xml-storage'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,10 +26,7 @@ export async function GET(
           : path.join(process.cwd(), 'java-client', 'xml-data', fileParam)
       xmlRaw = await readFile(filePath, 'utf8')
     } else {
-      let invoice: { xmlContent: string, satStatus?: string | null } | null = await prisma.invoice.findUnique({
-        where: { id },
-        select: { xmlContent: true, satStatus: true }
-      })
+      let invoice: { xmlContent: string, satStatus?: string | null } | null = await getInvoiceXmlRecordById(id)
 
       if (!invoice) {
         invoice = await prisma.satInvoice.findUnique({

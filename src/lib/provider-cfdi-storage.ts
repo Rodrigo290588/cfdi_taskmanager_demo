@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, type CipherGCM, type DecipherGCM } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { upsertProviderUploadedCfdiComplementProjection } from '@/lib/cfdi-complement-projection-storage'
 import { calculateProviderPaymentComplementDueDate } from '@/lib/provider-payment-compliance'
 import { syncProviderReceivedCfdiSummaryRecordChange } from '@/lib/provider-received-cfdi-summary'
 
@@ -637,6 +638,11 @@ export async function persistProviderAcceptedCfdis(params: {
             updated_at = NOW()
         `
       )
+
+      await upsertProviderUploadedCfdiComplementProjection(tx, {
+        providerUploadedCfdiId: storageId,
+        xmlContent: record.xmlContent
+      })
 
       await syncProviderReceivedCfdiSummaryRecordChange({
         db: tx,

@@ -135,6 +135,10 @@ export default function DashboardFiscalPage() {
     });
   }, [drilldownData, drilldownFilters]);
 
+  const isInvalidDateRange = useMemo(() => {
+    return Boolean(startDate && endDate && startDate > endDate)
+  }, [startDate, endDate])
+
   const drilldownStats = useMemo(() => {
     let totalPUE = 0;
     let totalCRP = 0;
@@ -299,6 +303,11 @@ export default function DashboardFiscalPage() {
   }, [selectedCompanyId, buildZeroMetrics, selectedCompany, appliedFilters])
 
   const handleFilter = () => {
+    if (isInvalidDateRange) {
+      showError('Rango de fechas inválido', 'La fecha de inicio no puede ser mayor que la fecha final')
+      return
+    }
+
     setAppliedFilters({ start: startDate, end: endDate, origin: 'issued' })
   }
 
@@ -495,6 +504,8 @@ export default function DashboardFiscalPage() {
               type="date" 
               id="startDate" 
               value={startDate} 
+              max={endDate || undefined}
+              aria-invalid={isInvalidDateRange}
               onChange={(e) => setStartDate(e.target.value)} 
             />
           </div>
@@ -504,11 +515,13 @@ export default function DashboardFiscalPage() {
               type="date" 
               id="endDate" 
               value={endDate} 
+              min={startDate || undefined}
+              aria-invalid={isInvalidDateRange}
               onChange={(e) => setEndDate(e.target.value)} 
             />
           </div>
           <div className="pb-0.5 flex gap-2">
-            <Button onClick={handleFilter}>
+            <Button onClick={handleFilter} disabled={isInvalidDateRange}>
               <Search className="mr-2 h-4 w-4" />
               Filtrar
             </Button>
@@ -548,6 +561,11 @@ export default function DashboardFiscalPage() {
             </DropdownMenu>
           </div>
         </div>
+        {isInvalidDateRange && (
+          <p className="text-sm text-destructive -mt-2">
+            La fecha de inicio no puede ser mayor que la fecha final.
+          </p>
+        )}
 
         {/* Top KPIs Row */}
         {visibleSections.includes('kpis') && (

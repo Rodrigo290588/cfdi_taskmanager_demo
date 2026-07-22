@@ -4,6 +4,45 @@ import { prisma } from '@/lib/prisma'
 import { CfdiType, Prisma } from '@prisma/client'
 import { DOMParser } from '@xmldom/xmldom'
 
+function toNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function normalizeUpperText(value: string | null | undefined) {
+  return (value || '').trim().toUpperCase()
+}
+
+function getPagoTaxTotalsFromXml(xmlContent: string) {
+  const parser = new DOMParser()
+
+  try {
+    const doc = parser.parseFromString(xmlContent, 'text/xml')
+    const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+    let baseP = 0
+    let importeP = 0
+
+    pagos.forEach(pagoNode => {
+      const impuestosP = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':ImpuestosP'))
+      impuestosP.forEach(impNode => {
+        const trasladosP = Array.from(impNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':TrasladoP'))
+        trasladosP.forEach(trasladoP => {
+          if (normalizeUpperText(trasladoP.getAttribute('ImpuestoP')) !== '002') {
+            return
+          }
+
+          baseP += toNumber(trasladoP.getAttribute('BaseP'))
+          importeP += toNumber(trasladoP.getAttribute('ImporteP'))
+        })
+      })
+    })
+
+    return { baseP, importeP }
+  } catch {
+    return { baseP: 0, importeP: 0 }
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -299,7 +338,7 @@ export async function GET(request: NextRequest) {
       // Invoices XML for Tax Breakdown
       prisma.invoice.findMany({
         where: { ...baseWhere, satStatus: 'VIGENTE' },
-        select: { xmlContent: true, cfdiType: true, paymentMethod: true, currency: true, exchangeRate: true, subtotal: true }
+        select: { uuid: true, xmlContent: true, cfdiType: true, paymentMethod: true, currency: true, exchangeRate: true, subtotal: true }
       }),
       // Invoices XML for IVA Acreditable (Gastos y Compras)
       prisma.invoice.findMany({
@@ -309,9 +348,50 @@ export async function GET(request: NextRequest) {
           satStatus: 'VIGENTE',
           ...dateFilter
         },
-        select: { xmlContent: true, cfdiType: true, paymentMethod: true }
+        select: { uuid: true, xmlContent: true, cfdiType: true, paymentMethod: true }
       })
     ])
+
+    const paymentTaxInvoiceUuids = Array.from(new Set([
+      ...taxConcepts.filter(inv => inv.cfdiType === 'PAGO').map(inv => normalizeUpperText(inv.uuid)),
+      ...ivaAcreditableConcepts.filter(inv => inv.cfdiType === 'PAGO').map(inv => normalizeUpperText(inv.uuid))
+    ].filter(Boolean)))
+
+    const paymentTaxDetails = paymentTaxInvoiceUuids.length > 0
+      ? await prisma.invoicePaymentComplementDetail.findMany({
+          where: {
+            paymentInvoiceUuid: { in: paymentTaxInvoiceUuids },
+            satStatusSnapshot: 'VIGENTE'
+          },
+          select: {
+            paymentInvoiceUuid: true,
+            paymentNodeIndex: true,
+            baseP: true,
+            importeP: true
+          }
+        })
+      : []
+
+    const paymentTaxTotalsByInvoiceUuid = new Map<string, { baseP: number; importeP: number }>()
+    const paymentNodeTotals = new Map<string, { baseP: number; importeP: number }>()
+
+    paymentTaxDetails.forEach(detail => {
+      const invoiceUuid = normalizeUpperText(detail.paymentInvoiceUuid)
+      const nodeKey = `${invoiceUuid}:${detail.paymentNodeIndex}`
+      const currentNode = paymentNodeTotals.get(nodeKey) || { baseP: 0, importeP: 0 }
+      currentNode.baseP = Math.max(currentNode.baseP, toNumber(detail.baseP))
+      currentNode.importeP = Math.max(currentNode.importeP, toNumber(detail.importeP))
+      paymentNodeTotals.set(nodeKey, currentNode)
+    })
+
+    paymentNodeTotals.forEach((nodeTotals, nodeKey) => {
+      const separatorIndex = nodeKey.indexOf(':')
+      const invoiceUuid = separatorIndex >= 0 ? nodeKey.slice(0, separatorIndex) : nodeKey
+      const currentInvoice = paymentTaxTotalsByInvoiceUuid.get(invoiceUuid) || { baseP: 0, importeP: 0 }
+      currentInvoice.baseP += nodeTotals.baseP
+      currentInvoice.importeP += nodeTotals.importeP
+      paymentTaxTotalsByInvoiceUuid.set(invoiceUuid, currentInvoice)
+    })
 
     // Calculate Tax Breakdown
     const ivaBreakdown = {
@@ -334,7 +414,6 @@ export async function GET(request: NextRequest) {
     const trasladoRegex = /<[^:>]*:?Traslado([^>]+)>/gi
     const attrRegex = /(\w+)="([^"]+)"/g
     const totalRetenidosRegex = /TotalImpuestosRetenidos=["']([^"']+)["']/i
-    const parserForTaxes = new DOMParser()
 
     taxConcepts.forEach(inv => {
       if (!inv.xmlContent) return
@@ -400,28 +479,12 @@ export async function GET(request: NextRequest) {
 
       // Paso B: Sumar IVA de Complementos (CRP)
       if (inv.cfdiType === 'PAGO') {
-        try {
-          const doc = parserForTaxes.parseFromString(xml, 'text/xml')
-          const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
-          pagos.forEach(pagoNode => {
-            const impuestosP = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':ImpuestosP'))
-            impuestosP.forEach(impNode => {
-               const trasladosP = Array.from(impNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':TrasladoP'))
-               trasladosP.forEach(trasladoP => {
-                  const impuestoP = trasladoP.getAttribute('ImpuestoP')
-                  const importeP = parseFloat(trasladoP.getAttribute('ImporteP') || '0')
-                  const baseP = parseFloat(trasladoP.getAttribute('BaseP') || '0')
-                  if (impuestoP === '002') {
-                     ivaCobradoTotal += importeP
-                     ivaCobradoCrp += importeP
-                     ingresosCobradosCrp += baseP
-                  }
-               })
-            })
-          })
-        } catch {
-          // ignore parse error
-        }
+        const paymentTotals = paymentTaxTotalsByInvoiceUuid.get(normalizeUpperText(inv.uuid))
+          || getPagoTaxTotalsFromXml(xml)
+
+        ivaCobradoTotal += paymentTotals.importeP
+        ivaCobradoCrp += paymentTotals.importeP
+        ingresosCobradosCrp += paymentTotals.baseP
       }
     })
 
@@ -465,25 +528,10 @@ export async function GET(request: NextRequest) {
       }
 
       if (inv.cfdiType === 'PAGO') {
-        try {
-          const doc = parserForTaxes.parseFromString(xml, 'text/xml')
-          const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
-          pagos.forEach(pagoNode => {
-            const impuestosP = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':ImpuestosP'))
-            impuestosP.forEach(impNode => {
-               const trasladosP = Array.from(impNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':TrasladoP'))
-               trasladosP.forEach(trasladoP => {
-                  const impuestoP = trasladoP.getAttribute('ImpuestoP')
-                  const importeP = parseFloat(trasladoP.getAttribute('ImporteP') || '0')
-                  if (impuestoP === '002') {
-                     ivaPpdRecibido += importeP
-                  }
-               })
-            })
-          })
-        } catch {
-          // ignore parse error
-        }
+        const paymentTotals = paymentTaxTotalsByInvoiceUuid.get(normalizeUpperText(inv.uuid))
+          || getPagoTaxTotalsFromXml(xml)
+
+        ivaPpdRecibido += paymentTotals.importeP
       }
     })
 
@@ -532,42 +580,62 @@ export async function GET(request: NextRequest) {
     })
 
     const ppdUuids = ppdInvoicesList.map(i => i.uuid)
+    const paidAmountsByUuid: Record<string, number> = {}
 
-    const relatedCfdis = ppdUuids.length > 0 ? await prisma.invoiceRelatedCfdi.findMany({
+    const paymentDetails = ppdUuids.length > 0 ? await prisma.invoicePaymentComplementDetail.findMany({
       where: {
-        relatedUuid: { in: ppdUuids },
-        invoice: { cfdiType: 'PAGO', satStatus: 'VIGENTE' }
+        relatedInvoiceUuid: { in: ppdUuids },
+        satStatusSnapshot: 'VIGENTE'
       },
-      include: {
-        invoice: { select: { xmlContent: true } }
+      select: {
+        relatedInvoiceUuid: true,
+        impPagado: true
       }
     }) : []
 
-    const paidAmountsByUuid: Record<string, number> = {}
-    const parser = new DOMParser()
-    const getAttr = (el: Element, name: string) => el.getAttribute(name) || ''
-
-    relatedCfdis.forEach(relation => {
-      const xml = relation.invoice.xmlContent
-      if (!xml) return
-      try {
-        const doc = parser.parseFromString(xml, 'text/xml')
-        const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
-        pagos.forEach(pagoNode => {
-          const doctos = Array.from(pagoNode.getElementsByTagName('*')).filter(el => 
-            el.nodeName.endsWith(':DoctoRelacionado') && 
-            getAttr(el, 'IdDocumento').toLowerCase() === relation.relatedUuid.toLowerCase()
-          )
-          doctos.forEach(doctoNode => {
-            const impPagadoStr = getAttr(doctoNode, 'ImpPagado')
-            const impPagado = parseFloat(impPagadoStr) || 0
-            paidAmountsByUuid[relation.relatedUuid] = (paidAmountsByUuid[relation.relatedUuid] || 0) + impPagado
-          })
-        })
-      } catch {
-        // ignore parse error
-      }
+    paymentDetails.forEach(detail => {
+      const relatedUuid = normalizeUpperText(detail.relatedInvoiceUuid)
+      paidAmountsByUuid[relatedUuid] = (paidAmountsByUuid[relatedUuid] || 0) + toNumber(detail.impPagado)
     })
+
+    const coveredPpdUuids = new Set(paymentDetails.map(detail => normalizeUpperText(detail.relatedInvoiceUuid)))
+    const missingPpdUuids = ppdUuids.filter(uuid => !coveredPpdUuids.has(normalizeUpperText(uuid)))
+
+    if (missingPpdUuids.length > 0) {
+      const relatedCfdis = await prisma.invoiceRelatedCfdi.findMany({
+        where: {
+          relatedUuid: { in: missingPpdUuids },
+          invoice: { cfdiType: 'PAGO', satStatus: 'VIGENTE' }
+        },
+        include: {
+          invoice: { select: { xmlContent: true } }
+        }
+      })
+
+      const parser = new DOMParser()
+      const getAttr = (el: Element, name: string) => el.getAttribute(name) || ''
+
+      relatedCfdis.forEach(relation => {
+        const xml = relation.invoice.xmlContent
+        if (!xml) return
+        try {
+          const doc = parser.parseFromString(xml, 'text/xml')
+          const pagos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+          pagos.forEach(pagoNode => {
+            const doctos = Array.from(pagoNode.getElementsByTagName('*')).filter(el =>
+              el.nodeName.endsWith(':DoctoRelacionado')
+              && getAttr(el, 'IdDocumento').toLowerCase() === relation.relatedUuid.toLowerCase()
+            )
+            doctos.forEach(doctoNode => {
+              const impPagado = parseFloat(getAttr(doctoNode, 'ImpPagado') || '0') || 0
+              paidAmountsByUuid[relation.relatedUuid] = (paidAmountsByUuid[relation.relatedUuid] || 0) + impPagado
+            })
+          })
+        } catch {
+          // ignore parse error
+        }
+      })
+    }
 
     let totalPPDFullyPaid = 0
     let totalPPDPending = 0
@@ -577,7 +645,7 @@ export async function GET(request: NextRequest) {
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
     ppdInvoicesList.forEach(inv => {
-      const paid = paidAmountsByUuid[inv.uuid] || 0
+      const paid = paidAmountsByUuid[normalizeUpperText(inv.uuid)] || 0
       // Consider fully paid if remaining balance is practically zero
       if (paid >= Number(inv.total) - 0.01) {
         totalPPDFullyPaid += Number(inv.total)
@@ -701,7 +769,7 @@ export async function GET(request: NextRequest) {
         ppdInvoicesList.forEach(inv => {
           const invRfc = originParam === 'received' ? inv.issuerRfc : inv.receiverRfc
           if (invRfc === rfcVal) {
-             const paid = paidAmountsByUuid[inv.uuid] || 0
+             const paid = paidAmountsByUuid[normalizeUpperText(inv.uuid)] || 0
              if (paid >= Number(inv.total) - 0.01) {
                clientPPDPaid += Number(inv.total)
              } else {

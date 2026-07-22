@@ -12,6 +12,11 @@
     "migrate:cfdis-to-invoices": "node scripts/migrate-cfdis-to-invoices.mjs",
     "seed:dev": "node scripts/seed-dev.mjs",
     "worker:verify": "npx tsx src/scripts/start-worker.ts",
+    "backfill:invoice-blobs": "npx tsx src/scripts/backfill-invoice-blobs.ts",
+    "backfill:invoice-issued-summary": "npx tsx src/scripts/backfill-invoice-issued-daily-summary.ts",
+    "backfill:invoice-complement-projections": "npx tsx src/scripts/backfill-invoice-complement-projections.ts",
+    "backfill:invoice-payment-complement": "npx tsx src/scripts/backfill-invoice-payment-complement.ts",
+    "backfill:provider-complement-projections": "npx tsx src/scripts/backfill-provider-complement-projections.ts",
     "sync:sat-69b": "npx tsx src/scripts/sync-sat-69b.ts"
   },
   "overrides": {

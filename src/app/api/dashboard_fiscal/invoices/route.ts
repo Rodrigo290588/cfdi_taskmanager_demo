@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { CfdiType, InvoiceStatus, SatStatus, Prisma } from '@prisma/client'
+import {
+  buildProjectionMap,
+  normalizeProjectionUpperText,
+  workpaperAttributeKeySet,
+  workpaperComplementFlagKeySet,
+  workpaperComplementVersionKeySet,
+  workpaperNumericAttributeKeySet
+} from '@/lib/cfdi-workpaper-projection'
+
+function parseBooleanFilter(value: string) {
+  const normalized = normalizeProjectionUpperText(value)
+  if (['1', 'TRUE', 'SI', 'SÍ', 'YES'].includes(normalized)) return true
+  if (['0', 'FALSE', 'NO'].includes(normalized)) return false
+  return true
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -102,6 +117,10 @@ export async function GET(request: NextRequest) {
       if (dateTo) where.issuanceDate.lte = new Date(dateTo)
     }
 
+    if (!where.AND) {
+      where.AND = []
+    }
+
     const simpleFilterFields = [
       'id', 'userId', 'issuerFiscalEntityId', 'uuid', 'series', 'folio', 'currency', 'issuerRfc', 'issuerName',
       'receiverRfc', 'receiverName', 'paymentMethod', 'paymentForm',
@@ -126,20 +145,82 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const xmlFilterFields = [
-      'version', 'noCertificado', 'certificado', 'tipoRelacion', 'cfdiRelacionado',
-      'domicilioFiscalReceptor', 'residenciaFiscal', 'numRegIdTrib', 'regimenFiscalReceptor',
-      'totalImpuestosTrasladados', 'totalImpuestosRetenidos'
-    ]
+    const reservedParams = new Set([
+      'companyId',
+      'page',
+      'limit',
+      'query',
+      'cfdiType',
+      'status',
+      'satStatus',
+      'dateFrom',
+      'dateTo',
+      'export',
+      'origin'
+    ])
 
-    const xmlFilters = xmlFilterFields.map(field => {
-      const val = searchParams.get(field)
-      return val ? { xmlContent: { contains: val, mode: 'insensitive' } } : null
-    }).filter(Boolean) as Prisma.InvoiceWhereInput[]
+    for (const [rawKey, rawValue] of searchParams.entries()) {
+      if (reservedParams.has(rawKey) || !rawValue) {
+        continue
+      }
 
-    if (xmlFilters.length > 0) {
-      if (!where.AND) where.AND = []
-      if (Array.isArray(where.AND)) where.AND.push(...xmlFilters)
+      if (simpleFilterFields.includes(rawKey) || exactNumberFields.includes(rawKey)) {
+        continue
+      }
+
+      const key = rawKey.startsWith('attr.') ? rawKey.slice(5) : rawKey
+      const hasKey = rawKey.startsWith('has.') ? `has${rawKey.slice(4).toLowerCase().replace(/(?:^|_)(\w)/g, (_, char: string) => char.toUpperCase())}` : rawKey
+      const normalizedValue = normalizeProjectionUpperText(rawValue)
+
+      if (workpaperComplementFlagKeySet.has(hasKey)) {
+        ;(where.AND as Prisma.InvoiceWhereInput[]).push({
+          complementIndex: {
+            is: {
+              [hasKey]: parseBooleanFilter(rawValue)
+            }
+          }
+        })
+        continue
+      }
+
+      if (workpaperComplementVersionKeySet.has(key)) {
+        ;(where.AND as Prisma.InvoiceWhereInput[]).push({
+          complementIndex: {
+            is: {
+              [key]: {
+                contains: rawValue,
+                mode: 'insensitive'
+              }
+            }
+          }
+        })
+        continue
+      }
+
+      if (workpaperAttributeKeySet.has(key)) {
+        if (workpaperNumericAttributeKeySet.has(key) && !Number.isNaN(Number(rawValue))) {
+          ;(where.AND as Prisma.InvoiceWhereInput[]).push({
+            complementAttributes: {
+              some: {
+                attributeKey: key,
+                valueNumber: new Prisma.Decimal(Number(rawValue).toFixed(6))
+              }
+            }
+          })
+        } else {
+          ;(where.AND as Prisma.InvoiceWhereInput[]).push({
+            complementAttributes: {
+              some: {
+                attributeKey: key,
+                valueSearch: {
+                  contains: normalizedValue,
+                  mode: 'insensitive'
+                }
+              }
+            }
+          })
+        }
+      }
     }
 
     const skip = (page - 1) * limit
@@ -186,6 +267,26 @@ export async function GET(request: NextRequest) {
           paymentConditions: true,
           createdAt: true,
           updatedAt: true,
+          complementIndex: {
+            select: {
+              hasPagos: true,
+              pagosVersion: true,
+              hasNomina: true,
+              nominaVersion: true,
+              hasCartaPorte: true,
+              cartaPorteVersion: true,
+              hasComercioExterior: true,
+              comercioExteriorVersion: true
+            }
+          },
+          complementAttributes: {
+            select: {
+              attributeKey: true,
+              valueText: true,
+              valueNumber: true,
+              valueBoolean: true
+            }
+          }
         }
       }),
       prisma.invoice.count({ where })
@@ -205,6 +306,10 @@ export async function GET(request: NextRequest) {
       certificationDate: r.certificationDate,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      projection: buildProjectionMap({
+        attributes: r.complementAttributes,
+        complementIndex: r.complementIndex
+      })
     }))
 
     return NextResponse.json({

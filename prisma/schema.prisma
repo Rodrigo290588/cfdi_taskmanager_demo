@@ -101,6 +101,8 @@ model Organization {
   machineClients           MachineClient[]
   providerUploadedCfdis    ProviderUploadedCfdi[]
   providerReceivedCfdiDailySummaries ProviderReceivedCfdiDailySummary[]
+  invoicePaymentComplementDetails InvoicePaymentComplementDetail[]
+  invoiceIssuedDailySummaries InvoiceIssuedDailySummary[]
   customRoles              CustomRole[]
   companyAccesses          CompanyAccess[]
   satCredentials           SatCredential[]
@@ -208,6 +210,8 @@ model FiscalEntity {
   updatedAt      DateTime     @updatedAt @map("updated_at")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoices       Invoice[]
+  invoicePaymentComplementDetails InvoicePaymentComplementDetail[]
+  invoiceIssuedDailySummaries InvoiceIssuedDailySummary[]
   satInvoices    SatInvoice[]
 
   @@map("fiscal_entities")
@@ -254,13 +258,159 @@ model Invoice {
   user                 User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   concepts             InvoiceConcept[]
   relatedCfdis         InvoiceRelatedCfdi[]
+  blob                 InvoiceBlob?
+  complementIndex      InvoiceComplementIndex?
+  complementAttributes InvoiceComplementAttribute[]
+  paymentComplementDetailsAsPayment InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailPaymentInvoice")
+  paymentComplementDetailsAsRelated InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailRelatedInvoice")
 
   @@index([issuerFiscalEntityId])
   @@index([issuerRfc])
   @@index([receiverRfc])
   @@index([issuanceDate])
   @@index([total])
+  @@index([issuerFiscalEntityId, issuerRfc, issuanceDate], map: "invoices_issuer_fiscal_entity_rfc_date_idx")
+  @@index([issuerRfc, paymentMethod, satStatus, issuanceDate], map: "invoices_issuer_rfc_payment_status_date_idx")
+  @@index([issuerRfc, cfdiType, satStatus, issuanceDate], map: "invoices_issuer_rfc_type_status_date_idx")
+  @@index([receiverRfc, cfdiType, satStatus, issuanceDate], map: "invoices_receiver_rfc_type_status_date_idx")
   @@map("invoices")
+}
+
+model InvoiceBlob {
+  id               String   @id @default(cuid())
+  invoiceId        String   @unique @map("invoice_id")
+  xmlSha256        String   @map("xml_sha256")
+  xmlCiphertext    String   @map("xml_ciphertext")
+  xmlIv            String   @map("xml_iv")
+  xmlAuthTag       String   @map("xml_auth_tag")
+  xmlEncryptionAlg String   @map("xml_encryption_alg")
+  xmlKeyVersion    String   @map("xml_key_version")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([xmlSha256], map: "invoice_blobs_xml_sha256_idx")
+  @@map("invoice_blobs")
+}
+
+model InvoiceComplementIndex {
+  id                     String   @id @default(cuid())
+  invoiceId              String   @unique @map("invoice_id")
+  hasPagos               Boolean  @default(false) @map("has_pagos")
+  pagosVersion           String?  @map("pagos_version")
+  hasNomina              Boolean  @default(false) @map("has_nomina")
+  nominaVersion          String?  @map("nomina_version")
+  hasCartaPorte          Boolean  @default(false) @map("has_carta_porte")
+  cartaPorteVersion      String?  @map("carta_porte_version")
+  hasComercioExterior    Boolean  @default(false) @map("has_comercio_exterior")
+  comercioExteriorVersion String? @map("comercio_exterior_version")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  invoice                Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([hasPagos], map: "invoice_complement_index_has_pagos_idx")
+  @@index([hasNomina], map: "invoice_complement_index_has_nomina_idx")
+  @@index([hasCartaPorte], map: "invoice_complement_index_has_carta_porte_idx")
+  @@index([hasComercioExterior], map: "invoice_complement_index_has_comercio_exterior_idx")
+  @@map("invoice_complement_index")
+}
+
+model InvoiceComplementAttribute {
+  id             String    @id @default(cuid())
+  invoiceId      String    @map("invoice_id")
+  complementType String    @map("complement_type")
+  attributeKey   String    @map("attribute_key")
+  valueText      String?   @map("value_text")
+  valueNumber    Decimal?  @map("value_number") @db.Decimal(18, 6)
+  valueDate      DateTime? @map("value_date")
+  valueBoolean   Boolean?  @map("value_boolean")
+  valueSearch    String?   @map("value_search")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  invoice        Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId], map: "invoice_complement_attributes_invoice_id_idx")
+  @@index([complementType, attributeKey], map: "invoice_complement_attributes_type_key_idx")
+  @@index([attributeKey, valueSearch], map: "invoice_complement_attributes_key_search_idx")
+  @@index([attributeKey, valueNumber], map: "invoice_complement_attributes_key_number_idx")
+  @@map("invoice_complement_attributes")
+}
+
+model InvoicePaymentComplementDetail {
+  id                String       @id @default(cuid())
+  organizationId    String       @map("organization_id")
+  issuerFiscalEntityId String    @map("issuer_fiscal_entity_id")
+  paymentInvoiceId  String       @map("payment_invoice_id")
+  paymentInvoiceUuid String      @map("payment_invoice_uuid")
+  relatedInvoiceId  String?      @map("related_invoice_id")
+  relatedInvoiceUuid String      @map("related_invoice_uuid")
+  paymentNodeIndex  Int          @default(1) @map("payment_node_index")
+  paymentDate       DateTime     @map("payment_date")
+  paymentSeries     String?      @map("payment_series")
+  paymentFolio      String?      @map("payment_folio")
+  montoTotalPagos   Decimal      @default(0) @map("monto_total_pagos") @db.Decimal(18, 6)
+  baseP             Decimal      @default(0) @map("base_p") @db.Decimal(18, 6)
+  importeP          Decimal      @default(0) @map("importe_p") @db.Decimal(18, 6)
+  impPagado         Decimal      @default(0) @map("imp_pagado") @db.Decimal(18, 6)
+  impSaldoAnt       Decimal      @default(0) @map("imp_saldo_ant") @db.Decimal(18, 6)
+  impSaldoInsoluto  Decimal      @default(0) @map("imp_saldo_insoluto") @db.Decimal(18, 6)
+  monedaP           String       @default("MXN") @map("moneda_p")
+  monedaDR          String       @default("MXN") @map("moneda_dr")
+  equivalenciaDR    Decimal      @default(1) @map("equivalencia_dr") @db.Decimal(18, 6)
+  numParcialidad    Int          @default(1) @map("num_parcialidad")
+  satStatusSnapshot String       @default("SIN_ESTATUS") @map("sat_status_snapshot")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuerFiscalEntity FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+  paymentInvoice    Invoice      @relation("InvoicePaymentComplementDetailPaymentInvoice", fields: [paymentInvoiceId], references: [id], onDelete: Cascade)
+  relatedInvoice    Invoice?     @relation("InvoicePaymentComplementDetailRelatedInvoice", fields: [relatedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, issuerFiscalEntityId, relatedInvoiceUuid], map: "invoice_payment_comp_entity_rel_uuid_idx")
+  @@index([organizationId, issuerFiscalEntityId, paymentDate], map: "invoice_payment_comp_entity_pay_date_idx")
+  @@index([paymentInvoiceId], map: "invoice_payment_comp_payment_inv_id_idx")
+  @@index([relatedInvoiceId], map: "invoice_payment_comp_related_inv_id_idx")
+  @@index([paymentInvoiceUuid, paymentNodeIndex], map: "invoice_payment_comp_uuid_node_idx")
+  @@index([paymentInvoiceUuid, relatedInvoiceUuid, numParcialidad], map: "invoice_payment_comp_uuid_partiality_idx")
+  @@map("invoice_payment_complement_details")
+}
+
+model InvoiceIssuedDailySummary {
+  id                    String       @id @default(cuid())
+  organizationId        String       @map("organization_id")
+  issuerFiscalEntityId  String       @map("issuer_fiscal_entity_id")
+  summaryDate           DateTime     @map("summary_date") @db.Date
+  cfdiType              String       @map("cfdi_type")
+  satStatus             String       @default("SIN_ESTATUS") @map("sat_status")
+  receiverRfc           String       @default("") @map("receiver_rfc")
+  receiverName          String       @default("") @map("receiver_name")
+  paymentMethod         String       @default("") @map("payment_method")
+  salesBucket           String       @default("NO_APLICA") @map("sales_bucket")
+  paymentStatusBucket   String       @default("NO_APLICA") @map("payment_status_bucket")
+  cfdiCount             Int          @default(0) @map("cfdi_count")
+  subtotalAmount        Decimal      @default(0) @map("subtotal_amount") @db.Decimal(18, 6)
+  discountAmount        Decimal      @default(0) @map("discount_amount") @db.Decimal(18, 6)
+  totalAmount           Decimal      @default(0) @map("total_amount") @db.Decimal(18, 6)
+  ivaTransferredTotal   Decimal      @default(0) @map("iva_transferred_total") @db.Decimal(18, 6)
+  ivaWithheldTotal      Decimal      @default(0) @map("iva_withheld_total") @db.Decimal(18, 6)
+  isrWithheldTotal      Decimal      @default(0) @map("isr_withheld_total") @db.Decimal(18, 6)
+  iepsWithheldTotal     Decimal      @default(0) @map("ieps_withheld_total") @db.Decimal(18, 6)
+  collectedAmount       Decimal      @default(0) @map("collected_amount") @db.Decimal(18, 6)
+  pendingAmount         Decimal      @default(0) @map("pending_amount") @db.Decimal(18, 6)
+  overdueAmount         Decimal      @default(0) @map("overdue_amount") @db.Decimal(18, 6)
+  creditNoteAppliedAmount Decimal    @default(0) @map("credit_note_applied_amount") @db.Decimal(18, 6)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuerFiscalEntity    FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, issuerFiscalEntityId, summaryDate, cfdiType, satStatus, receiverRfc, paymentMethod, salesBucket, paymentStatusBucket], map: "invoice_issued_daily_summary_unique_dim_idx")
+  @@index([organizationId, issuerFiscalEntityId, summaryDate], map: "invoice_issued_daily_summary_entity_date_idx")
+  @@index([organizationId, issuerFiscalEntityId, cfdiType], map: "invoice_issued_daily_summary_entity_type_idx")
+  @@index([organizationId, issuerFiscalEntityId, receiverRfc], map: "invoice_issued_daily_summary_entity_receiver_idx")
+  @@index([organizationId, issuerFiscalEntityId, salesBucket], map: "invoice_issued_daily_summary_entity_sales_bucket_idx")
+  @@index([organizationId, issuerFiscalEntityId, paymentStatusBucket], map: "invoice_issued_daily_summary_entity_payment_bucket_idx")
+  @@map("invoice_issued_daily_summary")
 }
 
 model SatInvoice {
@@ -340,6 +490,7 @@ model InvoiceRelatedCfdi {
   invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
+  @@index([relatedUuid], map: "invoice_related_cfdis_related_uuid_idx")
   @@map("invoice_related_cfdis")
 }
 
@@ -458,6 +609,8 @@ model SatMetadata {
   @@index([rfcEmisor])
   @@index([rfcReceptor])
   @@index([fechaEmision])
+  @@index([rfcEmisor, fechaEmision, estatus, efectoComprobante], map: "sat_metadata_emisor_date_status_type_idx")
+  @@index([rfcReceptor, fechaEmision, estatus, efectoComprobante], map: "sat_metadata_receptor_date_status_type_idx")
   @@map("sat_metadata")
 }
 
@@ -592,6 +745,8 @@ model ProviderUploadedCfdi {
   receiverCompany        Company? @relation(fields: [receiverCompanyId], references: [id], onDelete: SetNull)
   uploadedByUser         User?    @relation("ProviderUploadedCfdiUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
   xmlBlob                ProviderUploadedCfdiBlob?
+  complementIndex        ProviderUploadedCfdiComplementIndex?
+  complementAttributes   ProviderUploadedCfdiComplementAttribute[]
 
   @@unique([organizationId, uuid])
   @@index([organizationId, providerRfc])
@@ -627,6 +782,49 @@ model ProviderUploadedCfdiBlob {
   providerUploadedCfdi   ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
 
   @@map("provider_uploaded_cfdi_blobs")
+}
+
+model ProviderUploadedCfdiComplementIndex {
+  id                       String               @id @default(cuid())
+  providerUploadedCfdiId   String               @unique @map("provider_uploaded_cfdi_id")
+  hasPagos                 Boolean              @default(false) @map("has_pagos")
+  pagosVersion             String?              @map("pagos_version")
+  hasNomina                Boolean              @default(false) @map("has_nomina")
+  nominaVersion            String?              @map("nomina_version")
+  hasCartaPorte            Boolean              @default(false) @map("has_carta_porte")
+  cartaPorteVersion        String?              @map("carta_porte_version")
+  hasComercioExterior      Boolean              @default(false) @map("has_comercio_exterior")
+  comercioExteriorVersion  String?              @map("comercio_exterior_version")
+  createdAt                DateTime             @default(now()) @map("created_at")
+  updatedAt                DateTime             @updatedAt @map("updated_at")
+  providerUploadedCfdi     ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
+
+  @@index([hasPagos], map: "provider_uploaded_cfdi_complement_index_has_pagos_idx")
+  @@index([hasNomina], map: "provider_uploaded_cfdi_complement_index_has_nomina_idx")
+  @@index([hasCartaPorte], map: "provider_uploaded_cfdi_complement_index_has_carta_porte_idx")
+  @@index([hasComercioExterior], map: "provider_uploaded_cfdi_complement_idx_has_com_ext")
+  @@map("provider_uploaded_cfdi_complement_index")
+}
+
+model ProviderUploadedCfdiComplementAttribute {
+  id                     String               @id @default(cuid())
+  providerUploadedCfdiId String               @map("provider_uploaded_cfdi_id")
+  complementType         String               @map("complement_type")
+  attributeKey           String               @map("attribute_key")
+  valueText              String?              @map("value_text")
+  valueNumber            Decimal?             @map("value_number") @db.Decimal(18, 6)
+  valueDate              DateTime?            @map("value_date")
+  valueBoolean           Boolean?             @map("value_boolean")
+  valueSearch            String?              @map("value_search")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+  providerUploadedCfdi   ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
+
+  @@index([providerUploadedCfdiId], map: "provider_uploaded_cfdi_complement_attributes_cfdi_id_idx")
+  @@index([complementType, attributeKey], map: "provider_uploaded_cfdi_complement_attributes_type_key_idx")
+  @@index([attributeKey, valueSearch], map: "provider_uploaded_cfdi_complement_attributes_key_search_idx")
+  @@index([attributeKey, valueNumber], map: "provider_uploaded_cfdi_complement_attributes_key_number_idx")
+  @@map("provider_uploaded_cfdi_complement_attributes")
 }
 
 model ProviderReceivedCfdiDailySummary {

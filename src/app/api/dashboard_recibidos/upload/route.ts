@@ -3,6 +3,9 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { CfdiType, InvoiceStatus, SatStatus, Prisma } from '@prisma/client'
 import JSZip from 'jszip'
+import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
+import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
+import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
   const re = new RegExp(`<${tagNs}[^>]*\\b${attrName}="([^"]+)"`, 'i')
@@ -143,39 +146,65 @@ export async function POST(request: NextRequest) {
           else if (imp === '003' || imp === 'IEPS') iepsWithheldTotal += val
         }
 
-        const invoice = await prisma.invoice.create({
-          data: {
-            userId,
+        const invoice = await prisma.$transaction(async tx => {
+          const createdInvoice = await tx.invoice.create({
+            data: {
+              userId,
+              issuerFiscalEntityId: fe.id,
+              uuid,
+              cfdiType,
+              series: series || null,
+              folio: folio || null,
+              currency: moneda,
+              exchangeRate: tipoCambio ? Number(tipoCambio) : null,
+              status: InvoiceStatus.ACTIVE,
+              satStatus: SatStatus.VIGENTE,
+              issuerRfc,
+              issuerName,
+              receiverRfc,
+              receiverName,
+              subtotal: new Prisma.Decimal(subtotalStr),
+              discount: new Prisma.Decimal(descuentoStr),
+              total: new Prisma.Decimal(totalStr),
+              ivaTransferred: new Prisma.Decimal(ivaTransferredTotal.toFixed(2)),
+              ivaWithheld: new Prisma.Decimal(ivaWithheldTotal.toFixed(2)),
+              isrWithheld: new Prisma.Decimal(isrWithheldTotal.toFixed(2)),
+              iepsWithheld: new Prisma.Decimal(iepsWithheldTotal.toFixed(2)),
+              xmlContent: xml,
+              pdfUrl: null,
+              issuanceDate: new Date(fecha),
+              certificationDate: new Date(fechaTimbrado),
+              certificationPac: pac,
+              paymentMethod: metodoPago || '',
+              paymentForm: formaPago || '',
+              cfdiUsage: usoCfdi || '',
+              placeOfExpedition: lugarExp || ''
+            }
+          })
+
+          await upsertInvoiceXmlBlob(tx, {
+            invoiceId: createdInvoice.id,
+            xmlContent: xml
+          })
+
+          await upsertInvoiceComplementProjection(tx, {
+            invoiceId: createdInvoice.id,
+            xmlContent: xml
+          })
+
+          await upsertInvoicePaymentComplementDetails(tx, {
             issuerFiscalEntityId: fe.id,
-            uuid,
-            cfdiType,
-            series: series || null,
-            folio: folio || null,
-            currency: moneda,
-            exchangeRate: tipoCambio ? Number(tipoCambio) : null,
-            status: InvoiceStatus.ACTIVE,
-            satStatus: SatStatus.VIGENTE,
-            issuerRfc,
-            issuerName,
-            receiverRfc,
-            receiverName,
-            subtotal: new Prisma.Decimal(subtotalStr),
-            discount: new Prisma.Decimal(descuentoStr),
-            total: new Prisma.Decimal(totalStr),
-            ivaTransferred: new Prisma.Decimal(ivaTransferredTotal.toFixed(2)),
-            ivaWithheld: new Prisma.Decimal(ivaWithheldTotal.toFixed(2)),
-            isrWithheld: new Prisma.Decimal(isrWithheldTotal.toFixed(2)),
-            iepsWithheld: new Prisma.Decimal(iepsWithheldTotal.toFixed(2)),
+            paymentInvoiceId: createdInvoice.id,
+            paymentInvoiceUuid: uuid,
             xmlContent: xml,
-            pdfUrl: null,
-            issuanceDate: new Date(fecha),
-            certificationDate: new Date(fechaTimbrado),
-            certificationPac: pac,
-            paymentMethod: metodoPago || '',
-            paymentForm: formaPago || '',
-            cfdiUsage: usoCfdi || '',
-            placeOfExpedition: lugarExp || ''
-          }
+            satStatusSnapshot: SatStatus.VIGENTE,
+            fallbackPaymentDate: new Date(fecha),
+            fallbackCurrency: moneda,
+            fallbackSeries: series || null,
+            fallbackFolio: folio || null
+          })
+
+          return createdInvoice
         })
 
         results.push({ uuid, status: 'created', id: invoice.id })

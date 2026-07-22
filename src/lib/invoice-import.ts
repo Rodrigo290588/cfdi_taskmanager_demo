@@ -1,4 +1,7 @@
 import { CfdiType, InvoiceStatus, Prisma, PrismaClient, SatStatus } from '@prisma/client'
+import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
+import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
+import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
 
 type ContextCache = Map<string, Promise<{ userId: string; issuerFiscalEntityId: string }>>
 
@@ -331,49 +334,75 @@ export async function createInvoiceFromXml(
 
   const context = await resolveInvoiceImportContext(prisma, parsed.issuerRfc, parsed.issuerName, cache)
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      userId: context.userId,
+  const invoice = await prisma.$transaction(async tx => {
+    const createdInvoice = await tx.invoice.create({
+      data: {
+        userId: context.userId,
+        issuerFiscalEntityId: context.issuerFiscalEntityId,
+        uuid: parsed.uuid,
+        cfdiType: parsed.cfdiType,
+        series: parsed.series,
+        folio: parsed.folio,
+        currency: parsed.currency,
+        exchangeRate: parsed.exchangeRate,
+        status: InvoiceStatus.ACTIVE,
+        satStatus: SatStatus.VIGENTE,
+        issuerRfc: parsed.issuerRfc,
+        issuerName: parsed.issuerName,
+        receiverRfc: parsed.receiverRfc,
+        receiverName: parsed.receiverName,
+        subtotal: parsed.subtotal,
+        discount: parsed.discount,
+        total: parsed.total,
+        ivaTransferred: parsed.ivaTransferred,
+        ivaWithheld: parsed.ivaWithheld,
+        isrWithheld: parsed.isrWithheld,
+        iepsWithheld: parsed.iepsWithheld,
+        xmlContent: parsed.xmlContent,
+        pdfUrl: null,
+        issuanceDate: parsed.issuanceDate,
+        certificationDate: parsed.certificationDate,
+        certificationPac: parsed.certificationPac,
+        paymentMethod: parsed.paymentMethod,
+        paymentForm: parsed.paymentForm,
+        cfdiUsage: parsed.cfdiUsage,
+        placeOfExpedition: parsed.placeOfExpedition,
+        exportKey: parsed.exportKey,
+        paymentConditions: parsed.paymentConditions,
+        objectTaxComprobante: parsed.objectTaxComprobante,
+        concepts: {
+          create: parsed.conceptos,
+        },
+        relatedCfdis: {
+          create: parsed.relatedCfdis,
+        },
+      },
+      select: { id: true, uuid: true },
+    })
+
+    await upsertInvoiceXmlBlob(tx, {
+      invoiceId: createdInvoice.id,
+      xmlContent: parsed.xmlContent
+    })
+
+    await upsertInvoiceComplementProjection(tx, {
+      invoiceId: createdInvoice.id,
+      xmlContent: parsed.xmlContent
+    })
+
+    await upsertInvoicePaymentComplementDetails(tx, {
       issuerFiscalEntityId: context.issuerFiscalEntityId,
-      uuid: parsed.uuid,
-      cfdiType: parsed.cfdiType,
-      series: parsed.series,
-      folio: parsed.folio,
-      currency: parsed.currency,
-      exchangeRate: parsed.exchangeRate,
-      status: InvoiceStatus.ACTIVE,
-      satStatus: SatStatus.VIGENTE,
-      issuerRfc: parsed.issuerRfc,
-      issuerName: parsed.issuerName,
-      receiverRfc: parsed.receiverRfc,
-      receiverName: parsed.receiverName,
-      subtotal: parsed.subtotal,
-      discount: parsed.discount,
-      total: parsed.total,
-      ivaTransferred: parsed.ivaTransferred,
-      ivaWithheld: parsed.ivaWithheld,
-      isrWithheld: parsed.isrWithheld,
-      iepsWithheld: parsed.iepsWithheld,
+      paymentInvoiceId: createdInvoice.id,
+      paymentInvoiceUuid: parsed.uuid,
       xmlContent: parsed.xmlContent,
-      pdfUrl: null,
-      issuanceDate: parsed.issuanceDate,
-      certificationDate: parsed.certificationDate,
-      certificationPac: parsed.certificationPac,
-      paymentMethod: parsed.paymentMethod,
-      paymentForm: parsed.paymentForm,
-      cfdiUsage: parsed.cfdiUsage,
-      placeOfExpedition: parsed.placeOfExpedition,
-      exportKey: parsed.exportKey,
-      paymentConditions: parsed.paymentConditions,
-      objectTaxComprobante: parsed.objectTaxComprobante,
-      concepts: {
-        create: parsed.conceptos,
-      },
-      relatedCfdis: {
-        create: parsed.relatedCfdis,
-      },
-    },
-    select: { id: true, uuid: true },
+      satStatusSnapshot: SatStatus.VIGENTE,
+      fallbackPaymentDate: parsed.issuanceDate,
+      fallbackCurrency: parsed.currency,
+      fallbackSeries: parsed.series,
+      fallbackFolio: parsed.folio
+    })
+
+    return createdInvoice
   })
 
   return { status: 'created' as const, uuid: invoice.uuid, id: invoice.id }

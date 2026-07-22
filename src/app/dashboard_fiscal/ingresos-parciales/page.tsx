@@ -27,6 +27,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 // Removed date-fns imports
 import { Loader2, ChevronDown, ChevronRight, FileText, Download } from 'lucide-react'
@@ -68,12 +74,13 @@ type PaymentDetail = {
   paymentSeries: string | null
   paymentFolio: string | null
   impPagado: number
+  monedaP: string
   monedaDR: string
   equivalenciaDR: number
   numParcialidad: number
   impSaldoAnt: number
   impSaldoInsoluto: number
-  paymentXml?: string
+  paymentXml?: string | null
 }
 
 type PartialIncomeInvoice = {
@@ -106,6 +113,13 @@ type KPIs = {
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
 
+type XmlViewerState = {
+  open: boolean
+  title: string
+  fileName: string
+  xmlContent: string
+}
+
 const formatCurrency = (value: number, currency: string = 'MXN') => {
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
@@ -115,9 +129,10 @@ const formatCurrency = (value: number, currency: string = 'MXN') => {
 }
 
 export default function PartialIncomePage() {
-  const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(() => readSelectedCompanyFromStorage())
-  const [dateFrom, setDateFrom] = useState<string>(() => getCurrentMonthRange().dateFrom)
-  const [dateTo, setDateTo] = useState<string>(() => getCurrentMonthRange().dateTo)
+  const [hasHydrated, setHasHydrated] = useState(false)
+  const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
   
   const [paymentDateFrom, setPaymentDateFrom] = useState<string>('')
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
@@ -130,11 +145,24 @@ export default function PartialIncomePage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [escenarioCobro, setEscenarioCobro] = useState<string[]>([])
+  const [xmlViewer, setXmlViewer] = useState<XmlViewerState>({
+    open: false,
+    title: '',
+    fileName: '',
+    xmlContent: ''
+  })
 
   useEffect(() => {
+    const monthRange = getCurrentMonthRange()
+
     const updateSelectedCompany = () => {
       setSelectedCompany(readSelectedCompanyFromStorage())
     }
+
+    setDateFrom(monthRange.dateFrom)
+    setDateTo(monthRange.dateTo)
+    updateSelectedCompany()
+    setHasHydrated(true)
 
     window.addEventListener('company-selected', updateSelectedCompany)
 
@@ -144,7 +172,7 @@ export default function PartialIncomePage() {
   }, [])
 
   const fetchData = useCallback(async () => {
-    if (!selectedCompany?.rfc || !dateFrom || !dateTo) return
+    if (!hasHydrated || !selectedCompany?.rfc || !dateFrom || !dateTo) return
 
     setLoading(true)
     try {
@@ -169,9 +197,13 @@ export default function PartialIncomePage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
+  }, [hasHydrated, selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
 
   useEffect(() => {
+    if (!hasHydrated) {
+      return
+    }
+
     const timeoutId = setTimeout(() => {
       void fetchData()
     }, 0)
@@ -256,6 +288,35 @@ export default function PartialIncomePage() {
     } catch (err) {
       console.error('Error al generar ZIP', err)
     }
+  }
+
+  const downloadXmlFile = (fileName: string, xmlContent: string) => {
+    const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const openPaymentXml = (payment: PaymentDetail) => {
+    if (!payment.paymentXml) {
+      return
+    }
+
+    const fileName = `${payment.paymentUuid}_${payment.paymentSeries || ''}_${payment.paymentFolio || ''}_Pago.xml`
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+
+    setXmlViewer({
+      open: true,
+      title: `XML del pago ${payment.paymentUuid}`,
+      fileName,
+      xmlContent: payment.paymentXml
+    })
   }
 
   const handleExportExcel = () => {
@@ -371,6 +432,18 @@ export default function PartialIncomePage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  if (!hasHydrated) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex min-h-[240px] items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -776,6 +849,7 @@ export default function PartialIncomePage() {
                                       <TableHead className="text-xs text-right">Saldo Anterior</TableHead>
                                       <TableHead className="text-xs text-right">Saldo Insoluto (REP)</TableHead>
                                       <TableHead className="text-xs text-center">Parcialidad</TableHead>
+                                      <TableHead className="text-xs text-right">XML</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -788,9 +862,9 @@ export default function PartialIncomePage() {
                                           {payment.paymentUuid}
                                         </TableCell>
                                         <TableCell className="text-xs py-1 text-right font-medium">
-                                          {formatCurrency(payment.impPagado, payment.monedaDR)}
+                                          {formatCurrency(payment.impPagado, payment.monedaP || payment.monedaDR)}
                                         </TableCell>
-                                        <TableCell className="text-xs py-1">{payment.monedaDR}</TableCell>
+                                        <TableCell className="text-xs py-1">{payment.monedaP || payment.monedaDR}</TableCell>
                                         <TableCell className="text-xs py-1 text-right">
                                           {payment.equivalenciaDR}
                                         </TableCell>
@@ -802,6 +876,18 @@ export default function PartialIncomePage() {
                                         </TableCell>
                                         <TableCell className="text-xs py-1 text-center">
                                           {payment.numParcialidad}
+                                        </TableCell>
+                                        <TableCell className="text-xs py-1 text-right">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 px-2"
+                                            onClick={() => openPaymentXml(payment)}
+                                            disabled={!payment.paymentXml}
+                                            title={payment.paymentXml ? 'Ver XML del pago' : 'XML de pago no disponible'}
+                                          >
+                                            <FileText className="h-3.5 w-3.5" />
+                                          </Button>
                                         </TableCell>
                                       </TableRow>
                                     ))}
@@ -822,6 +908,33 @@ export default function PartialIncomePage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={xmlViewer.open}
+        onOpenChange={(open) => setXmlViewer(prev => ({ ...prev, open }))}
+      >
+        <DialogContent className="max-w-5xl w-[95vw]">
+          <DialogHeader>
+            <DialogTitle>{xmlViewer.title || 'XML del pago'}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadXmlFile(xmlViewer.fileName || 'pago.xml', xmlViewer.xmlContent)}
+              disabled={!xmlViewer.xmlContent}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Descargar XML
+            </Button>
+          </div>
+          <div className="max-h-[70vh] overflow-auto rounded-md border bg-muted/20 p-4">
+            <pre className="whitespace-pre-wrap break-all text-xs leading-5">
+              {xmlViewer.xmlContent || 'XML no disponible'}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,6 +1,9 @@
 import { CfdiType, InvoiceStatus, SatStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/prisma'
+import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
+import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
+import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
 
 export async function generateDummyInvoices(rfc: string, companyId: string) {
   try {
@@ -97,43 +100,67 @@ export async function generateDummyInvoices(rfc: string, companyId: string) {
 </cfdi:Comprobante>
       `.trim();
 
-      await prisma.invoice.create({
-        data: {
-          userId,
-          issuerFiscalEntityId: fiscalEntity.id,
-          uuid: randomUUID(),
-          cfdiType: CfdiType.INGRESO,
-          currency: 'MXN',
-          issuerRfc: isReceived ? 'XAXX010101000' : rfc,
-          issuerName: isReceived ? 'Publico General' : fiscalEntity.businessName,
-          receiverRfc: isReceived ? rfc : 'XAXX010101000',
-          receiverName: isReceived ? fiscalEntity.businessName : 'Publico General',
-          subtotal: amount,
-          total: total,
-          xmlContent: xml,
-          issuanceDate: new Date(),
-          certificationDate: new Date(),
-          certificationPac: 'SAT',
-          paymentMethod: 'PUE',
-          paymentForm: '01',
-          cfdiUsage: 'G03',
-          placeOfExpedition: '00000',
-          status: InvoiceStatus.ACTIVE,
-          satStatus: SatStatus.VIGENTE,
-          concepts: {
-            create: {
-              description: 'Producto Dummy',
-              productServiceKey: '01010101',
-              unitQuantity: 1,
-              unitKey: 'H87',
-              unitValue: amount,
-              amount: amount,
-              objectOfTax: '02', // Sí objeto de impuesto
-              transferredTaxesJson: transferredTaxes
+      await prisma.$transaction(async tx => {
+        const invoice = await tx.invoice.create({
+          data: {
+            userId,
+            issuerFiscalEntityId: fiscalEntity.id,
+            uuid: randomUUID(),
+            cfdiType: CfdiType.INGRESO,
+            currency: 'MXN',
+            issuerRfc: isReceived ? 'XAXX010101000' : rfc,
+            issuerName: isReceived ? 'Publico General' : fiscalEntity.businessName,
+            receiverRfc: isReceived ? rfc : 'XAXX010101000',
+            receiverName: isReceived ? fiscalEntity.businessName : 'Publico General',
+            subtotal: amount,
+            total: total,
+            xmlContent: xml,
+            issuanceDate: new Date(),
+            certificationDate: new Date(),
+            certificationPac: 'SAT',
+            paymentMethod: 'PUE',
+            paymentForm: '01',
+            cfdiUsage: 'G03',
+            placeOfExpedition: '00000',
+            status: InvoiceStatus.ACTIVE,
+            satStatus: SatStatus.VIGENTE,
+            concepts: {
+              create: {
+                description: 'Producto Dummy',
+                productServiceKey: '01010101',
+                unitQuantity: 1,
+                unitKey: 'H87',
+                unitValue: amount,
+                amount: amount,
+                objectOfTax: '02', // Sí objeto de impuesto
+                transferredTaxesJson: transferredTaxes
+              }
             }
           }
-        }
-      });
+        })
+
+        await upsertInvoiceXmlBlob(tx, {
+          invoiceId: invoice.id,
+          xmlContent: xml
+        })
+
+        await upsertInvoiceComplementProjection(tx, {
+          invoiceId: invoice.id,
+          xmlContent: xml
+        })
+
+        await upsertInvoicePaymentComplementDetails(tx, {
+          issuerFiscalEntityId: fiscalEntity.id,
+          paymentInvoiceId: invoice.id,
+          paymentInvoiceUuid: invoice.uuid,
+          xmlContent: xml,
+          satStatusSnapshot: SatStatus.VIGENTE,
+          fallbackPaymentDate: invoice.issuanceDate,
+          fallbackCurrency: invoice.currency,
+          fallbackSeries: invoice.series,
+          fallbackFolio: invoice.folio
+        })
+      })
     }
     
     console.log(`[DummyGen] Generated 50 dummy invoices with concepts for ${rfc}`)

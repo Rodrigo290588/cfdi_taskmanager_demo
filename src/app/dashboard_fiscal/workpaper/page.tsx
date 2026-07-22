@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar, Eye, FileText, FileCode, ChevronRight, ChevronDown } from 'lucide-react'
 import JSZip from 'jszip'
 import { toast } from 'sonner'
+import type { WorkpaperProjectionMap } from '@/lib/cfdi-workpaper-projection'
 
 type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?: string }
 
@@ -52,6 +53,7 @@ type InvoiceRow = {
   paymentConditions: string | null
   createdAt: string | Date
   updatedAt: string | Date
+  projection?: WorkpaperProjectionMap
 }
 
 function getXmlAttribute(xml: string, attr: string): string {
@@ -95,6 +97,27 @@ function getCfdiRelacionadosAttribute(xml: string, type: 'TipoRelacion' | 'UUID'
     const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionado[^>]*?\bUUID="([^"]+)"/g))
     return matches.map(m => m[1]).join(', ')
   }
+}
+
+function getProjectedValue(row: InvoiceRow, key: string) {
+  const projectedValue = row.projection?.[key]
+  if (projectedValue !== null && typeof projectedValue !== 'undefined' && projectedValue !== '') {
+    return projectedValue
+  }
+
+  if (key === 'version') return getXmlAttribute(row.xmlContent, 'Version')
+  if (key === 'noCertificado') return getXmlAttribute(row.xmlContent, 'NoCertificado')
+  if (key === 'certificado') return getXmlAttribute(row.xmlContent, 'Certificado')
+  if (key === 'domicilioFiscalReceptor') return getReceptorAttribute(row.xmlContent, 'DomicilioFiscalReceptor')
+  if (key === 'residenciaFiscal') return getReceptorAttribute(row.xmlContent, 'ResidenciaFiscal')
+  if (key === 'numRegIdTrib') return getReceptorAttribute(row.xmlContent, 'NumRegIdTrib')
+  if (key === 'regimenFiscalReceptor') return getReceptorAttribute(row.xmlContent, 'RegimenFiscalReceptor')
+  if (key === 'tipoRelacion') return getCfdiRelacionadosAttribute(row.xmlContent, 'TipoRelacion')
+  if (key === 'cfdiRelacionado') return getCfdiRelacionadosAttribute(row.xmlContent, 'UUID')
+  if (key === 'totalImpuestosTrasladados') return getGlobalImpuestosAttribute(row.xmlContent, 'TotalImpuestosTrasladados') || null
+  if (key === 'totalImpuestosRetenidos') return getGlobalImpuestosAttribute(row.xmlContent, 'TotalImpuestosRetenidos') || null
+
+  return null
 }
 
 function ConceptosTable({ xml }: { xml: string }) {
@@ -277,10 +300,10 @@ export default function WorkpaperEmitidosPage() {
 
   const columnDefs = useMemo(() => [
     { key: 'uuid', label: 'UUID', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => <span className="whitespace-nowrap">{r.uuid}</span> },
-    { key: 'version', label: 'Versión', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => getXmlAttribute(r.xmlContent, 'Version') },
-    { key: 'noCertificado', label: 'No. Certificado', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => getXmlAttribute(r.xmlContent, 'NoCertificado') },
+    { key: 'version', label: 'Versión', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'version') ?? '') },
+    { key: 'noCertificado', label: 'No. Certificado', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'noCertificado') ?? '') },
     { key: 'certificado', label: 'Certificado', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => {
-      const val = getXmlAttribute(r.xmlContent, 'Certificado')
+      const val = String(getProjectedValue(r, 'certificado') ?? '')
       return <div className="max-w-[150px] truncate" title={val}>{val}</div>
     } },
     { key: 'cfdiType', label: 'Tipo De Comprobante', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.cfdiType },
@@ -288,27 +311,35 @@ export default function WorkpaperEmitidosPage() {
     { key: 'folio', label: 'Folio', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.folio ?? '' },
     { key: 'currency', label: 'Moneda', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.currency ?? '' },
     { key: 'exchangeRate', label: 'Tipo Cambio', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.exchangeRate ?? '' },
+    { key: 'hasPagos', label: 'Tiene Pagos', group: '<pago20:Pagos>', render: (r: InvoiceRow) => getProjectedValue(r, 'hasPagos') ? 'Sí' : 'No' },
+    { key: 'pagosVersion', label: 'Versión Pagos', group: '<pago20:Pagos>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'pagosVersion') ?? '') },
+    { key: 'hasNomina', label: 'Tiene Nómina', group: '<nomina12:Nomina>', render: (r: InvoiceRow) => getProjectedValue(r, 'hasNomina') ? 'Sí' : 'No' },
+    { key: 'nominaVersion', label: 'Versión Nómina', group: '<nomina12:Nomina>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'nominaVersion') ?? '') },
+    { key: 'hasCartaPorte', label: 'Tiene Carta Porte', group: '<cartaporte:CartaPorte>', render: (r: InvoiceRow) => getProjectedValue(r, 'hasCartaPorte') ? 'Sí' : 'No' },
+    { key: 'cartaPorteVersion', label: 'Versión Carta Porte', group: '<cartaporte:CartaPorte>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'cartaPorteVersion') ?? '') },
+    { key: 'hasComercioExterior', label: 'Tiene Comercio Exterior', group: '<cce20:ComercioExterior>', render: (r: InvoiceRow) => getProjectedValue(r, 'hasComercioExterior') ? 'Sí' : 'No' },
+    { key: 'comercioExteriorVersion', label: 'Versión Comercio Exterior', group: '<cce20:ComercioExterior>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'comercioExteriorVersion') ?? '') },
     { key: 'status', label: 'Estatus', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.status },
     { key: 'satStatus', label: 'SAT', group: 'Sistema / Metadatos', render: (r: InvoiceRow) => r.satStatus },
-    { key: 'tipoRelacion', label: 'Tipo Relación', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'TipoRelacion') },
-    { key: 'cfdiRelacionado', label: 'CFDIRelacionado', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => getCfdiRelacionadosAttribute(r.xmlContent, 'UUID') },
+    { key: 'tipoRelacion', label: 'Tipo Relación', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'tipoRelacion') ?? '') },
+    { key: 'cfdiRelacionado', label: 'CFDIRelacionado', group: '<cfdi:CfdiRelacionados>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'cfdiRelacionado') ?? '') },
     { key: 'issuerRfc', label: 'RFC Emisor', group: '<cfdi:Emisor>', render: (r: InvoiceRow) => r.issuerRfc },
     { key: 'issuerName', label: 'Emisor', group: '<cfdi:Emisor>', render: (r: InvoiceRow) => r.issuerName },
     { key: 'receiverRfc', label: 'RFC Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => r.receiverRfc },
     { key: 'receiverName', label: 'Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => r.receiverName },
-    { key: 'domicilioFiscalReceptor', label: 'Domicilio Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'DomicilioFiscalReceptor') },
-    { key: 'residenciaFiscal', label: 'Residencia Fiscal', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'ResidenciaFiscal') },
-    { key: 'numRegIdTrib', label: 'Num Reg Id Trib', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'NumRegIdTrib') },
-    { key: 'regimenFiscalReceptor', label: 'Régimen Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => getReceptorAttribute(r.xmlContent, 'RegimenFiscalReceptor') },
+    { key: 'domicilioFiscalReceptor', label: 'Domicilio Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'domicilioFiscalReceptor') ?? '') },
+    { key: 'residenciaFiscal', label: 'Residencia Fiscal', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'residenciaFiscal') ?? '') },
+    { key: 'numRegIdTrib', label: 'Num Reg Id Trib', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'numRegIdTrib') ?? '') },
+    { key: 'regimenFiscalReceptor', label: 'Régimen Fiscal Receptor', group: '<cfdi:Receptor>', render: (r: InvoiceRow) => String(getProjectedValue(r, 'regimenFiscalReceptor') ?? '') },
     { key: 'subtotal', label: 'SubTotal', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.subtotal) },
     { key: 'discount', label: 'Descuento', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.discount) },
     { key: 'total', label: 'Total', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatMXN(r.total) },
     { key: 'totalImpuestosTrasladados', label: 'Total Impuestos Trasladados', group: '<cfdi:Impuestos>', render: (r: InvoiceRow) => {
-      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados')
+      const val = getProjectedValue(r, 'totalImpuestosTrasladados')
       return val ? formatMXN(Number(val)) : ''
     } },
     { key: 'totalImpuestosRetenidos', label: 'Total Impuestos Retenidos', group: '<cfdi:Impuestos>', render: (r: InvoiceRow) => {
-      const val = getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos')
+      const val = getProjectedValue(r, 'totalImpuestosRetenidos')
       return val ? formatMXN(Number(val)) : ''
     } },
     { key: 'issuanceDate', label: 'Fecha', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
@@ -397,17 +428,14 @@ export default function WorkpaperEmitidosPage() {
   const [showColumnPanel, setShowColumnPanel] = useState(false)
 
   const exportValue = (r: InvoiceRow, key: string): string | number => {
-    if (key === 'version') return getXmlAttribute(r.xmlContent, 'Version')
-    if (key === 'noCertificado') return getXmlAttribute(r.xmlContent, 'NoCertificado')
-    if (key === 'certificado') return getXmlAttribute(r.xmlContent, 'Certificado')
-    if (key === 'domicilioFiscalReceptor') return getReceptorAttribute(r.xmlContent, 'DomicilioFiscalReceptor')
-    if (key === 'residenciaFiscal') return getReceptorAttribute(r.xmlContent, 'ResidenciaFiscal')
-    if (key === 'numRegIdTrib') return getReceptorAttribute(r.xmlContent, 'NumRegIdTrib')
-    if (key === 'regimenFiscalReceptor') return getReceptorAttribute(r.xmlContent, 'RegimenFiscalReceptor')
-    if (key === 'tipoRelacion') return getCfdiRelacionadosAttribute(r.xmlContent, 'TipoRelacion')
-    if (key === 'cfdiRelacionado') return getCfdiRelacionadosAttribute(r.xmlContent, 'UUID')
-    if (key === 'totalImpuestosTrasladados') return getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosTrasladados') || '0'
-    if (key === 'totalImpuestosRetenidos') return getGlobalImpuestosAttribute(r.xmlContent, 'TotalImpuestosRetenidos') || '0'
+    if (key.startsWith('has')) return getProjectedValue(r, key) ? 'SI' : 'NO'
+
+    const projectedValue = getProjectedValue(r, key)
+    if (projectedValue !== null && typeof projectedValue !== 'undefined' && projectedValue !== '') {
+      if (typeof projectedValue === 'boolean') return projectedValue ? 'SI' : 'NO'
+      if (typeof projectedValue === 'number') return projectedValue
+      return String(projectedValue)
+    }
     
     const v = r[key as keyof InvoiceRow] as unknown
     const dateKeys = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']

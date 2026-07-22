@@ -2,6 +2,25 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.9.0 - 2026-07-21
+
+### Resumen
+- Se libero la minima viable de escalabilidad de ingresos, proyecciones de complementos CFDI y REP especializado para emitidos y recibidos.
+- Se migraron los modulos clave del dashboard fiscal para consumir materializaciones y se cerraron sus validaciones funcionales y cruces SQL vs UI.
+
+### Cambios Tecnicos
+- Se agregaron tablas, migraciones y backfills para `invoice_blobs`, `invoice_issued_daily_summary`, proyecciones de complementos y `invoice_payment_complement_details`.
+- Se incorporo una capa reusable de proyeccion de complementos CFDI para `workpaper` emitidos y recibidos, con soporte inicial para Pagos, Nomina, Carta Porte y Comercio Exterior.
+- Se migraron `dashboard_fiscal`, `ingresos-parciales`, `ingresos_pendientes` e `ingresos_cobrados` para consumir primero la tabla especializada REP, manteniendo compatibilidad transicional con fallback XML.
+- Se materializaron `paymentNodeIndex`, `baseP` e `importeP` para evitar duplicidad por nodos `Pago` y mejorar calculos de cobranza e IVA.
+- Se corrigieron regresiones funcionales en filtros de fecha del dashboard fiscal, filtros REP y exposicion de `paymentXml` en `ingresos-parciales`, normalizacion de UUIDs en `ingresos_pendientes` y copy de `workpaper` recibidos.
+- Se ajustaron componentes compartidos y UI para reducir ruido tecnico en consola/red y mejorar consistencia visual de los modulos validados.
+
+### Validacion Y Documentacion
+- Se documentaron la arquitectura, backfills, SQL de validacion, plan de pruebas, checklist de liberacion y columnas dinamicas de `workpaper`.
+- Se ejecuto la validacion funcional completa de `dashboard_fiscal`, `ingresos-parciales`, `ingresos_pendientes`, `ingresos_cobrados`, `workpaper` emitidos y `workpaper` recibidos.
+- Se completo la validacion cruzada SQL vs UI confirmando que los montos CRP e IVA cobrado no se inflan al agrupar por `payment_invoice_uuid + payment_node_index`.
+
 ## v1.8.1 - 2026-07-18
 
 ### Resumen

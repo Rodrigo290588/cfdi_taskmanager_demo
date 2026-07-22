@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateApiKey } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
+import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
+import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
+import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
 import { CfdiType, InvoiceStatus, SatStatus } from '@prisma/client'
 import { z } from 'zod'
 
@@ -84,39 +87,65 @@ export async function POST(request: NextRequest) {
         }
 
         // Create invoice
-        const invoice = await prisma.invoice.create({
-          data: {
-            userId: authResult.user?.id,
-            uuid: invoiceData.uuid,
-            cfdiType: invoiceData.cfdiType as CfdiType,
-            series: invoiceData.series,
-            folio: invoiceData.folio,
-            currency: invoiceData.currency,
-            exchangeRate: invoiceData.exchangeRate,
-            status: InvoiceStatus.ACTIVE,
-            satStatus: SatStatus.VIGENTE,
-            issuerRfc: invoiceData.issuerRfc,
-            issuerName: invoiceData.issuerName,
-            receiverRfc: invoiceData.receiverRfc,
-            receiverName: invoiceData.receiverName,
-            subtotal: invoiceData.subtotal,
-            discount: invoiceData.discount,
-            total: invoiceData.total,
-            ivaTransferred: invoiceData.ivaTrasladado,
-            ivaWithheld: invoiceData.ivaRetenido,
-            isrWithheld: invoiceData.isrRetenido,
-            iepsWithheld: invoiceData.iepsRetenido,
+        const invoice = await prisma.$transaction(async tx => {
+          const createdInvoice = await tx.invoice.create({
+            data: {
+              userId: authResult.user?.id,
+              uuid: invoiceData.uuid,
+              cfdiType: invoiceData.cfdiType as CfdiType,
+              series: invoiceData.series,
+              folio: invoiceData.folio,
+              currency: invoiceData.currency,
+              exchangeRate: invoiceData.exchangeRate,
+              status: InvoiceStatus.ACTIVE,
+              satStatus: SatStatus.VIGENTE,
+              issuerRfc: invoiceData.issuerRfc,
+              issuerName: invoiceData.issuerName,
+              receiverRfc: invoiceData.receiverRfc,
+              receiverName: invoiceData.receiverName,
+              subtotal: invoiceData.subtotal,
+              discount: invoiceData.discount,
+              total: invoiceData.total,
+              ivaTransferred: invoiceData.ivaTrasladado,
+              ivaWithheld: invoiceData.ivaRetenido,
+              isrWithheld: invoiceData.isrRetenido,
+              iepsWithheld: invoiceData.iepsRetenido,
+              xmlContent: invoiceData.xmlContent,
+              pdfUrl: invoiceData.pdfUrl,
+              issuanceDate: new Date(invoiceData.issuanceDate),
+              certificationDate: new Date(invoiceData.certificationDate),
+              certificationPac: invoiceData.certificationPac,
+              paymentMethod: invoiceData.paymentMethod,
+              paymentForm: invoiceData.paymentForm,
+              cfdiUsage: invoiceData.usageCfdi,
+              placeOfExpedition: invoiceData.expeditionPlace,
+              issuerFiscalEntityId: invoiceData.fiscalEntityId
+            }
+          })
+
+          await upsertInvoiceXmlBlob(tx, {
+            invoiceId: createdInvoice.id,
+            xmlContent: invoiceData.xmlContent
+          })
+
+          await upsertInvoiceComplementProjection(tx, {
+            invoiceId: createdInvoice.id,
+            xmlContent: invoiceData.xmlContent
+          })
+
+          await upsertInvoicePaymentComplementDetails(tx, {
+            issuerFiscalEntityId: invoiceData.fiscalEntityId,
+            paymentInvoiceId: createdInvoice.id,
+            paymentInvoiceUuid: invoiceData.uuid,
             xmlContent: invoiceData.xmlContent,
-            pdfUrl: invoiceData.pdfUrl,
-            issuanceDate: new Date(invoiceData.issuanceDate),
-            certificationDate: new Date(invoiceData.certificationDate),
-            certificationPac: invoiceData.certificationPac,
-            paymentMethod: invoiceData.paymentMethod,
-            paymentForm: invoiceData.paymentForm,
-            cfdiUsage: invoiceData.usageCfdi,
-            placeOfExpedition: invoiceData.expeditionPlace,
-            issuerFiscalEntityId: invoiceData.fiscalEntityId
-          }
+            satStatusSnapshot: SatStatus.VIGENTE,
+            fallbackPaymentDate: new Date(invoiceData.issuanceDate),
+            fallbackCurrency: invoiceData.currency,
+            fallbackSeries: invoiceData.series,
+            fallbackFolio: invoiceData.folio
+          })
+
+          return createdInvoice
         })
 
         results.push({

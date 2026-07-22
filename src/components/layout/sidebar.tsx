@@ -283,12 +283,13 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   }, [tenantState?.organizationId, fetchTenantCompanies])
 
   useEffect(() => {
-    const controller = new AbortController()
+    let isMounted = true
+
     const fetchAvatar = async () => {
       try {
-        const res = await fetch('/api/user/profile', { signal: controller.signal })
+        const res = await fetch('/api/user/profile', { cache: 'no-store' })
         const data = await res.json()
-        if (res.ok && data?.user?.image) {
+        if (isMounted && res.ok && data?.user?.image) {
           setAvatarUrl(data.user.image as string)
         }
       } catch (error) {
@@ -297,11 +298,22 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         }
       }
     }
+
+    if (session?.user?.image) {
+      setAvatarUrl(session.user.image)
+      return () => {
+        isMounted = false
+      }
+    }
+
     if (session?.user) {
       void fetchAvatar()
     }
-    return () => controller.abort()
-  }, [session?.user])
+
+    return () => {
+      isMounted = false
+    }
+  }, [session?.user, session?.user?.image])
 
   const handleLogout = async () => {
     try {

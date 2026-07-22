@@ -3,39 +3,14 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { decryptXmlContent } from '@/lib/provider-cfdi-storage'
-
-type ProviderInvoiceRowRecord = {
-  id: string
-  member_id: string
-  uploaded_by_user_id: string | null
-  receiver_company_id: string | null
-  uuid: string
-  cfdi_type: string
-  series: string | null
-  folio: string | null
-  currency: string | null
-  payment_method: string | null
-  payment_form: string | null
-  validation_status: string
-  sat_estado: string | null
-  issuer_rfc: string
-  issuer_name: string | null
-  receiver_rfc: string
-  receiver_name: string | null
-  subtotal: unknown
-  transferred_taxes_total: unknown
-  withheld_taxes_total: unknown
-  discount: unknown
-  total: unknown
-  issuance_date: Date | string | null
-  certification_date: Date | string | null
-  created_at: Date | string
-  updated_at: Date | string
-  xml_ciphertext: string
-  xml_iv: string
-  xml_auth_tag: string
-  xml_encryption_alg: string
-}
+import {
+  buildProjectionMap,
+  normalizeProjectionUpperText,
+  workpaperAttributeKeySet,
+  workpaperComplementFlagKeySet,
+  workpaperComplementVersionKeySet,
+  workpaperNumericAttributeKeySet
+} from '@/lib/cfdi-workpaper-projection'
 
 function normalizeText(value: string | null | undefined) {
   return (value || '').trim()
@@ -87,23 +62,6 @@ function getTimbreAttribute(xml: string, attr: string) {
   return match?.[1] || ''
 }
 
-function getGlobalImpuestosAttribute(xml: string, attr: string) {
-  if (!xml) return ''
-
-  const match = xml.match(new RegExp(`<[^:]+:Impuestos[^>]*?\\b${attr}="([^"]+)"`))
-  return match?.[1] || ''
-}
-
-function getCfdiRelacionadosAttribute(xml: string, type: 'TipoRelacion' | 'UUID') {
-  if (!xml) return ''
-
-  if (type === 'TipoRelacion') {
-    return Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionados[^>]*?\bTipoRelacion="([^"]+)"/g)).map(match => match[1]).join(', ')
-  }
-
-  return Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionado[^>]*?\bUUID="([^"]+)"/g)).map(match => match[1]).join(', ')
-}
-
 function getCfdiTypesFilter(value: string | null) {
   if (!value) {
     return []
@@ -133,32 +91,11 @@ function getCfdiTypesFilter(value: string | null) {
   )
 }
 
-function getComparableValue(row: Record<string, unknown>, key: string) {
-  const xmlContent = String(row.xmlContent || '')
-
-  if (key === 'version') return getXmlAttribute(xmlContent, 'Version')
-  if (key === 'noCertificado') return getXmlAttribute(xmlContent, 'NoCertificado')
-  if (key === 'certificado') return getXmlAttribute(xmlContent, 'Certificado')
-  if (key === 'domicilioFiscalReceptor') return getReceptorAttribute(xmlContent, 'DomicilioFiscalReceptor')
-  if (key === 'residenciaFiscal') return getReceptorAttribute(xmlContent, 'ResidenciaFiscal')
-  if (key === 'numRegIdTrib') return getReceptorAttribute(xmlContent, 'NumRegIdTrib')
-  if (key === 'regimenFiscalReceptor') return getReceptorAttribute(xmlContent, 'RegimenFiscalReceptor')
-  if (key === 'tipoRelacion') return getCfdiRelacionadosAttribute(xmlContent, 'TipoRelacion')
-  if (key === 'cfdiRelacionado') return getCfdiRelacionadosAttribute(xmlContent, 'UUID')
-  if (key === 'totalImpuestosTrasladados') return getGlobalImpuestosAttribute(xmlContent, 'TotalImpuestosTrasladados') || '0'
-  if (key === 'totalImpuestosRetenidos') return getGlobalImpuestosAttribute(xmlContent, 'TotalImpuestosRetenidos') || '0'
-  if (key === 'cfdiUsage') return getReceptorAttribute(xmlContent, 'UsoCFDI')
-  if (key === 'placeOfExpedition') return getXmlAttribute(xmlContent, 'LugarExpedicion')
-  if (key === 'exportKey') return getXmlAttribute(xmlContent, 'Exportacion')
-  if (key === 'objectTaxComprobante') return getXmlAttribute(xmlContent, 'ObjetoImp')
-  if (key === 'paymentConditions') return getXmlAttribute(xmlContent, 'CondicionesDePago')
-  if (key === 'certificationPac') return getTimbreAttribute(xmlContent, 'RfcProvCertif')
-
-  return row[key]
-}
-
-function matchesText(value: unknown, search: string) {
-  return String(value ?? '').toLowerCase().includes(search.toLowerCase())
+function parseBooleanFilter(value: string) {
+  const normalized = normalizeProjectionUpperText(value)
+  if (['1', 'TRUE', 'SI', 'SÍ', 'YES'].includes(normalized)) return true
+  if (['0', 'FALSE', 'NO'].includes(normalized)) return false
+  return true
 }
 
 export async function GET(request: NextRequest) {
@@ -197,114 +134,62 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
     }
 
-    const rows = await prisma.$queryRaw<ProviderInvoiceRowRecord[]>(
-      Prisma.sql`
-        SELECT
-          p.id,
-          p.member_id,
-          p.uploaded_by_user_id,
-          p.receiver_company_id,
-          p.uuid,
-          p.cfdi_type,
-          p.series,
-          p.folio,
-          p.currency,
-          p.payment_method,
-          p.payment_form,
-          p.validation_status,
-          p.sat_estado,
-          p.issuer_rfc,
-          p.issuer_name,
-          p.receiver_rfc,
-          p.receiver_name,
-          p.subtotal,
-          p.transferred_taxes_total,
-          p.withheld_taxes_total,
-          p.discount,
-          p.total,
-          p.issuance_date,
-          p.certification_date,
-          p.created_at,
-          p.updated_at,
-          b.xml_ciphertext,
-          b.xml_iv,
-          b.xml_auth_tag,
-          b.xml_encryption_alg
-        FROM provider_uploaded_cfdis p
-        INNER JOIN provider_uploaded_cfdi_blobs b
-          ON b.provider_uploaded_cfdi_id = p.id
-        WHERE p.organization_id = ${member.organizationId}
-          AND p.receiver_company_id = ${companyId}
-          AND p.validation_status = 'APPROVED'
-          ${cfdiTypes.length > 0 ? Prisma.sql`AND p.cfdi_type IN (${Prisma.join(cfdiTypes)})` : Prisma.empty}
-          ${satStatus ? Prisma.sql`AND UPPER(COALESCE(p.sat_estado, '')) = ${satStatus}` : Prisma.empty}
-          ${dateFrom ? Prisma.sql`AND p.issuance_date >= ${new Date(dateFrom)}` : Prisma.empty}
-          ${dateTo ? Prisma.sql`AND p.issuance_date <= ${new Date(dateTo)}` : Prisma.empty}
-          ${query ? Prisma.sql`
-            AND (
-              p.uuid ILIKE ${`%${query}%`}
-              OR p.issuer_rfc ILIKE ${`%${query}%`}
-              OR COALESCE(p.issuer_name, '') ILIKE ${`%${query}%`}
-              OR p.receiver_rfc ILIKE ${`%${query}%`}
-              OR COALESCE(p.receiver_name, '') ILIKE ${`%${query}%`}
-              OR COALESCE(p.series, '') ILIKE ${`%${query}%`}
-              OR COALESCE(p.folio, '') ILIKE ${`%${query}%`}
-              OR COALESCE(p.file_name, '') ILIKE ${`%${query}%`}
-            )
-          ` : Prisma.empty}
-        ORDER BY p.issuance_date DESC NULLS LAST, p.updated_at DESC, p.uuid DESC
-      `
-    )
+    const where: Prisma.ProviderUploadedCfdiWhereInput = {
+      organizationId: member.organizationId,
+      receiverCompanyId: companyId,
+      validationStatus: 'APPROVED'
+    }
 
-    const invoices = rows.map(row => {
-      const xmlContent = decryptXmlContent({
-        ciphertext: row.xml_ciphertext,
-        iv: row.xml_iv,
-        authTag: row.xml_auth_tag,
-        algorithm: row.xml_encryption_alg
-      })
+    if (cfdiTypes.length > 0) {
+      where.cfdiType = { in: cfdiTypes }
+    }
+    if (satStatus) {
+      where.satEstado = satStatus
+    }
+    if (status) {
+      where.validationStatus = { contains: status, mode: 'insensitive' }
+    }
+    if (dateFrom || dateTo) {
+      where.issuanceDate = {}
+      if (dateFrom) where.issuanceDate.gte = new Date(dateFrom)
+      if (dateTo) where.issuanceDate.lte = new Date(dateTo)
+    }
+    if (query) {
+      where.OR = [
+        { uuid: { contains: query, mode: 'insensitive' } },
+        { issuerRfc: { contains: query, mode: 'insensitive' } },
+        { issuerName: { contains: query, mode: 'insensitive' } },
+        { receiverRfc: { contains: query, mode: 'insensitive' } },
+        { receiverName: { contains: query, mode: 'insensitive' } },
+        { series: { contains: query, mode: 'insensitive' } },
+        { folio: { contains: query, mode: 'insensitive' } },
+        { fileName: { contains: query, mode: 'insensitive' } }
+      ]
+    }
 
-      const exchangeRateRaw = getXmlAttribute(xmlContent, 'TipoCambio')
+    if (!where.AND) {
+      where.AND = []
+    }
 
-      return {
-        id: row.id,
-        userId: row.uploaded_by_user_id || '',
-        issuerFiscalEntityId: row.receiver_company_id || '',
-        uuid: normalizeUpperText(row.uuid),
-        cfdiType: normalizeUpperText(row.cfdi_type),
-        series: normalizeText(row.series) || null,
-        folio: normalizeText(row.folio) || null,
-        currency: normalizeUpperText(row.currency) || 'MXN',
-        exchangeRate: exchangeRateRaw ? toNumber(exchangeRateRaw) : null,
-        status: normalizeUpperText(row.validation_status),
-        satStatus: normalizeUpperText(row.sat_estado),
-        issuerRfc: normalizeUpperText(row.issuer_rfc),
-        issuerName: normalizeText(row.issuer_name),
-        receiverRfc: normalizeUpperText(row.receiver_rfc),
-        receiverName: normalizeText(row.receiver_name),
-        subtotal: toNumber(row.subtotal),
-        discount: toNumber(row.discount),
-        total: toNumber(row.total),
-        ivaTransferred: 0,
-        ivaWithheld: 0,
-        isrWithheld: 0,
-        iepsWithheld: 0,
-        xmlContent,
-        pdfUrl: null,
-        issuanceDate: toIsoString(row.issuance_date),
-        certificationDate: toIsoString(row.certification_date) || null,
-        certificationPac: getTimbreAttribute(xmlContent, 'RfcProvCertif'),
-        paymentMethod: normalizeUpperText(row.payment_method),
-        paymentForm: normalizeUpperText(row.payment_form),
-        cfdiUsage: getReceptorAttribute(xmlContent, 'UsoCFDI'),
-        placeOfExpedition: getXmlAttribute(xmlContent, 'LugarExpedicion'),
-        exportKey: getXmlAttribute(xmlContent, 'Exportacion'),
-        objectTaxComprobante: getXmlAttribute(xmlContent, 'ObjetoImp') || null,
-        paymentConditions: getXmlAttribute(xmlContent, 'CondicionesDePago') || null,
-        createdAt: toIsoString(row.created_at),
-        updatedAt: toIsoString(row.updated_at)
-      }
-    })
+    const directTextFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+      id: 'id',
+      uuid: 'uuid',
+      series: 'series',
+      folio: 'folio',
+      currency: 'currency',
+      issuerRfc: 'issuerRfc',
+      issuerName: 'issuerName',
+      receiverRfc: 'receiverRfc',
+      receiverName: 'receiverName',
+      paymentMethod: 'paymentMethod',
+      paymentForm: 'paymentForm'
+    }
+
+    const directNumericFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+      subtotal: 'subtotal',
+      discount: 'discount',
+      total: 'total'
+    }
 
     const reservedParams = new Set([
       'companyId',
@@ -320,81 +205,208 @@ export async function GET(request: NextRequest) {
       'origin'
     ])
 
-    const textFilterKeys = [
-      'id',
-      'userId',
-      'issuerFiscalEntityId',
-      'uuid',
-      'series',
-      'folio',
-      'currency',
-      'issuerRfc',
-      'issuerName',
-      'receiverRfc',
-      'receiverName',
-      'paymentMethod',
-      'paymentForm',
-      'cfdiUsage',
-      'placeOfExpedition',
-      'exportKey',
-      'objectTaxComprobante',
-      'paymentConditions',
-      'certificationPac',
-      'version',
-      'noCertificado',
-      'certificado',
-      'tipoRelacion',
-      'cfdiRelacionado',
-      'domicilioFiscalReceptor',
-      'residenciaFiscal',
-      'numRegIdTrib',
-      'regimenFiscalReceptor'
-    ]
+    for (const [rawKey, rawValue] of searchParams.entries()) {
+      if (reservedParams.has(rawKey) || !rawValue) {
+        continue
+      }
 
-    const exactNumberFields = new Set([
-      'subtotal',
-      'discount',
-      'total',
-      'exchangeRate',
-      'totalImpuestosTrasladados',
-      'totalImpuestosRetenidos'
+      if (rawKey in directTextFilterMap) {
+        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          [directTextFilterMap[rawKey]]: {
+            contains: rawValue,
+            mode: 'insensitive'
+          }
+        })
+        continue
+      }
+
+      if (rawKey in directNumericFilterMap && !Number.isNaN(Number(rawValue))) {
+        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          [directNumericFilterMap[rawKey]]: new Prisma.Decimal(Number(rawValue).toFixed(6))
+        })
+        continue
+      }
+
+      const key = rawKey.startsWith('attr.') ? rawKey.slice(5) : rawKey
+      const hasKey = rawKey.startsWith('has.') ? `has${rawKey.slice(4).toLowerCase().replace(/(?:^|_)(\w)/g, (_, char: string) => char.toUpperCase())}` : rawKey
+      const normalizedValue = normalizeProjectionUpperText(rawValue)
+
+      if (workpaperComplementFlagKeySet.has(hasKey)) {
+        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          complementIndex: {
+            is: {
+              [hasKey]: parseBooleanFilter(rawValue)
+            }
+          }
+        })
+        continue
+      }
+
+      if (workpaperComplementVersionKeySet.has(key)) {
+        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          complementIndex: {
+            is: {
+              [key]: {
+                contains: rawValue,
+                mode: 'insensitive'
+              }
+            }
+          }
+        })
+        continue
+      }
+
+      if (workpaperAttributeKeySet.has(key)) {
+        if (workpaperNumericAttributeKeySet.has(key) && !Number.isNaN(Number(rawValue))) {
+          ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+            complementAttributes: {
+              some: {
+                attributeKey: key,
+                valueNumber: new Prisma.Decimal(Number(rawValue).toFixed(6))
+              }
+            }
+          })
+        } else {
+          ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+            complementAttributes: {
+              some: {
+                attributeKey: key,
+                valueSearch: {
+                  contains: normalizedValue,
+                  mode: 'insensitive'
+                }
+              }
+            }
+          })
+        }
+      }
+    }
+
+    const skip = (page - 1) * limit
+    const [rows, total] = await Promise.all([
+      prisma.providerUploadedCfdi.findMany({
+        where,
+        orderBy: [
+          { issuanceDate: 'desc' },
+          { updatedAt: 'desc' },
+          { uuid: 'desc' }
+        ],
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          memberId: true,
+          uploadedByUserId: true,
+          receiverCompanyId: true,
+          uuid: true,
+          cfdiType: true,
+          series: true,
+          folio: true,
+          currency: true,
+          paymentMethod: true,
+          paymentForm: true,
+          validationStatus: true,
+          satEstado: true,
+          issuerRfc: true,
+          issuerName: true,
+          receiverRfc: true,
+          receiverName: true,
+          subtotal: true,
+          discount: true,
+          total: true,
+          issuanceDate: true,
+          certificationDate: true,
+          createdAt: true,
+          updatedAt: true,
+          xmlBlob: {
+            select: {
+              xmlCiphertext: true,
+              xmlIv: true,
+              xmlAuthTag: true,
+              xmlEncryptionAlg: true
+            }
+          },
+          complementIndex: {
+            select: {
+              hasPagos: true,
+              pagosVersion: true,
+              hasNomina: true,
+              nominaVersion: true,
+              hasCartaPorte: true,
+              cartaPorteVersion: true,
+              hasComercioExterior: true,
+              comercioExteriorVersion: true
+            }
+          },
+          complementAttributes: {
+            select: {
+              attributeKey: true,
+              valueText: true,
+              valueNumber: true,
+              valueBoolean: true
+            }
+          }
+        }
+      }),
+      prisma.providerUploadedCfdi.count({ where })
     ])
 
-    const filteredInvoices = invoices.filter(invoice => {
-      if (status && !matchesText(invoice.status, status)) {
-        return false
+    const pagedInvoices = rows.map(row => {
+      const xmlContent = row.xmlBlob
+        ? decryptXmlContent({
+            ciphertext: row.xmlBlob.xmlCiphertext,
+            iv: row.xmlBlob.xmlIv,
+            authTag: row.xmlBlob.xmlAuthTag,
+            algorithm: row.xmlBlob.xmlEncryptionAlg
+          })
+        : ''
+
+      const projection = buildProjectionMap({
+        attributes: row.complementAttributes,
+        complementIndex: row.complementIndex
+      })
+      const exchangeRateRaw = getXmlAttribute(xmlContent, 'TipoCambio')
+
+      return {
+        id: row.id,
+        userId: row.uploadedByUserId || '',
+        issuerFiscalEntityId: row.receiverCompanyId || '',
+        uuid: normalizeUpperText(row.uuid),
+        cfdiType: normalizeUpperText(row.cfdiType),
+        series: normalizeText(row.series) || null,
+        folio: normalizeText(row.folio) || null,
+        currency: normalizeUpperText(row.currency) || 'MXN',
+        exchangeRate: exchangeRateRaw ? toNumber(exchangeRateRaw) : null,
+        status: normalizeUpperText(row.validationStatus),
+        satStatus: normalizeUpperText(row.satEstado),
+        issuerRfc: normalizeUpperText(row.issuerRfc),
+        issuerName: normalizeText(row.issuerName),
+        receiverRfc: normalizeUpperText(row.receiverRfc),
+        receiverName: normalizeText(row.receiverName),
+        subtotal: toNumber(row.subtotal),
+        discount: toNumber(row.discount),
+        total: toNumber(row.total),
+        ivaTransferred: 0,
+        ivaWithheld: 0,
+        isrWithheld: 0,
+        iepsWithheld: 0,
+        xmlContent,
+        pdfUrl: null,
+        issuanceDate: toIsoString(row.issuanceDate),
+        certificationDate: toIsoString(row.certificationDate) || null,
+        certificationPac: String(projection.certificationPac ?? getTimbreAttribute(xmlContent, 'RfcProvCertif')),
+        paymentMethod: normalizeUpperText(row.paymentMethod),
+        paymentForm: normalizeUpperText(row.paymentForm),
+        cfdiUsage: String(projection.cfdiUsage ?? getReceptorAttribute(xmlContent, 'UsoCFDI')),
+        placeOfExpedition: String(projection.placeOfExpedition ?? getXmlAttribute(xmlContent, 'LugarExpedicion')),
+        exportKey: String(projection.exportKey ?? getXmlAttribute(xmlContent, 'Exportacion')),
+        objectTaxComprobante: String(projection.objectTaxComprobante ?? getXmlAttribute(xmlContent, 'ObjetoImp')) || null,
+        paymentConditions: String(projection.paymentConditions ?? getXmlAttribute(xmlContent, 'CondicionesDePago')) || null,
+        createdAt: toIsoString(row.createdAt),
+        updatedAt: toIsoString(row.updatedAt),
+        projection
       }
-
-      for (const [key, value] of searchParams.entries()) {
-        if (reservedParams.has(key)) {
-          continue
-        }
-
-        const normalizedValue = normalizeText(value)
-        if (!normalizedValue) {
-          continue
-        }
-
-        const comparableValue = getComparableValue(invoice as unknown as Record<string, unknown>, key)
-
-        if (exactNumberFields.has(key)) {
-          if (toNumber(comparableValue) !== toNumber(normalizedValue)) {
-            return false
-          }
-          continue
-        }
-
-        if (textFilterKeys.includes(key) && !matchesText(comparableValue, normalizedValue)) {
-          return false
-        }
-      }
-
-      return true
     })
-
-    const total = filteredInvoices.length
-    const skip = (page - 1) * limit
-    const pagedInvoices = filteredInvoices.slice(skip, skip + limit)
 
     return NextResponse.json({
       invoices: pagedInvoices,

@@ -3,6 +3,15 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { DOMParser } from '@xmldom/xmldom'
 
+function toNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function normalizeUuid(value: string | null | undefined) {
+  return (value || '').trim().toUpperCase()
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -63,6 +72,7 @@ export async function GET(request: NextRequest) {
     })
 
     const ppdUuids = ppdInvoices.map(inv => inv.uuid)
+    const normalizedPpdUuids = ppdUuids.map(normalizeUuid)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const drilldownData: any[] = []
@@ -89,14 +99,13 @@ export async function GET(request: NextRequest) {
     })
 
     if (ppdUuids.length > 0) {
-      // Step 2: Find all CRPs related to these PPDs
-      const relatedPagos = await prisma.invoiceRelatedCfdi.findMany({
+      const paymentDetails = await prisma.invoicePaymentComplementDetail.findMany({
         where: {
-          relatedUuid: { in: ppdUuids },
-          invoice: { cfdiType: 'PAGO', satStatus: 'VIGENTE' }
+          relatedInvoiceUuid: { in: ppdUuids },
+          satStatusSnapshot: 'VIGENTE'
         },
         include: {
-          invoice: {
+          paymentInvoice: {
             select: {
               uuid: true,
               folio: true,
@@ -108,69 +117,131 @@ export async function GET(request: NextRequest) {
               receiverName: true,
               currency: true,
               exchangeRate: true,
-              xmlContent: true,
+              xmlContent: true
             }
           }
-        }
+        },
+        orderBy: [
+          { paymentDate: 'asc' },
+          { createdAt: 'asc' }
+        ]
       })
 
-      const parser = new DOMParser()
-      
-      // Group by invoiceId to avoid parsing the same PAGO XML multiple times if it pays multiple PPDs
-      const pagosMap = new Map()
-      relatedPagos.forEach(rel => {
-        if (!pagosMap.has(rel.invoiceId)) {
-          pagosMap.set(rel.invoiceId, {
-            invoice: rel.invoice,
-            relatedUuids: new Set([rel.relatedUuid])
-          })
-        } else {
-          pagosMap.get(rel.invoiceId).relatedUuids.add(rel.relatedUuid)
-        }
-      })
-
-      for (const pago of pagosMap.values()) {
-        const inv = pago.invoice
-        const targetUuids = pago.relatedUuids
-        if (!inv.xmlContent) continue
-
+      paymentDetails.forEach(detail => {
+        const inv = detail.paymentInvoice
         const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
         const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
         const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
+        const impPagado = toNumber(detail.impPagado)
 
-        try {
-          const doc = parser.parseFromString(inv.xmlContent, 'text/xml')
-          const pagosNodos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
-          
-          pagosNodos.forEach(pagoNode => {
-            const monedaP = pagoNode.getAttribute('MonedaP') || inv.currency || 'MXN'
-            const doctos = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':DoctoRelacionado'))
-            
-            doctos.forEach(doctoNode => {
-              const idDocumento = doctoNode.getAttribute('IdDocumento')
-              if (idDocumento && targetUuids.has(idDocumento.toLowerCase())) {
-                const impPagado = parseFloat(doctoNode.getAttribute('ImpPagado') || '0')
-                
-                if (impPagado > 0) {
-                  drilldownData.push({
-                    uuid: inv.uuid,
-                    uuidRelacionado: idDocumento.toUpperCase(),
-                    tipo: 'Complemento de Pago (CRP)',
-                    fecha: inv.issuanceDate,
-                    serie: inv.series || '',
-                    folio: inv.folio || '',
-                    rfc: rfcOponente,
-                    razonSocial: nombreOponente || 'Desconocido',
-                    moneda: monedaP,
-                    tipoCambio: Number(inv.exchangeRate) || 1,
-                    importe: -impPagado // Negative because it reduces the pending amount
-                  })
-                }
+        if (impPagado <= 0) {
+          return
+        }
+
+        drilldownData.push({
+          uuid: inv.uuid,
+          uuidRelacionado: normalizeUuid(detail.relatedInvoiceUuid),
+          tipo: 'Complemento de Pago (CRP)',
+          fecha: inv.issuanceDate,
+          serie: inv.series || '',
+          folio: inv.folio || '',
+          rfc: rfcOponente,
+          razonSocial: nombreOponente || 'Desconocido',
+          moneda: detail.monedaP || inv.currency || 'MXN',
+          tipoCambio: Number(inv.exchangeRate) || 1,
+          importe: -impPagado
+        })
+      })
+
+      const coveredRelatedUuids = new Set(paymentDetails.map(detail => normalizeUuid(detail.relatedInvoiceUuid)))
+      const missingRelatedUuids = ppdUuids.filter(uuid => !coveredRelatedUuids.has(normalizeUuid(uuid)))
+
+      if (missingRelatedUuids.length > 0) {
+        const relatedPagos = await prisma.invoiceRelatedCfdi.findMany({
+          where: {
+            relatedUuid: { in: missingRelatedUuids },
+            invoice: { cfdiType: 'PAGO', satStatus: 'VIGENTE' }
+          },
+          include: {
+            invoice: {
+              select: {
+                uuid: true,
+                folio: true,
+                series: true,
+                issuanceDate: true,
+                issuerRfc: true,
+                receiverRfc: true,
+                issuerName: true,
+                receiverName: true,
+                currency: true,
+                exchangeRate: true,
+                xmlContent: true,
               }
+            }
+          }
+        })
+
+        const parser = new DOMParser()
+
+        const pagosMap = new Map()
+        relatedPagos.forEach(rel => {
+          const normalizedRelatedUuid = normalizeUuid(rel.relatedUuid)
+
+          if (!pagosMap.has(rel.invoiceId)) {
+            pagosMap.set(rel.invoiceId, {
+              invoice: rel.invoice,
+              relatedUuids: new Set([normalizedRelatedUuid])
             })
-          })
-        } catch {
-          // ignore parse error
+          } else {
+            pagosMap.get(rel.invoiceId).relatedUuids.add(normalizedRelatedUuid)
+          }
+        })
+
+        for (const pago of pagosMap.values()) {
+          const inv = pago.invoice
+          const targetUuids = pago.relatedUuids
+          if (!inv.xmlContent) continue
+
+          const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
+          const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
+          const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
+
+          try {
+            const doc = parser.parseFromString(inv.xmlContent, 'text/xml')
+            const pagosNodos = Array.from(doc.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':Pago'))
+
+            pagosNodos.forEach(pagoNode => {
+              const monedaP = pagoNode.getAttribute('MonedaP') || inv.currency || 'MXN'
+              const doctos = Array.from(pagoNode.getElementsByTagName('*')).filter(el => el.nodeName.endsWith(':DoctoRelacionado'))
+
+              doctos.forEach(doctoNode => {
+                const idDocumento = doctoNode.getAttribute('IdDocumento')
+                const normalizedIdDocumento = normalizeUuid(idDocumento)
+
+                if (normalizedIdDocumento && targetUuids.has(normalizedIdDocumento)) {
+                  const impPagado = parseFloat(doctoNode.getAttribute('ImpPagado') || '0')
+
+                  if (impPagado > 0) {
+                    drilldownData.push({
+                      uuid: inv.uuid,
+                      uuidRelacionado: normalizedIdDocumento,
+                      tipo: 'Complemento de Pago (CRP)',
+                      fecha: inv.issuanceDate,
+                      serie: inv.series || '',
+                      folio: inv.folio || '',
+                      rfc: rfcOponente,
+                      razonSocial: nombreOponente || 'Desconocido',
+                      moneda: monedaP,
+                      tipoCambio: Number(inv.exchangeRate) || 1,
+                      importe: -impPagado
+                    })
+                  }
+                }
+              })
+            })
+          } catch {
+            // ignore parse error
+          }
         }
       }
 
@@ -207,7 +278,7 @@ export async function GET(request: NextRequest) {
 
         drilldownData.push({
           uuid: inv.uuid,
-          uuidRelacionado: rel.relatedUuid.toUpperCase(),
+          uuidRelacionado: normalizeUuid(rel.relatedUuid),
           tipo: 'Nota de Crédito (Ajuste)',
           fecha: inv.issuanceDate,
           serie: inv.series || '',

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateApiKey } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
+import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
+import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
+import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
 import { cfdiInputSchema } from '@/schemas/cfdiInput'
 import { normalizarJson, generarXml } from '@/services/cfdi.service'
 import { timbrarCfdi } from '@/services/pac.service'
@@ -123,61 +126,87 @@ export async function POST(request: NextRequest) {
     const isrWithheld = retSum['001'] || 0
     const iepsWithheld = retSum['003'] || 0
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        userId,
-        issuerFiscalEntityId: fiscalEntity.id,
-        uuid,
-        cfdiType: CfdiType.INGRESO,
-        series: norm.comprobante.serie,
-        folio: norm.comprobante.folio,
-        currency: norm.comprobante.moneda,
-        exchangeRate: norm.comprobante.tipoCambio ? Number(norm.comprobante.tipoCambio) : null,
-        status: InvoiceStatus.ACTIVE,
-        satStatus: SatStatus.VIGENTE,
-        issuerRfc: norm.emisor.rfc,
-        issuerName: norm.emisor.nombre,
-        receiverRfc: norm.receptor.rfc,
-        receiverName: norm.receptor.nombre,
-        subtotal: new Prisma.Decimal(norm.comprobante.subtotal),
-        discount: new Prisma.Decimal(norm.comprobante.descuento),
-        total: new Prisma.Decimal(norm.comprobante.total),
-        ivaTransferred: new Prisma.Decimal(ivaTransferred.toFixed(2)),
-        ivaWithheld: new Prisma.Decimal(ivaWithheld.toFixed(2)),
-        isrWithheld: new Prisma.Decimal(isrWithheld.toFixed(2)),
-        iepsWithheld: new Prisma.Decimal(iepsWithheld.toFixed(2)),
-        xmlContent: xmlTimbrado,
-        pdfUrl: null,
-        issuanceDate: new Date(norm.comprobante.fecha),
-        certificationDate: new Date(),
-        certificationPac: 'PAC SIMULADO',
-        paymentMethod: norm.comprobante.metodoPago,
-        paymentForm: norm.comprobante.formaPago,
-        cfdiUsage: norm.receptor.usoCfdi,
-        placeOfExpedition: norm.comprobante.lugarExpedicion,
-        exportKey: norm.comprobante.exportacion,
-        objectTaxComprobante: norm.comprobante.objetoImp,
-        paymentConditions: norm.comprobante.condicionesDePago,
-        concepts: {
-          create: norm.conceptos.map(c => ({
-            productServiceKey: c.claveProdServ,
-            identificationNumber: c.noIdentificacion,
-            unitQuantity: new Prisma.Decimal(c.cantidad),
-            unitKey: c.claveUnidad,
-            unitDescription: c.unidad,
-            description: c.descripcion,
-            unitValue: new Prisma.Decimal(c.valorUnitario),
-            amount: new Prisma.Decimal(c.importe),
-            discount: new Prisma.Decimal((c.descuento ?? '0')),
-            objectOfTax: c.objetoImp,
-            transferredTaxesJson: c.impuestos.traslados.length ? (c.impuestos.traslados as unknown as object) : undefined,
-            withheldTaxesJson: c.impuestos.retenciones.length ? (c.impuestos.retenciones as unknown as object) : undefined,
-          }))
-        },
-        relatedCfdis: {
-          create: norm.cfdiRelacionados.flatMap(r => r.uuids.map(u => ({ relationType: r.tipoRelacion, relatedUuid: u })))
+    const invoice = await prisma.$transaction(async tx => {
+      const createdInvoice = await tx.invoice.create({
+        data: {
+          userId,
+          issuerFiscalEntityId: fiscalEntity.id,
+          uuid,
+          cfdiType: CfdiType.INGRESO,
+          series: norm.comprobante.serie,
+          folio: norm.comprobante.folio,
+          currency: norm.comprobante.moneda,
+          exchangeRate: norm.comprobante.tipoCambio ? Number(norm.comprobante.tipoCambio) : null,
+          status: InvoiceStatus.ACTIVE,
+          satStatus: SatStatus.VIGENTE,
+          issuerRfc: norm.emisor.rfc,
+          issuerName: norm.emisor.nombre,
+          receiverRfc: norm.receptor.rfc,
+          receiverName: norm.receptor.nombre,
+          subtotal: new Prisma.Decimal(norm.comprobante.subtotal),
+          discount: new Prisma.Decimal(norm.comprobante.descuento),
+          total: new Prisma.Decimal(norm.comprobante.total),
+          ivaTransferred: new Prisma.Decimal(ivaTransferred.toFixed(2)),
+          ivaWithheld: new Prisma.Decimal(ivaWithheld.toFixed(2)),
+          isrWithheld: new Prisma.Decimal(isrWithheld.toFixed(2)),
+          iepsWithheld: new Prisma.Decimal(iepsWithheld.toFixed(2)),
+          xmlContent: xmlTimbrado,
+          pdfUrl: null,
+          issuanceDate: new Date(norm.comprobante.fecha),
+          certificationDate: new Date(),
+          certificationPac: 'PAC SIMULADO',
+          paymentMethod: norm.comprobante.metodoPago,
+          paymentForm: norm.comprobante.formaPago,
+          cfdiUsage: norm.receptor.usoCfdi,
+          placeOfExpedition: norm.comprobante.lugarExpedicion,
+          exportKey: norm.comprobante.exportacion,
+          objectTaxComprobante: norm.comprobante.objetoImp,
+          paymentConditions: norm.comprobante.condicionesDePago,
+          concepts: {
+            create: norm.conceptos.map(c => ({
+              productServiceKey: c.claveProdServ,
+              identificationNumber: c.noIdentificacion,
+              unitQuantity: new Prisma.Decimal(c.cantidad),
+              unitKey: c.claveUnidad,
+              unitDescription: c.unidad,
+              description: c.descripcion,
+              unitValue: new Prisma.Decimal(c.valorUnitario),
+              amount: new Prisma.Decimal(c.importe),
+              discount: new Prisma.Decimal((c.descuento ?? '0')),
+              objectOfTax: c.objetoImp,
+              transferredTaxesJson: c.impuestos.traslados.length ? (c.impuestos.traslados as unknown as object) : undefined,
+              withheldTaxesJson: c.impuestos.retenciones.length ? (c.impuestos.retenciones as unknown as object) : undefined,
+            }))
+          },
+          relatedCfdis: {
+            create: norm.cfdiRelacionados.flatMap(r => r.uuids.map(u => ({ relationType: r.tipoRelacion, relatedUuid: u })))
+          }
         }
-      }
+      })
+
+      await upsertInvoiceXmlBlob(tx, {
+        invoiceId: createdInvoice.id,
+        xmlContent: xmlTimbrado
+      })
+
+      await upsertInvoiceComplementProjection(tx, {
+        invoiceId: createdInvoice.id,
+        xmlContent: xmlTimbrado
+      })
+
+      await upsertInvoicePaymentComplementDetails(tx, {
+        issuerFiscalEntityId: fiscalEntity.id,
+        paymentInvoiceId: createdInvoice.id,
+        paymentInvoiceUuid: uuid,
+        xmlContent: xmlTimbrado,
+        satStatusSnapshot: SatStatus.VIGENTE,
+        fallbackPaymentDate: new Date(norm.comprobante.fecha),
+        fallbackCurrency: norm.comprobante.moneda,
+        fallbackSeries: norm.comprobante.serie,
+        fallbackFolio: norm.comprobante.folio
+      })
+
+      return createdInvoice
     })
 
     await prisma.auditLog.create({
