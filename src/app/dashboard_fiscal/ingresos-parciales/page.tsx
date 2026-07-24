@@ -129,10 +129,11 @@ const formatCurrency = (value: number, currency: string = 'MXN') => {
 }
 
 export default function PartialIncomePage() {
+  const monthRange = getCurrentMonthRange()
   const [hasHydrated, setHasHydrated] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>('')
-  const [dateTo, setDateTo] = useState<string>('')
+  const [dateFrom, setDateFrom] = useState<string>(monthRange.dateFrom)
+  const [dateTo, setDateTo] = useState<string>(monthRange.dateTo)
   
   const [paymentDateFrom, setPaymentDateFrom] = useState<string>('')
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
@@ -153,20 +154,19 @@ export default function PartialIncomePage() {
   })
 
   useEffect(() => {
-    const monthRange = getCurrentMonthRange()
-
     const updateSelectedCompany = () => {
       setSelectedCompany(readSelectedCompanyFromStorage())
     }
 
-    setDateFrom(monthRange.dateFrom)
-    setDateTo(monthRange.dateTo)
-    updateSelectedCompany()
-    setHasHydrated(true)
+    const frameId = window.requestAnimationFrame(() => {
+      updateSelectedCompany()
+      setHasHydrated(true)
+    })
 
     window.addEventListener('company-selected', updateSelectedCompany)
 
     return () => {
+      window.cancelAnimationFrame(frameId)
       window.removeEventListener('company-selected', updateSelectedCompany)
     }
   }, [])
@@ -209,7 +209,7 @@ export default function PartialIncomePage() {
     }, 0)
 
     return () => clearTimeout(timeoutId)
-  }, [fetchData])
+  }, [fetchData, hasHydrated])
 
   const toggleRow = (uuid: string) => {
     setExpandedRows(prev => ({

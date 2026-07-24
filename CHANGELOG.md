@@ -2,6 +2,20 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.9.1 - 2026-07-23
+
+### Resumen
+- Se libero un ajuste correctivo posterior a `v1.9.0` para dejar limpio `lint` en el flujo de `ingresos-parciales`, `ingresos_pendientes` y `sidebar`.
+- Se eliminaron efectos con `setState` sincronico que estaban generando errores de `eslint` relacionados con hidratacion y renders en cascada.
+
+### Cambios Tecnicos
+- Se elimino una variable no utilizada en `ingresos_pendientes`.
+- Se reestructuro la hidratacion inicial de `dashboard_fiscal/ingresos-parciales` para inicializar fechas sin disparar `setState` sincronico dentro del efecto.
+- Se ajusto `sidebar` para resolver el avatar desde la sesion antes de recurrir al estado local, evitando el warning de `setState` en el efecto de carga.
+
+### Validacion
+- Se ejecuto `eslint` focalizado sobre los archivos corregidos y finalizo sin errores ni warnings.
+
 ## v1.9.0 - 2026-07-21
 
 ### Resumen

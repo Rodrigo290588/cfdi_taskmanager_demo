@@ -127,6 +127,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const moduleFlags = selectedEntity?.isCustomRole && selectedEntity.moduleFlags 
     ? selectedEntity.moduleFlags 
     : globalModuleFlags
+  const resolvedAvatarUrl = session?.user?.image || avatarUrl || "/api/placeholder/32/32"
 
   // Fetch companies the current user has access to
   const fetchTenantCompanies = useCallback(async (signal?: AbortSignal) => {
@@ -300,7 +301,6 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     }
 
     if (session?.user?.image) {
-      setAvatarUrl(session.user.image)
       return () => {
         isMounted = false
       }
@@ -1027,7 +1027,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="w-full justify-start px-3 py-2 h-auto rounded-full hover:bg-white/10">
                   <Avatar className="h-8 w-8 mr-3 border border-white/20">
-                    <AvatarImage src={avatarUrl || session?.user?.image || "/api/placeholder/32/32"} alt={session?.user?.name || "User"} />
+                    <AvatarImage src={resolvedAvatarUrl} alt={session?.user?.name || "User"} />
                     <AvatarFallback className="bg-white/10 text-white">{session?.user?.name?.split(' ').map(n => n[0]).join('') || 'U'}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left min-w-0">

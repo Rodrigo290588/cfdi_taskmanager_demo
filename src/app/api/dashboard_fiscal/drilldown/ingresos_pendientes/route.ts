@@ -72,7 +72,6 @@ export async function GET(request: NextRequest) {
     })
 
     const ppdUuids = ppdInvoices.map(inv => inv.uuid)
-    const normalizedPpdUuids = ppdUuids.map(normalizeUuid)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const drilldownData: any[] = []
