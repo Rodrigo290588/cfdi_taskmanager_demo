@@ -1,9 +1,11 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import readline from 'node:readline'
 import { Readable } from 'node:stream'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { isInternalHostname } from '@/lib/security'
 
 type Sat69BStatusBucket =
   | 'PRESUNTO'
@@ -26,6 +28,10 @@ type Sat69BEntryInput = {
 type Sat69BSyncSource =
   | { type: 'file'; value: string }
   | { type: 'url'; value: string }
+
+const SAT_69B_URL_HOSTNAME_SUFFIX = '.sat.gob.mx'
+const SAT_69B_FILE_DIRNAME = '.data' + path.sep + 'blacklist'
+const SAT_69B_FETCH_TIMEOUT_MS = 60_000
 
 export type Sat69BSyncResult = {
   source: string
@@ -74,14 +80,62 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function __isAllowedSat69BUrl(rawUrl: string): { ok: true; parsed: URL } | { ok: false; reason: string } {
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== 'https:') {
+      return { ok: false, reason: `SAT 69B URL requiere HTTPS (recibido ${parsed.protocol})` }
+    }
+    const host = parsed.hostname.toLowerCase()
+    if (!host.endsWith(SAT_69B_URL_HOSTNAME_SUFFIX) && host !== SAT_69B_URL_HOSTNAME_SUFFIX.slice(1)) {
+      return { ok: false, reason: `Host 69B fuera de allow-list sat.gob.mx: ${host}` }
+    }
+    if (isInternalHostname(host)) {
+      return { ok: false, reason: `Host 69B resuelve a IP interna/RFC1918/localhost/IMDS: ${host}` }
+    }
+    return { ok: true, parsed }
+  } catch (err) {
+    return { ok: false, reason: `URL SAT 69B inválida: ${String(err instanceof Error ? err.message : String(err))}` }
+  }
+}
+
+function __isAllowedSat69BFilePath(rawPath: string): { ok: true; normalized: string } | { ok: false; reason: string } {
+  try {
+    const cwd = typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : '.'
+    const normalized = path.resolve(cwd, rawPath)
+    const allowedRoot = path.resolve(cwd, SAT_69B_FILE_DIRNAME) + path.sep
+    const normalizedWithSep = normalized + (normalized.endsWith(path.sep) ? '' : path.sep)
+    if (!normalizedWithSep.startsWith(allowedRoot)) {
+      return { ok: false, reason: `Path archivo 69B fuera de ${SAT_69B_FILE_DIRNAME}/ (startsWith guard fail)` }
+    }
+    return { ok: true, normalized }
+  } catch (err) {
+    return { ok: false, reason: `Path SAT 69B inválido: ${String(err instanceof Error ? err.message : String(err))}` }
+  }
+}
+
 function resolveSat69BSource(): Sat69BSyncSource | null {
   const filePath = normalizeText(process.env.SAT_69B_SOURCE_FILE_PATH)
   if (filePath) {
-    return { type: 'file', value: filePath }
+    const fileCheck = __isAllowedSat69BFilePath(filePath)
+    if (!fileCheck.ok) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[SAT 69B] Source file bloqueado por seguridad: ${fileCheck.reason}`)
+      }
+      return null
+    }
+    return { type: 'file', value: fileCheck.normalized }
   }
 
   const url = normalizeText(process.env.SAT_69B_SOURCE_URL)
   if (url) {
+    const urlCheck = __isAllowedSat69BUrl(url)
+    if (!urlCheck.ok) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[SAT 69B] Source URL bloqueado por seguridad: ${urlCheck.reason}`)
+      }
+      return null
+    }
     return { type: 'url', value: url }
   }
 
@@ -207,9 +261,27 @@ async function createLineReader(source: Sat69BSyncSource) {
     return readline.createInterface({ input: stream, crlfDelay: Infinity })
   }
 
-  const response = await fetch(source.value)
+  const urlCheck = __isAllowedSat69BUrl(source.value)
+  if (!urlCheck.ok) {
+    throw new Error(`SAT 69B fetch bloqueado: ${urlCheck.reason}`)
+  }
+  const host = urlCheck.parsed.hostname
+  if (isInternalHostname(host)) {
+    throw new Error(`SAT 69B fetch bloqueado: hostname ${host} resuelve a IP interna/IMDS`)
+  }
+
+  const response = await fetch(source.value, {
+    method: 'GET',
+    headers: {
+      'Accept': 'text/plain;q=0.9,*/*;q=0.1',
+      'User-Agent': 'Platfi-Intelligence-SAT-69B-Sync/1.0 (+https://platfi.mx/security.txt)',
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(SAT_69B_FETCH_TIMEOUT_MS),
+  })
+
   if (!response.ok || !response.body) {
-    throw new Error(`No fue posible descargar la lista 69-B desde ${source.value}.`)
+    throw new Error(`No fue posible descargar la lista 69-B desde ${source.value} (HTTP ${response.status}).`)
   }
 
   const stream = Readable.fromWeb(response.body as unknown as NodeReadableStream)

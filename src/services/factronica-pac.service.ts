@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { humanizeSatValidationError } from '@/lib/sat-error-humanization'
+import { isInternalHostname } from '@/lib/security'
 
 const FACTRONICA_REST_BASE_URL =
   process.env.FACTRONICA_REST_BASE_URL || 'https://pac2a.factronica.net/TimbraWS/RestApi'
@@ -10,8 +11,72 @@ const FACTRONICA_REST_VALIDATE_URL =
 const FACTRONICA_REST_USER = process.env.FACTRONICA_REST_USER || 'SCM091023TW3'
 const FACTRONICA_REST_PASSWORD = process.env.FACTRONICA_REST_PASSWORD || 'FAC.scm@092013'
 const FACTRONICA_REST_VERSION = '2.5'
-const FACTRONICA_TIMEOUT_MS = Number(process.env.FACTRONICA_PAC_TIMEOUT_MS || '30000')
+const FACTRONICA_TIMEOUT_MS = 5_000
 const FACTRONICA_LOG_FILE_PATH = path.join(process.cwd(), 'logs', 'factronica-pac.log')
+
+export const FACTRONICA_PAC_ALLOWED_HOSTS: ReadonlySet<string> = new Set([
+  'pac.factronica.mx',
+  'staging-pac.factronica.mx',
+  'pac2a.factronica.net',
+  'timbra.factronica.net',
+  'ws.factronica.mx',
+  'www.factronica.mx'
+])
+
+const FACTRONICA_CIRCUIT_BREAKER_THRESHOLD = 20
+const FACTRONICA_CIRCUIT_BREAKER_COOL_DOWN_MS = 60_000
+
+const __factronicaCircuitBreaker = {
+  consecutiveFails: 0,
+  openUntil: 0,
+  lastResetAt: 0
+}
+
+function factronicaCircuitOpen(): { open: true; retryAfterSec: number } | { open: false } {
+  const now = Date.now()
+  if (__factronicaCircuitBreaker.openUntil > now) {
+    return { open: true, retryAfterSec: Math.max(1, Math.ceil((__factronicaCircuitBreaker.openUntil - now) / 1000)) }
+  }
+  if (__factronicaCircuitBreaker.openUntil !== 0) {
+    __factronicaCircuitBreaker.openUntil = 0
+    __factronicaCircuitBreaker.consecutiveFails = 0
+    __factronicaCircuitBreaker.lastResetAt = now
+  }
+  return { open: false }
+}
+
+function factronicaCircuitReportOutcome(success: boolean): void {
+  if (success) {
+    if (__factronicaCircuitBreaker.consecutiveFails !== 0) {
+      __factronicaCircuitBreaker.consecutiveFails = 0
+    }
+    return
+  }
+  __factronicaCircuitBreaker.consecutiveFails += 1
+  if (__factronicaCircuitBreaker.consecutiveFails >= FACTRONICA_CIRCUIT_BREAKER_THRESHOLD) {
+    __factronicaCircuitBreaker.openUntil = Date.now() + FACTRONICA_CIRCUIT_BREAKER_COOL_DOWN_MS
+  }
+}
+
+function safeValidateFactronicaAllowedHost(rawUrl: string): { ok: true; host: string } | { ok: false; error: string } {
+  try {
+    const parsed = new URL(rawUrl)
+    const host = parsed.hostname.toLowerCase().trim()
+    if (!host) return { ok: false, error: 'URL PAC sin hostname valido' }
+    if (isInternalHostname(host)) {
+      return { ok: false, error: `Host PAC prohibido (rango interno): ${host}` }
+    }
+    if (!FACTRONICA_PAC_ALLOWED_HOSTS.has(host)) {
+      return { ok: false, error: `Host PAC fuera de allow-list: ${host}. Contacta soporte para habilitarlo.` }
+    }
+    if (parsed.protocol !== 'https:' && process.env.NODE_ENV !== 'test') {
+      return { ok: false, error: `Protocolo PAC no seguro (${parsed.protocol}). Solo HTTPS permitido en produccion.` }
+    }
+    return { ok: true, host }
+  } catch {
+    return { ok: false, error: 'URL PAC con formato invalido' }
+  }
+}
 
 export const FACTRONICA_ANEXO20_OK_MESSAGE = 'Validación estructura Anexo 20 = OK'
 
@@ -131,6 +196,10 @@ function formatPacNetworkError(fileName: string, error: unknown) {
 }
 
 async function callFactronicaValidateRest(payload: FactronicaRestValidateRequest) {
+  const hostCheck = safeValidateFactronicaAllowedHost(FACTRONICA_REST_VALIDATE_URL)
+  if (!hostCheck.ok) {
+    throw new Error(`FACTRONICA SSRF BLOCK: ${hostCheck.error}`)
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FACTRONICA_TIMEOUT_MS)
 
@@ -170,6 +239,13 @@ async function callFactronicaValidateRest(payload: FactronicaRestValidateRequest
 }
 
 export async function validateCfdiWithFactronicaPac(fileName: string, xml: string): Promise<FactronicaPacValidationResult> {
+  const circuitState = factronicaCircuitOpen()
+  if (circuitState.open) {
+    throw new Error(
+      `${fileName}: validacion PAC Factronica temporalmente suspendida por fallos consecutivos (Circuit Breaker). Reintenta en ${circuitState.retryAfterSec}s.`
+    )
+  }
+
   const payload = buildCfdiValidaPayload(xml)
 
   await appendPacLogSection(`[FACTRONICA REST REQUEST - ${fileName}]`, {
@@ -184,6 +260,7 @@ export async function validateCfdiWithFactronicaPac(fileName: string, xml: strin
     }
   })
 
+  let successLatch = false
   try {
     const { response, responseText, responseJson } = await callFactronicaValidateRest(payload)
     const errorMessages = normalizeErrorMessages(responseJson?.errorMsg)
@@ -225,6 +302,7 @@ export async function validateCfdiWithFactronicaPac(fileName: string, xml: strin
       })}`)
     }
 
+    successLatch = true
     return {
       success: true,
       successMessage: FACTRONICA_ANEXO20_OK_MESSAGE,
@@ -240,5 +318,7 @@ export async function validateCfdiWithFactronicaPac(fileName: string, xml: strin
       stack: error instanceof Error ? error.stack || '[no stack]' : '[no stack]'
     })
     throw new Error(formatPacNetworkError(fileName, error))
+  } finally {
+    factronicaCircuitReportOutcome(successLatch)
   }
 }

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { massDownloadQueue } from '@/lib/queue'
+import { getMassDownloadQueue } from '@/lib/queue'
 import { RequestStatus } from '@prisma/client'
 import { differenceInDays, addMonths, startOfMonth, endOfMonth } from 'date-fns'
 
@@ -56,7 +56,7 @@ export class MassDownloadService {
     })
 
     // Add to Queue
-    await massDownloadQueue.add('process-request', {
+    await getMassDownloadQueue().add('process-request', {
       requestId: request.id,
       rfc: params.requestingRfc, // Grouping key for concurrency
     }, {
@@ -107,7 +107,7 @@ export class MassDownloadService {
         },
       })
 
-      await massDownloadQueue.add('process-request', {
+      await getMassDownloadQueue().add('process-request', {
         requestId: request.id,
         rfc: params.requestingRfc,
       }, {

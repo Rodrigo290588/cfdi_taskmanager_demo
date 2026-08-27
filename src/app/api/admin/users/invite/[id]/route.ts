@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { rateLimitByUserId, RateLimitError } from '@/lib/rate-limit'
 
 export async function DELETE(
   request: NextRequest,
@@ -8,13 +9,21 @@ export async function DELETE(
 ) {
   try {
     const session = await auth()
-    
+
     if (!session?.user) {
       return NextResponse.json(
         { error: 'No autorizado' },
         { status: 401 }
       )
     }
+
+    // [SAST-FIX #9] Rate limit por usuario autenticado: 20 eliminaciones/minuto.
+    rateLimitByUserId({
+      userId: session.user.id,
+      key: 'admin-invite-delete',
+      limit: 20,
+      windowMs: 60_000
+    })
 
     const { id: membershipId } = await context.params
 
@@ -131,6 +140,16 @@ export async function DELETE(
     })
 
   } catch (error) {
+    if (error instanceof RateLimitError) {
+      const retrySec = Math.max(1, Math.ceil(error.retryAfterMs / 1000))
+      return NextResponse.json(
+        { error: error.message },
+        {
+          status: error.statusCode,
+          headers: { 'Retry-After': String(retrySec) }
+        }
+      )
+    }
     console.error('Delete invitation error:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },

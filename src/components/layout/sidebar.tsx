@@ -109,6 +109,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const [selectedEntity, setSelectedEntity] = useState<FiscalEntity | null>(null)
   const [reportsOpen, setReportsOpen] = useState(false)
   const [companiesOpen, setCompaniesOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
   const [cfdisEmittedOpen, setCfdisEmittedOpen] = useState(false)
   const [cfdisReceivedOpen, setCfdisReceivedOpen] = useState(false)
   const [cfdisPayrollOpen, setCfdisPayrollOpen] = useState(false)
@@ -1008,8 +1009,116 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       
 
       {/* Administración de la Organización (debajo del SAT, antes de Preferencias) */}
+      {hasAnyPermission([
+        Permission.ADMIN_DASHBOARD,
+        Permission.ADMIN_USERS,
+        Permission.ADMIN_SETTINGS,
+        Permission.ADMIN_COMPANIES,
+        Permission.ADMIN_ORGANIZATIONS,
+        Permission.ADMIN_AUDIT,
+      ], tenantState?.organizationId) && (
+        <Collapsible open={adminOpen} onOpenChange={setAdminOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              className="w-full justify-start px-4 py-2 rounded-full hover:bg-white/10 hover:text-white transition-all duration-200"
+            >
+              <Shield className="h-5 w-5 mr-3" />
+              <span className="flex-1 text-left text-sm font-medium text-blue-100">Administración de la Organización</span>
+              {adminOpen ? (
+                <ChevronDown className="h-4 w-4 text-blue-200" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-blue-200" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+            {hasPermission(Permission.ADMIN_DASHBOARD, tenantState?.organizationId) && (
+              <Link
+                href="/admin/dashboard"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/admin/dashboard') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <BarChart3 className="h-4 w-4" />
+                <span>Panel de Control</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
+              <Link
+                href="/admin/users"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/admin/users') && !pathname?.includes('/bulk') && !pathname?.includes('/profiles') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <Users className="h-4 w-4" />
+                <span>Usuarios</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
+              <Link
+                href="/admin/users-bulk"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/admin/users-bulk') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <Activity className="h-4 w-4" />
+                <span>Carga Masiva Usuarios</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
+              <Link
+                href="/admin/profiles"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/admin/profiles') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <UserCircle className="h-4 w-4" />
+                <span>Perfiles y Accesos</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
+              <Link
+                href="/admin/roles"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/admin/roles') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <Scale className="h-4 w-4" />
+                <span>Roles y Permisos</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_COMPANIES, tenantState?.organizationId) && (
+              <Link
+                href="/admin/dashboard"
+                className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
+              >
+                <Building2 className="h-4 w-4" />
+                <span>Administrar Empresas</span>
+              </Link>
+            )}
+            {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
+              <Link
+                href="/preferences"
+                className={cn(
+                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                  pathname?.startsWith('/preferences') && "bg-white/20 text-white font-semibold shadow-inner"
+                )}
+              >
+                <Sliders className="h-4 w-4" />
+                <span>Preferencias del Sistema</span>
+              </Link>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
-      {/* Bottom: Preferencias del Sistema */}
+      {/* Bottom: Preferencias del Sistema (shortcut standalone si tiene permiso y el menú admin no se renderizó) */}
       {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
         <Link
           href="/preferences"

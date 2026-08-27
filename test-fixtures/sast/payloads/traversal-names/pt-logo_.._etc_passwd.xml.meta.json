@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "logo\u0000../etc/passwd.xml",
+  "safeLocalPath": "pt-logo_.._etc_passwd.xml",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"logo\u0000../etc/passwd.xml\" y bytes=pt-logo_.._etc_passwd.xml",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

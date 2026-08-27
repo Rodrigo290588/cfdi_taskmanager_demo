@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "logo%2e%2e%2f%2e%2e%2fboot.ini",
+  "safeLocalPath": "pt-logo%2e%2e%2f%2e%2e%2fboot.ini",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"logo%2e%2e%2f%2e%2e%2fboot.ini\" y bytes=pt-logo%2e%2e%2f%2e%2e%2fboot.ini",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

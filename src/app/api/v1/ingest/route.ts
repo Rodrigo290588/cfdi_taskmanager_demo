@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
 import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
 import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
+import { parseCfdiDateTime } from '@/lib/cfdi-date'
 import { CfdiType, InvoiceStatus, SatStatus } from '@prisma/client'
 import { z } from 'zod'
 
@@ -112,8 +113,8 @@ export async function POST(request: NextRequest) {
               iepsWithheld: invoiceData.iepsRetenido,
               xmlContent: invoiceData.xmlContent,
               pdfUrl: invoiceData.pdfUrl,
-              issuanceDate: new Date(invoiceData.issuanceDate),
-              certificationDate: new Date(invoiceData.certificationDate),
+              issuanceDate: parseCfdiDateTime(invoiceData.issuanceDate),
+              certificationDate: parseCfdiDateTime(invoiceData.certificationDate, parseCfdiDateTime(invoiceData.issuanceDate)),
               certificationPac: invoiceData.certificationPac,
               paymentMethod: invoiceData.paymentMethod,
               paymentForm: invoiceData.paymentForm,
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest) {
             paymentInvoiceUuid: invoiceData.uuid,
             xmlContent: invoiceData.xmlContent,
             satStatusSnapshot: SatStatus.VIGENTE,
-            fallbackPaymentDate: new Date(invoiceData.issuanceDate),
+            fallbackPaymentDate: parseCfdiDateTime(invoiceData.issuanceDate),
             fallbackCurrency: invoiceData.currency,
             fallbackSeries: invoiceData.series,
             fallbackFolio: invoiceData.folio

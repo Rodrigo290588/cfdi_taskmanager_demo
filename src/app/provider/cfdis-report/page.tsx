@@ -75,10 +75,6 @@ type ProviderContext = {
   }>
 }
 
-type MemberModuleFlags = {
-  granularPermissions?: Record<string, boolean>
-}
-
 type ProviderColumnKey =
   | 'receptorRfc'
   | 'providerId'
@@ -322,7 +318,6 @@ async function fetchProviderContextData(params: {
 export default function ProviderCfdisReportPage() {
   const { tenantState, loading: tenantLoading } = useTenant()
   const [providerContext, setProviderContext] = useState<ProviderContext | null>(null)
-  const [memberModuleFlags, setMemberModuleFlags] = useState<MemberModuleFlags | null>(null)
   const [contextLoading, setContextLoading] = useState(true)
   const [contextError, setContextError] = useState('')
   const [rows, setRows] = useState<ProviderReportRow[]>([])
@@ -345,34 +340,6 @@ export default function ProviderCfdisReportPage() {
     }, 0)
 
     return () => clearTimeout(timeoutId)
-  }, [tenantLoading, tenantState?.organizationId])
-
-  useEffect(() => {
-    const loadMemberFlags = async () => {
-      try {
-        const params = new URLSearchParams()
-        if (tenantState?.organizationId) {
-          params.set('orgId', tenantState.organizationId)
-        }
-
-        const response = await fetch(`/api/user/member${params.toString() ? `?${params.toString()}` : ''}`, {
-          cache: 'no-store'
-        })
-        const result = await response.json()
-
-        if (!response.ok) {
-          return
-        }
-
-        setMemberModuleFlags({
-          granularPermissions: result.member?.granularPermissions || {}
-        })
-      } catch {}
-    }
-
-    if (!tenantLoading) {
-      loadMemberFlags()
-    }
   }, [tenantLoading, tenantState?.organizationId])
 
   const filteredRows = useMemo(() => {
@@ -400,14 +367,6 @@ export default function ProviderCfdisReportPage() {
       { totalOriginal: 0, totalPagado: 0, saldoPorCobrar: 0 }
     )
   }, [filteredRows])
-
-  const canViewProviderBusinessRules = memberModuleFlags?.granularPermissions?.providerBusinessRules !== false
-  const canViewProviderBusinessRulePueForma99 = canViewProviderBusinessRules
-    && memberModuleFlags?.granularPermissions?.providerBusinessRulePueForma99 !== false
-  const canViewProviderBusinessRuleResicoRetention = canViewProviderBusinessRules
-    && memberModuleFlags?.granularPermissions?.providerBusinessRuleResicoRetention !== false
-  const canViewProviderBusinessRuleObjetoImpVsIva = canViewProviderBusinessRules
-    && memberModuleFlags?.granularPermissions?.providerBusinessRuleObjetoImpVsIva !== false
 
   const openFilePicker = () => {
     if (fileInputRef.current) {
@@ -576,74 +535,6 @@ export default function ProviderCfdisReportPage() {
             </CardContent>
           </Card>
         </div>
-
-        {canViewProviderBusinessRules && (
-          <Card className="border border-indigo-200 bg-indigo-50/40">
-            <CardHeader>
-              <CardTitle className="text-base">Coherencia de Datos / Reglas de Negocio</CardTitle>
-              <CardDescription>
-                Este apartado concentrará las validaciones configurables por cliente para revisar consistencia y reglas de negocio antes o durante la carga de CFDI.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="rounded-md border border-indigo-200/70 bg-background px-4 py-3">
-                <p className="font-medium text-foreground">Próximamente</p>
-                <p className="mt-1 text-muted-foreground">
-                  Aquí aparecerán las reglas activas para tu cliente, su resultado y las acciones correctivas asociadas a cada validación.
-                </p>
-              </div>
-              <div className="rounded-md border border-indigo-200/70 bg-background px-4 py-3">
-                <p className="font-medium text-foreground">Reglas hijas activas</p>
-                <div className="mt-3 ml-4 space-y-3 border-l border-indigo-200 pl-4">
-                  <div className="rounded-md border border-border bg-card px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-foreground">Validación del método de pago vs Forma de pago</p>
-                        <p className="text-xs text-muted-foreground">
-                          Rechaza el CFDI cuando `MetodoPago = PUE` y `FormaPago = 99`, si esta regla hija está habilitada para el proveedor.
-                        </p>
-                      </div>
-                      <Badge variant={canViewProviderBusinessRulePueForma99 ? 'default' : 'outline'}>
-                        {canViewProviderBusinessRulePueForma99 ? 'Activa' : 'Inactiva'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border bg-card px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-foreground">Validación de proveedores del RESICO</p>
-                        <p className="text-xs text-muted-foreground">
-                          Rechaza el CFDI si el emisor es RESICO (`626`), el receptor es Persona Moral y no se localiza la retención ISR `0.012500`.
-                        </p>
-                      </div>
-                      <Badge variant={canViewProviderBusinessRuleResicoRetention ? 'default' : 'outline'}>
-                        {canViewProviderBusinessRuleResicoRetention ? 'Activa' : 'Inactiva'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border bg-card px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-foreground">Validación de Objeto de Impuesto vs Traslados IVA</p>
-                        <p className="text-xs text-muted-foreground">
-                          Rechaza el CFDI si `ObjetoImp=02` no trae traslado IVA desglosado, o si `ObjetoImp=01/03` sí trae traslado IVA.
-                        </p>
-                      </div>
-                      <Badge variant={canViewProviderBusinessRuleObjetoImpVsIva ? 'default' : 'outline'}>
-                        {canViewProviderBusinessRuleObjetoImpVsIva ? 'Activa' : 'Inactiva'}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline">Configuración por cliente</Badge>
-                <Badge variant="outline">Validaciones antes de carga</Badge>
-                <Badge variant="outline">Resultado por regla</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {errors.length > 0 && (
           <Card className="border-destructive/30">

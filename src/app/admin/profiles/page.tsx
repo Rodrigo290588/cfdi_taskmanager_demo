@@ -10,6 +10,9 @@ import { UserCheck, Shield, Users, Loader2, Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { showSuccess, showError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { ProtectedRoute } from '@/components/auth/protected-route'
+import { PermissionRequired } from '@/components/auth/permission-guard'
+import { Permission } from '@/lib/permissions'
 
 type MemberRole = 'ADMIN' | 'VIEWER' | string // Permitimos string para roles personalizados
 type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | 'NONE' | string
@@ -34,7 +37,7 @@ interface CustomRole {
   isSystemRole: boolean
 }
 
-export default function ProfilesManagementPage() {
+function ProfilesManagementPage() {
   const [members, setMembers] = useState<MemberItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -442,3 +445,16 @@ export default function ProfilesManagementPage() {
     </div>
   )
 }
+
+// [SAST-FIX #8] Profiles también requiere guardia explícita de permisos admin de org.
+function WrappedProfilesManagementPage() {
+  return (
+    <ProtectedRoute>
+      <PermissionRequired permission={Permission.ADMIN_ORGANIZATIONS}>
+        <ProfilesManagementPage />
+      </PermissionRequired>
+    </ProtectedRoute>
+  )
+}
+
+export default WrappedProfilesManagementPage

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import {
+  resolveRoleForOrg,
+  AdminRoleValidationError
+} from '@/lib/admin-roles'
 
 export async function PATCH(
   request: NextRequest,
@@ -8,7 +12,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth()
-    
+
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
@@ -48,9 +52,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'No puedes modificar al dueño de la organización' }, { status: 403 })
     }
 
-    const isSystemRole = ['ADMIN', 'AUDITOR', 'VIEWER'].includes(roleId)
-    const systemRole = isSystemRole ? roleId as 'ADMIN' | 'AUDITOR' | 'VIEWER' : 'VIEWER'
-    const customRoleId = isSystemRole ? null : roleId
+    // [SAST-FIX #1] Validar roleId: si es customRole DEBE existir y pertenecer a la ORG.
+    const { systemRole, customRoleId } = await resolveRoleForOrg(
+      roleId,
+      adminMembership.organizationId
+    )
 
     await prisma.$transaction(async (tx) => {
       // Update global role
@@ -113,6 +119,12 @@ export async function PATCH(
     return NextResponse.json({ success: true, message: 'Usuario actualizado correctamente' })
 
   } catch (error) {
+    if (error instanceof AdminRoleValidationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.statusCode }
+      )
+    }
     console.error('Update user error:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },

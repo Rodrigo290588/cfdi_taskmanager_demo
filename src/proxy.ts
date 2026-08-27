@@ -19,6 +19,7 @@ export default auth((req) => {
   const isMachineToMachineApi = req.nextUrl.pathname.startsWith("/api/oauth/token")
     || req.nextUrl.pathname.startsWith("/api/external/users")
     || req.nextUrl.pathname.startsWith("/api/external/provider-payments")
+    || req.nextUrl.pathname.startsWith("/api/external/cfdi-import")
 
   // 1. API Protection
   if (isOnApi) {
@@ -31,10 +32,9 @@ export default auth((req) => {
       return withSecurityHeaders(NextResponse.next())
     }
 
-    // Permitir ingesta masiva (podría requerir API Key en el futuro, pero por ahora whitelisted)
-    if (req.nextUrl.pathname.startsWith("/api/import")) {
-      return withSecurityHeaders(NextResponse.next())
-    }
+    // IMP-009 · Borrado whitelist temprana /api/import: ya no se permite bypass al session check
+    // del middleware. Autenticación obligatoria se valida después en default API protection
+    // y doblemente en el propio route.ts con hasPermission granular.
 
     // M2M APIs are public at the proxy layer but protected in-route by OAuth/JWT scope validation.
     if (isMachineToMachineApi) {
@@ -61,13 +61,6 @@ export default auth((req) => {
   }
 
   // 3. App Routes Protection (Dashboard, Settings, etc)
-  if (isOnDashboard) {
-    if (!isLoggedIn) {
-      return withSecurityHeaders(NextResponse.redirect(new URL("/auth/signin", req.nextUrl)))
-    }
-  }
-
-  // 3. Dashboard Protection
   if (isOnDashboard) {
     if (!isLoggedIn) {
       return withSecurityHeaders(NextResponse.redirect(new URL("/auth/signin", req.nextUrl)))

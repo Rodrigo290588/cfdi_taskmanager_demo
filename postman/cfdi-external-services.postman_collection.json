@@ -2,7 +2,7 @@
   "info": {
     "name": "CFDI External Services API",
     "_postman_id": "3dfba8c0-c4e9-4cab-a7c1-0c31d9f4f9d0",
-    "description": "Coleccion unificada para autenticacion OAuth 2.0 Client Credentials, alta externa de usuarios y actualizacion de pagos de proveedor. Incluye scopes separados, tokens independientes por flujo y rate limiting de 5 peticiones por segundo por cliente.",
+    "description": "Coleccion unificada para autenticacion OAuth 2.0 Client Credentials, alta externa de usuarios, actualizacion de pagos de proveedor e importacion M2M de CFDI. Incluye scopes separados, tokens independientes por flujo y rate limiting de 5 peticiones por segundo por cliente.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -27,11 +27,95 @@
       "value": "payments:update"
     },
     {
+      "key": "cfdiImportScope",
+      "value": "cfdi.import"
+    },
+    {
       "key": "accessTokenUsers",
       "value": ""
     },
     {
       "key": "accessTokenPayments",
+      "value": ""
+    },
+    {
+      "key": "accessTokenCfdiImport",
+      "value": ""
+    },
+    {
+      "key": "importRunId",
+      "value": ""
+    },
+    {
+      "key": "importBatchId",
+      "value": "postman-import-001"
+    },
+    {
+      "key": "importFileName",
+      "value": "cfdi-prueba.xml"
+    },
+    {
+      "key": "emitidoImportRunId",
+      "value": ""
+    },
+    {
+      "key": "emitidoBatchId",
+      "value": "postman-emitido-001"
+    },
+    {
+      "key": "emitidoFileName",
+      "value": "emitido-prueba.xml"
+    },
+    {
+      "key": "cfdiImportXmlEmitido",
+      "value": "<cfdi:Comprobante Version=\"4.0\"></cfdi:Comprobante>"
+    },
+    {
+      "key": "recibidoImportRunId",
+      "value": ""
+    },
+    {
+      "key": "recibidoBatchId",
+      "value": "postman-recibido-001"
+    },
+    {
+      "key": "recibidoFileName",
+      "value": "recibido-prueba.xml"
+    },
+    {
+      "key": "cfdiImportXmlRecibido",
+      "value": "<cfdi:Comprobante Version=\"4.0\"></cfdi:Comprobante>"
+    },
+    {
+      "key": "intragrupoImportRunId",
+      "value": ""
+    },
+    {
+      "key": "intragrupoBatchId",
+      "value": "postman-intragrupo-001"
+    },
+    {
+      "key": "intragrupoFileName",
+      "value": "intragrupo-prueba.xml"
+    },
+    {
+      "key": "cfdiImportXmlIntragrupo",
+      "value": "<cfdi:Comprobante Version=\"4.0\"></cfdi:Comprobante>"
+    },
+    {
+      "key": "importItemsPage",
+      "value": "1"
+    },
+    {
+      "key": "importItemsPageSize",
+      "value": "100"
+    },
+    {
+      "key": "cfdiImportXmlContent",
+      "value": "<cfdi:Comprobante Version=\"4.0\"></cfdi:Comprobante>"
+    },
+    {
+      "key": "cfdiImportRequestBody",
       "value": ""
     },
     {
@@ -197,6 +281,84 @@
                   "",
                   "if (data.access_token) {",
                   "  pm.collectionVariables.set('accessTokenPayments', data.access_token)",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3. Token cfdi.import",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{clientId}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{clientSecret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "{{cfdiImportScope}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oauth",
+                "token"
+              ]
+            },
+            "description": "Obtiene un JWT M2M con el scope cfdi.import."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200)",
+                  "})",
+                  "",
+                  "const data = pm.response.json()",
+                  "",
+                  "pm.test('Devuelve access_token', function () {",
+                  "  pm.expect(data.access_token).to.be.a('string')",
+                  "})",
+                  "",
+                  "if (data.access_token) {",
+                  "  pm.collectionVariables.set('accessTokenCfdiImport', data.access_token)",
                   "}"
                 ]
               }
@@ -423,6 +585,779 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Importacion CFDI M2M",
+      "description": "Solicitudes para importar CFDI por lote y consultar su avance usando el scope cfdi.import. Incluye tres variantes listas para prueba: emitido, recibido e intragrupo.",
+      "item": [
+        {
+          "name": "1. Emitido",
+          "description": "Flujo completo para un CFDI emitido: el RFC del Emisor debe pertenecer al tenant y el Receptor debe quedar fuera del tenant.",
+          "item": [
+            {
+              "name": "1.1 Crear corrida emitido",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const xmlContent = pm.collectionVariables.get('cfdiImportXmlEmitido') || ''",
+                      "const fileName = pm.collectionVariables.get('emitidoFileName') || 'emitido-prueba.xml'",
+                      "const batchId = pm.collectionVariables.get('emitidoBatchId') || `postman-emitido-${Date.now()}`",
+                      "",
+                      "pm.expect(xmlContent).to.be.a('string')",
+                      "pm.expect(xmlContent.trim().length).to.be.greaterThan(0)",
+                      "",
+                      "const contentBase64 = btoa(unescape(encodeURIComponent(xmlContent)))",
+                      "const requestBody = {",
+                      "  batchId,",
+                      "  source: 'JAVA_M2M',",
+                      "  items: [",
+                      "    {",
+                      "      fileName,",
+                      "      contentBase64",
+                      "    }",
+                      "  ]",
+                      "}",
+                      "",
+                      "pm.collectionVariables.set('emitidoBatchId', batchId)",
+                      "pm.collectionVariables.set('cfdiImportRequestBody', JSON.stringify(requestBody, null, 2))"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 202', function () {",
+                      "  pm.response.to.have.status(202)",
+                      "})",
+                      "",
+                      "const data = pm.response.json()",
+                      "",
+                      "pm.test('Devuelve importRunId', function () {",
+                      "  pm.expect(data.importRunId).to.be.a('string')",
+                      "})",
+                      "",
+                      "if (data.importRunId) {",
+                      "  pm.collectionVariables.set('emitidoImportRunId', data.importRunId)",
+                      "  pm.collectionVariables.set('importRunId', data.importRunId)",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{cfdiImportRequestBody}}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import"
+                  ]
+                },
+                "description": "Crea una corrida de prueba para un CFDI emitido usando la variable cfdiImportXmlEmitido."
+              },
+              "response": []
+            },
+            {
+              "name": "1.2 Consultar resumen emitido",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{emitidoImportRunId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{emitidoImportRunId}}"
+                  ]
+                },
+                "description": "Consulta el resumen de la corrida del escenario emitido."
+              },
+              "response": []
+            },
+            {
+              "name": "1.3 Consultar items emitido",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{emitidoImportRunId}}/items?page={{importItemsPage}}&pageSize={{importItemsPageSize}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{emitidoImportRunId}}",
+                    "items"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "{{importItemsPage}}"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "{{importItemsPageSize}}"
+                    }
+                  ]
+                },
+                "description": "Consulta el detalle item por item del escenario emitido."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "2. Recibido",
+          "description": "Flujo completo para un CFDI recibido: el RFC del Receptor debe pertenecer al tenant y el Emisor debe quedar fuera del tenant.",
+          "item": [
+            {
+              "name": "2.1 Crear corrida recibido",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const xmlContent = pm.collectionVariables.get('cfdiImportXmlRecibido') || ''",
+                      "const fileName = pm.collectionVariables.get('recibidoFileName') || 'recibido-prueba.xml'",
+                      "const batchId = pm.collectionVariables.get('recibidoBatchId') || `postman-recibido-${Date.now()}`",
+                      "",
+                      "pm.expect(xmlContent).to.be.a('string')",
+                      "pm.expect(xmlContent.trim().length).to.be.greaterThan(0)",
+                      "",
+                      "const contentBase64 = btoa(unescape(encodeURIComponent(xmlContent)))",
+                      "const requestBody = {",
+                      "  batchId,",
+                      "  source: 'JAVA_M2M',",
+                      "  items: [",
+                      "    {",
+                      "      fileName,",
+                      "      contentBase64",
+                      "    }",
+                      "  ]",
+                      "}",
+                      "",
+                      "pm.collectionVariables.set('recibidoBatchId', batchId)",
+                      "pm.collectionVariables.set('cfdiImportRequestBody', JSON.stringify(requestBody, null, 2))"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 202', function () {",
+                      "  pm.response.to.have.status(202)",
+                      "})",
+                      "",
+                      "const data = pm.response.json()",
+                      "",
+                      "pm.test('Devuelve importRunId', function () {",
+                      "  pm.expect(data.importRunId).to.be.a('string')",
+                      "})",
+                      "",
+                      "if (data.importRunId) {",
+                      "  pm.collectionVariables.set('recibidoImportRunId', data.importRunId)",
+                      "  pm.collectionVariables.set('importRunId', data.importRunId)",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{cfdiImportRequestBody}}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import"
+                  ]
+                },
+                "description": "Crea una corrida de prueba para un CFDI recibido usando la variable cfdiImportXmlRecibido."
+              },
+              "response": []
+            },
+            {
+              "name": "2.2 Consultar resumen recibido",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{recibidoImportRunId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{recibidoImportRunId}}"
+                  ]
+                },
+                "description": "Consulta el resumen de la corrida del escenario recibido."
+              },
+              "response": []
+            },
+            {
+              "name": "2.3 Consultar items recibido",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{recibidoImportRunId}}/items?page={{importItemsPage}}&pageSize={{importItemsPageSize}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{recibidoImportRunId}}",
+                    "items"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "{{importItemsPage}}"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "{{importItemsPageSize}}"
+                    }
+                  ]
+                },
+                "description": "Consulta el detalle item por item del escenario recibido."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "3. Intragrupo",
+          "description": "Flujo completo para un CFDI intragrupo: tanto Emisor como Receptor pertenecen al tenant y debe persistir ambos lados.",
+          "item": [
+            {
+              "name": "3.1 Crear corrida intragrupo",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const xmlContent = pm.collectionVariables.get('cfdiImportXmlIntragrupo') || ''",
+                      "const fileName = pm.collectionVariables.get('intragrupoFileName') || 'intragrupo-prueba.xml'",
+                      "const batchId = pm.collectionVariables.get('intragrupoBatchId') || `postman-intragrupo-${Date.now()}`",
+                      "",
+                      "pm.expect(xmlContent).to.be.a('string')",
+                      "pm.expect(xmlContent.trim().length).to.be.greaterThan(0)",
+                      "",
+                      "const contentBase64 = btoa(unescape(encodeURIComponent(xmlContent)))",
+                      "const requestBody = {",
+                      "  batchId,",
+                      "  source: 'JAVA_M2M',",
+                      "  items: [",
+                      "    {",
+                      "      fileName,",
+                      "      contentBase64",
+                      "    }",
+                      "  ]",
+                      "}",
+                      "",
+                      "pm.collectionVariables.set('intragrupoBatchId', batchId)",
+                      "pm.collectionVariables.set('cfdiImportRequestBody', JSON.stringify(requestBody, null, 2))"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 202', function () {",
+                      "  pm.response.to.have.status(202)",
+                      "})",
+                      "",
+                      "const data = pm.response.json()",
+                      "",
+                      "pm.test('Devuelve importRunId', function () {",
+                      "  pm.expect(data.importRunId).to.be.a('string')",
+                      "})",
+                      "",
+                      "if (data.importRunId) {",
+                      "  pm.collectionVariables.set('intragrupoImportRunId', data.importRunId)",
+                      "  pm.collectionVariables.set('importRunId', data.importRunId)",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{cfdiImportRequestBody}}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import"
+                  ]
+                },
+                "description": "Crea una corrida de prueba para un CFDI intragrupo usando la variable cfdiImportXmlIntragrupo."
+              },
+              "response": []
+            },
+            {
+              "name": "3.2 Consultar resumen intragrupo",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{intragrupoImportRunId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{intragrupoImportRunId}}"
+                  ]
+                },
+                "description": "Consulta el resumen de la corrida del escenario intragrupo."
+              },
+              "response": []
+            },
+            {
+              "name": "3.3 Consultar items intragrupo",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{intragrupoImportRunId}}/items?page={{importItemsPage}}&pageSize={{importItemsPageSize}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{intragrupoImportRunId}}",
+                    "items"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "{{importItemsPage}}"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "{{importItemsPageSize}}"
+                    }
+                  ]
+                },
+                "description": "Consulta el detalle item por item del escenario intragrupo."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "4. Utilerias",
+          "description": "Consultas auxiliares para revisar cualquier corrida guardada en la variable importRunId o filtrar errores.",
+          "item": [
+            {
+              "name": "4.1 Consultar resumen corrida actual",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})",
+                      "",
+                      "const data = pm.response.json()",
+                      "",
+                      "pm.test('Devuelve importRun', function () {",
+                      "  pm.expect(data.importRun).to.be.an('object')",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{importRunId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{importRunId}}"
+                  ]
+                },
+                "description": "Consulta el resumen agregado de la ultima corrida guardada en importRunId."
+              },
+              "response": []
+            },
+            {
+              "name": "4.2 Consultar items corrida actual",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})",
+                      "",
+                      "const data = pm.response.json()",
+                      "",
+                      "pm.test('Devuelve items', function () {",
+                      "  pm.expect(data.items).to.be.an('array')",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{importRunId}}/items?page={{importItemsPage}}&pageSize={{importItemsPageSize}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{importRunId}}",
+                    "items"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "{{importItemsPage}}"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "{{importItemsPageSize}}"
+                    }
+                  ]
+                },
+                "description": "Consulta el detalle item por item de la ultima corrida guardada en importRunId."
+              },
+              "response": []
+            },
+            {
+              "name": "4.3 Consultar items con error corrida actual",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status 200', function () {",
+                      "  pm.response.to.have.status(200)",
+                      "})"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessTokenCfdiImport}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/external/cfdi-import/runs/{{importRunId}}/items?page=1&pageSize=100&hasErrors=true",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "external",
+                    "cfdi-import",
+                    "runs",
+                    "{{importRunId}}",
+                    "items"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "100"
+                    },
+                    {
+                      "key": "hasErrors",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "Filtra solo los items con error de la ultima corrida guardada en importRunId."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     }

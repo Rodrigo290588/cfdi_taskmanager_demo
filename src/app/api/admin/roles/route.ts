@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { z } from 'zod'
+import {
+  createCustomRoleSchema,
+  SYSTEM_ROLE_IDS,
+  type SystemRoleId,
+  getSystemRoleOverrideForOrg,
+  saveSystemRoleOverrideForOrg,
+  buildSystemRoleDefaults
+} from '@/lib/admin-roles'
 
 export async function GET() {
   try {
@@ -9,12 +18,14 @@ export async function GET() {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 
+    // [SAST-FIX #5] Exigir status=APPROVED para todas las guardias de roles.
     const member = await prisma.member.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: session.user.id, status: 'APPROVED' },
       include: { organization: true }
     })
 
-    if (!member || member.role !== "ADMIN") {
+    const isOwner = member?.organization?.ownerId === session.user.id
+    if (!member || (member.role !== "ADMIN" && !isOwner)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }
 
@@ -23,149 +34,28 @@ export async function GET() {
       orderBy: { createdAt: 'desc' }
     })
 
-    // Roles por defecto del sistema
-    const systemRoles = [
-      {
-        id: 'ADMIN',
-        name: 'Administrador',
-        description: 'Acceso total a todas las funcionalidades del sistema.',
-        isSystemRole: true,
-        canViewEmission: true,
-        canViewReception: true,
-        canViewPayroll: true,
-        canViewSatPortal: true,
-        canViewMassDownloads: true,
-        canManageOrg: true,
-        granularPermissions: {
-          emissionDashboard: true,
-          emissionWorkpaper: true,
-          emissionPartial: true,
-          emissionCancelations: true,
-          receptionDashboard: true,
-          receptionFiscalAudit: true,
-          receptionCancellationAlerts: true,
-          receptionBusinessRules: true,
-          receptionBusinessRulePueForma99: true,
-          receptionBusinessRuleResicoRetention: true,
-          receptionBusinessRuleObjetoImpVsIva: true,
-          receptionWorkpaper: true,
-          payrollDashboard: true,
-          payrollReceipts: true,
-          satConnection: true,
-          satCfdiStatus: true,
-          massKeys: true,
-          massRequests: true,
-          massVerification: true,
-          massPackages: true,
-          massPanel: true,
-          orgCompanies: true,
-          orgUsers: true,
-          orgProfiles: true,
-          orgRoles: true,
-          orgSettings: true,
-          providerDashboard: true,
-          providerPaymentsUpdate: true,
-          providerBusinessRules: true,
-          providerBusinessRulePueForma99: false,
-          providerBusinessRuleResicoRetention: false,
-          providerBusinessRuleObjetoImpVsIva: false
+    // Roles por defecto del sistema (ahora con override por organización si existe)
+    const systemRoles = await Promise.all(
+      (SYSTEM_ROLE_IDS as readonly SystemRoleId[]).map(async roleId => {
+        const base = buildSystemRoleDefaults(roleId)
+        const overr = await getSystemRoleOverrideForOrg(member.organizationId, roleId)
+        return {
+          id: base.id,
+          name: base.name,
+          description: base.description,
+          isSystemRole: true as const,
+          canViewEmission: overr.canViewEmission,
+          canViewReception: overr.canViewReception,
+          canViewPayroll: overr.canViewPayroll,
+          canViewSatPortal: overr.canViewSatPortal,
+          canViewMassDownloads: overr.canViewMassDownloads,
+          canManageOrg: overr.canManageOrg,
+          granularPermissions: overr.granularPermissions
         }
-      },
-      {
-        id: 'AUDITOR',
-        name: 'Auditor',
-        description: 'Acceso de solo lectura para auditoría y revisión.',
-        isSystemRole: true,
-        canViewEmission: true,
-        canViewReception: true,
-        canViewPayroll: true,
-        canViewSatPortal: true,
-        canViewMassDownloads: true,
-        canManageOrg: false,
-        granularPermissions: {
-          emissionDashboard: true,
-          emissionWorkpaper: true,
-          emissionPartial: true,
-          emissionCancelations: true,
-          receptionDashboard: true,
-          receptionFiscalAudit: true,
-          receptionCancellationAlerts: true,
-          receptionBusinessRules: true,
-          receptionBusinessRulePueForma99: true,
-          receptionBusinessRuleResicoRetention: true,
-          receptionBusinessRuleObjetoImpVsIva: true,
-          receptionWorkpaper: true,
-          payrollDashboard: true,
-          payrollReceipts: true,
-          satConnection: true,
-          satCfdiStatus: true,
-          massKeys: false, // Auditores generalmente no configuran llaves
-          massRequests: true,
-          massVerification: true,
-          massPackages: true,
-          massPanel: true,
-          orgCompanies: false,
-          orgUsers: false,
-          orgProfiles: false,
-          orgRoles: false,
-          orgSettings: false,
-          providerDashboard: true,
-          providerPaymentsUpdate: true,
-          providerBusinessRules: true,
-          providerBusinessRulePueForma99: false,
-          providerBusinessRuleResicoRetention: false,
-          providerBusinessRuleObjetoImpVsIva: false
-        }
-      },
-      {
-        id: 'VIEWER',
-        name: 'Visualizador',
-        description: 'Acceso básico de solo lectura a los dashboards.',
-        isSystemRole: true,
-        canViewEmission: true,
-        canViewReception: true,
-        canViewPayroll: true,
-        canViewSatPortal: true,
-        canViewMassDownloads: true,
-        canManageOrg: false,
-        granularPermissions: {
-          emissionDashboard: true,
-          emissionWorkpaper: false,
-          emissionPartial: false,
-          emissionCancelations: false,
-          receptionDashboard: true,
-          receptionFiscalAudit: true,
-          receptionCancellationAlerts: true,
-          receptionBusinessRules: true,
-          receptionBusinessRulePueForma99: true,
-          receptionBusinessRuleResicoRetention: true,
-          receptionBusinessRuleObjetoImpVsIva: true,
-          receptionWorkpaper: false,
-          payrollDashboard: true,
-          payrollReceipts: false,
-          satConnection: true,
-          satCfdiStatus: true,
-          massKeys: false,
-          massRequests: false,
-          massVerification: false,
-          massPackages: false,
-          massPanel: false,
-          orgCompanies: false,
-          orgUsers: false,
-          orgProfiles: false,
-          orgRoles: false,
-          orgSettings: false,
-          providerDashboard: true,
-          providerPaymentsUpdate: false,
-          providerBusinessRules: false,
-          providerBusinessRulePueForma99: false,
-          providerBusinessRuleResicoRetention: false,
-          providerBusinessRuleObjetoImpVsIva: false
-        }
-      }
-    ]
+      })
+    )
 
-    const roles = [...systemRoles, ...customRoles.map(r => ({ ...r, isSystemRole: false }))]
+    const roles = [...systemRoles, ...customRoles.map(r => ({ ...r, isSystemRole: false as const }))]
 
     return NextResponse.json({ roles })
   } catch (error) {
@@ -181,25 +71,66 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 
+    // [SAST-FIX #5] Exigir status=APPROVED y permitir OWNER además de ADMIN
+    //              (el owner de la organización NO tiene role=ADMIN).
     const member = await prisma.member.findFirst({
-      where: { userId: session.user.id }
+      where: { userId: session.user.id, status: 'APPROVED' },
+      include: { organization: true }
     })
 
-    if (!member || member.role !== "ADMIN") {
+    const isOwner = member?.organization?.ownerId === session.user.id
+    if (!member || (member.role !== "ADMIN" && !isOwner)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }
 
-    const body = await req.json()
-    const { name, description, permissions, granularPermissions } = body
+    // [SAST-FIX #3] Validar body con Zod strict. No más spread inseguro.
+    const rawBody = await req.json()
+    const targetId = typeof rawBody === 'object' && rawBody && 'id' in rawBody ? String((rawBody as { id?: unknown }).id ?? '') : ''
 
-    if (!name) {
-      return NextResponse.json({ error: "El nombre es requerido" }, { status: 400 })
+    // Si el usuario intenta guardar un System Role (ADMIN, AUDITOR, VIEWER) -> guardar override por organización
+    if (SYSTEM_ROLE_IDS.includes(targetId as SystemRoleId)) {
+      const body = createCustomRoleSchema.parse(rawBody)
+      const { permissions, granularPermissions } = body
+
+      await saveSystemRoleOverrideForOrg(member.organizationId, targetId as SystemRoleId, {
+        canViewEmission: !!permissions.canViewEmission,
+        canViewReception: !!permissions.canViewReception,
+        canViewPayroll: !!permissions.canViewPayroll,
+        canViewSatPortal: !!permissions.canViewSatPortal,
+        canViewMassDownloads: !!permissions.canViewMassDownloads,
+        canManageOrg: !!permissions.canManageOrg,
+        granularPermissions: Object.fromEntries(
+          Object.entries(granularPermissions || {}).filter(([, v]) => typeof v === 'boolean')
+        ) as Record<string, boolean>
+      })
+
+      const overr = await getSystemRoleOverrideForOrg(member.organizationId, targetId as SystemRoleId)
+      const base = buildSystemRoleDefaults(targetId as SystemRoleId)
+
+      return NextResponse.json({
+        role: {
+          id: targetId,
+          name: body.name || base.name,
+          description: body.description || base.description,
+          isSystemRole: true,
+          canViewEmission: overr.canViewEmission,
+          canViewReception: overr.canViewReception,
+          canViewPayroll: overr.canViewPayroll,
+          canViewSatPortal: overr.canViewSatPortal,
+          canViewMassDownloads: overr.canViewMassDownloads,
+          canManageOrg: overr.canManageOrg,
+          granularPermissions: overr.granularPermissions
+        }
+      })
     }
+
+    const body = createCustomRoleSchema.parse(rawBody)
+    const { name, description, permissions, granularPermissions } = body
 
     const existingRole = await prisma.customRole.findFirst({
       where: {
         organizationId: member.organizationId,
-        name: name
+        name
       }
     })
 
@@ -212,13 +143,27 @@ export async function POST(req: NextRequest) {
         organizationId: member.organizationId,
         name,
         description,
-        ...permissions,
-        granularPermissions: granularPermissions || {}
+        canViewEmission: permissions.canViewEmission,
+        canViewReception: permissions.canViewReception,
+        canViewPayroll: permissions.canViewPayroll,
+        canViewSatPortal: permissions.canViewSatPortal,
+        canViewMassDownloads: permissions.canViewMassDownloads,
+        canManageOrg: permissions.canManageOrg,
+        granularPermissions
       }
     })
 
     return NextResponse.json({ role: newRole })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({
+        error: 'Datos de rol inválidos',
+        details: error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message
+        }))
+      }, { status: 400 })
+    }
     console.error("Error creating custom role:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }

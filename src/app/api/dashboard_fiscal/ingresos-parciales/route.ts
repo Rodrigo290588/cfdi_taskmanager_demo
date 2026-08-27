@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
 import { DOMParser } from '@xmldom/xmldom'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+const _SAFE_DOM_PARSER_OPTS = {
+  disableEntities: true,
+  xmlMode: true,
+  errorHandler: { warning() {}, error() {}, fatalError() {} },
+} as unknown as ConstructorParameters<typeof DOMParser>[0]
+function makeSafeDomParser() { return new DOMParser(_SAFE_DOM_PARSER_OPTS) as DOMParser }
 
 function toNumber(value: unknown) {
   const parsed = Number(value)
@@ -50,12 +62,8 @@ function isDateWithinRange(value: Date, range: { gte?: Date; lte?: Date } | null
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(req.url)
+    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(req, { routeKey: 'partialReport', requireCompanyId: true })
+    void _sr
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const rfc = searchParams.get('rfc')
@@ -70,7 +78,14 @@ export async function GET(req: NextRequest) {
     const hasPaymentFilters = Boolean(normalizedPaymentCurrency || paymentDateRange)
 
     if (!startDate || !endDate || !rfc) {
-      return NextResponse.json({ error: 'Faltan parámetros requeridos' }, { status: 400 })
+      return NextResponse.json({ error: 'Faltan parámetros requeridos' }, { status: 400, headers: SECURITY_HEADERS })
+    }
+
+    const fiscalEntity = await prisma.fiscalEntity.findFirst({
+      where: { organizationId: ctx.organizationId, rfc: rfc }
+    })
+    if (!fiscalEntity) {
+      return NextResponse.json({ error: 'RFC no encontrado en la organización' }, { status: 404, headers: SECURITY_HEADERS })
     }
 
     const start = new Date(startDate)
@@ -158,6 +173,34 @@ export async function GET(req: NextRequest) {
     const coveredRelatedUuids = new Set(paymentDetails.map(detail => detail.relatedInvoiceUuid.toUpperCase()))
     const missingRelatedUuids = ppdUuids.filter(uuid => !coveredRelatedUuids.has(uuid.toUpperCase()))
 
+    // 2.1. Fetch related Credit Notes (EGRESO) for PPD invoices to align KPI with dashboard fiscal
+    const relatedEgresos = ppdUuids.length > 0
+      ? await prisma.invoiceRelatedCfdi.findMany({
+          where: {
+            relatedUuid: { in: ppdUuids },
+            invoice: { cfdiType: 'EGRESO', satStatus: 'VIGENTE' }
+          },
+          select: {
+            relatedUuid: true,
+            invoiceId: true,
+            invoice: {
+              select: {
+                total: true,
+                currency: true
+              }
+            }
+          },
+          distinct: ['invoiceId']
+        })
+      : []
+
+    const creditNotesByRelatedUuid: Record<string, number> = {}
+    relatedEgresos.forEach(rel => {
+      const relatedUuid = normalizeUpperText(rel.relatedUuid)
+      creditNotesByRelatedUuid[relatedUuid] =
+        (creditNotesByRelatedUuid[relatedUuid] || 0) + toNumber(rel.invoice.total)
+    })
+
     // 3. Process Payments and Calculate Balances
     type PaymentInfo = {
       paymentUuid: string
@@ -226,7 +269,7 @@ export async function GET(req: NextRequest) {
         }
       })
 
-      const parser = new DOMParser()
+      const parser = makeSafeDomParser()
       const getAttr = (el: Element, name: string) => el.getAttribute(name) || ''
 
       legacyRelations.forEach(relation => {
@@ -298,7 +341,7 @@ export async function GET(req: NextRequest) {
     // 4. Final Aggregation
     const aggregatedResults = ppdInvoices.map((inv) => {
       const payments = paymentsMap[inv.uuid] || []
-      
+
       // Calculate total paid
       // We need to be careful with currencies.
       // The PPD total is in inv.currency.
@@ -340,7 +383,8 @@ export async function GET(req: NextRequest) {
         return acc + amountInDocCurrency
       }, 0)
 
-      const saldoInsoluto = totalOriginal - totalPaidInDocCurrency
+      const creditNoteAdjustment = creditNotesByRelatedUuid[normalizeUpperText(inv.uuid)] || 0
+      const saldoInsoluto = Math.max(0, totalOriginal - totalPaidInDocCurrency - creditNoteAdjustment)
       
       const isPaid = saldoInsoluto < 0.01
 
@@ -350,6 +394,7 @@ export async function GET(req: NextRequest) {
         ...inv,
         total: totalOriginal,
         totalPaid: totalPaidInDocCurrency,
+        creditNoteAdjustment,
         saldoInsoluto,
         isPaid,
         payments
@@ -360,33 +405,47 @@ export async function GET(req: NextRequest) {
       ? aggregatedResults.filter(invoice => invoice.payments.length > 0)
       : aggregatedResults
 
+    // Dashboard fiscal calculation: totals in original currency (PPD total - CRP paid - related credit notes)
+    const sumFacturasPPD = results.reduce((acc, inv) => acc + toNumber(inv.total), 0)
+    const sumComplementosPago = results.reduce((acc, inv) => acc + toNumber(inv.totalPaid), 0)
+    const sumNotasCreditoAplicadas = results.reduce((acc, inv) => acc + toNumber(inv.creditNoteAdjustment || 0), 0)
+    const ingresosPendientesCobro = Math.max(0, sumFacturasPPD - sumComplementosPago - sumNotasCreditoAplicadas)
+    const ingresosCobradosCrp = sumComplementosPago
+
+    // Additional MXN-converted aggregates (kept as reference, but not for main KPI alignment)
     let totalSaldoInsolutoMXN = 0
     let totalPorCobrarMXN = 0
-    
+
     results.forEach(r => {
       const rate = r.exchangeRate ? toNumber(r.exchangeRate) : 1
       const saldoMXN = r.saldoInsoluto * rate
-      
+
       totalSaldoInsolutoMXN += saldoMXN
-      
+
       if (!r.isPaid) {
         totalPorCobrarMXN += (r.total * rate)
       }
     })
 
+    const countPaid = results.filter(r => r.isPaid).length
+
     return NextResponse.json({
       data: results,
       kpis: {
+        ingresosPendientesCobro,
+        ingresosCobradosCrp,
+        ingresosCobradosTotal: ingresosCobradosCrp + results.reduce((acc, r) => (r.isPaid ? acc + toNumber(r.total) : acc), 0),
+        montoPorCobrarBruto: results.filter(r => !r.isPaid).reduce((acc, r) => acc + toNumber(r.total), 0),
+        sumNotasCreditoAplicadas,
         totalSaldoInsolutoMXN,
         totalPorCobrarMXN,
         count: results.length,
-        countPaid: results.filter(r => r.isPaid).length,
-        countPending: results.filter(r => !r.isPaid).length
+        countPaid,
+        countPending: results.length - countPaid
       }
-    })
+    }, { headers: SECURITY_HEADERS })
 
   } catch (error) {
-    console.error('Error processing partial income:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

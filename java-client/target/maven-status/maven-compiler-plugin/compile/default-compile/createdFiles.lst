@@ -1,2 +1,5 @@
-com/cfdi/ingest/App$FileRecord.class
-com/cfdi/ingest/App.class
+com\cfdi\ingest\App$CliConfig.class
+com\cfdi\ingest\App$DirectoryControl.class
+com\cfdi\ingest\App$FileRecord.class
+com\cfdi\ingest\App$ImportResult.class
+com\cfdi\ingest\App.class

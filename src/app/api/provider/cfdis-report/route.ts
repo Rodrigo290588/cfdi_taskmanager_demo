@@ -1,13 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { createAuditEntry } from '@/lib/audit'
-import { resolveProviderContext } from '@/lib/provider-context'
+import { resolveProviderContextWithPermissionCheck, validateAndParseOrgId } from '@/lib/provider-context'
 import { sendProviderXmlValidationEmail } from '@/lib/mail'
 import { syncProviderPaymentComplianceBlocks } from '@/lib/provider-payment-compliance'
 import { listProviderReportRowsFromStorage, persistProviderAcceptedCfdis, type PersistableProviderAcceptedCfdi } from '@/lib/provider-cfdi-storage'
 import { buildProviderReport, type ProviderXmlValidationEmailResult } from '@/lib/provider-cfdi-report'
+import { rateLimit } from '@/lib/rate-limit'
+import { getRealClientIp, safeErrSummary, fingerprint } from '@/lib/security'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+import { Permission } from '@/lib/permissions'
+import type { SystemRole } from '@prisma/client'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const preferredRegion = 'auto'
+export const maxDuration = 90
+export const bodySizeLimit = '50mb'
+
+const fp32 = (s: string) => fingerprint(s, false).slice(0, 8)
+
+const PROVIDER_AUDIT_SECRET_PATTERNS: ReadonlyArray<RegExp> = [
+  /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
+  /Basic\s+[A-Za-z0-9+/=]+/gi,
+  /\bsk_[A-Za-z0-9]{16,}/g,
+  /\bpk_[A-Za-z0-9]{16,}/g,
+  /SharedAccessSignature=[^"'&<>\s]+/gi,
+  /token=[A-Za-z0-9\-._~+/]+=*/gi,
+  /password=[^&\s"']+/gi,
+]
+
+function redactAuditErrors(errors: string[]): string[] {
+  if (!Array.isArray(errors)) return []
+  return errors
+    .slice(0, 500)
+    .map(rawEntry => {
+      let out = typeof rawEntry === 'string' ? rawEntry : String(rawEntry ?? '')
+      for (const pattern of PROVIDER_AUDIT_SECRET_PATTERNS) {
+        out = out.replace(pattern, '[REDACTED_SECRET]')
+      }
+      if (out.length > 200) {
+        out = `${out.slice(0, 197)}...`
+      }
+      return out
+    })
+}
+
+const PROVIDER_RATE_LIMITS = {
+  contextGetIp: { key: 'provider:cfdi:ctx:ip', limit: 60, interval: 60_000 },
+  contextGetUser: { key: 'provider:cfdi:ctx:user', limit: 40, interval: 60_000 },
+  contextGetOrg: { key: 'provider:cfdi:ctx:org', limit: 30, interval: 60_000 },
+  uploadPostIp: { key: 'provider:cfdi:upload:ip', limit: 10, interval: 60_000 },
+  uploadPostUser: { key: 'provider:cfdi:upload:user', limit: 6, interval: 60_000 },
+  uploadPostOrg: { key: 'provider:cfdi:upload:org', limit: 4, interval: 60_000 },
+} as const
 
 const BLOCKED_PROVIDER_CFDI_TYPES = new Set(['I', 'E', 'T'])
 
@@ -102,17 +148,73 @@ function applyProviderUploadBlockRules(params: {
 }
 
 export async function GET(request: NextRequest) {
+  let incidentFp: string | null = null
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const sourceIp = getRealClientIp(request.headers) || 'unknown-provider'
+
+    const ipLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.contextGetIp.key}:${sourceIp}`, {
+      interval: PROVIDER_RATE_LIMITS.contextGetIp.interval,
+      limit: PROVIDER_RATE_LIMITS.contextGetIp.limit
+    })
+    if (!ipLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_ctx_ip_60_per_min', retry_after_ms: ipLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(ipLimit.retryAfterMs / 1000)) } }
+      )
     }
 
-    const orgId = request.nextUrl.searchParams.get('orgId')
-    const context = await resolveProviderContext(session.user.id, orgId)
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401, headers: SECURITY_HEADERS })
+    }
 
-    if (!context) {
-      return NextResponse.json({ error: 'No se encontró la membresía del proveedor' }, { status: 404 })
+    const userId = session.user.id
+    incidentFp = fp32(`${userId}:provider-cfdi-report-get:${Date.now()}`)
+
+    const userLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.contextGetUser.key}:${userId}`, {
+      interval: PROVIDER_RATE_LIMITS.contextGetUser.interval,
+      limit: PROVIDER_RATE_LIMITS.contextGetUser.limit
+    })
+    if (!userLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_ctx_user_40_per_min', retry_after_ms: userLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(userLimit.retryAfterMs / 1000)) } }
+      )
+    }
+
+    const orgIdRaw = request.nextUrl.searchParams.get('orgId')
+    const orgParse = validateAndParseOrgId(orgIdRaw, { required: true })
+    if (!orgParse.ok) {
+      return NextResponse.json({ error: orgParse.error }, { status: orgParse.status, headers: SECURITY_HEADERS })
+    }
+
+    const access = await resolveProviderContextWithPermissionCheck(
+      userId,
+      session.user.systemRole as unknown as SystemRole,
+      orgParse.value,
+      Permission.PROVIDER_PORTAL_VIEW
+    )
+    if ('error' in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status, headers: SECURITY_HEADERS })
+    }
+    const { context } = access
+
+    const orgLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.contextGetOrg.key}:${context.organizationId}`, {
+      interval: PROVIDER_RATE_LIMITS.contextGetOrg.interval,
+      limit: PROVIDER_RATE_LIMITS.contextGetOrg.limit
+    })
+    if (!orgLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_ctx_org_30_per_min', retry_after_ms: orgLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(orgLimit.retryAfterMs / 1000)) } }
+      )
+    }
+
+    if (context.allowedCompanies.length === 0) {
+      return NextResponse.json(
+        { error: 'El proveedor no tiene empresas asignadas para visualizar el reporte' },
+        { status: 403, headers: SECURITY_HEADERS }
+      )
     }
 
     return NextResponse.json({
@@ -128,46 +230,102 @@ export async function GET(request: NextRequest) {
         allowedCompanies: context.allowedCompanies
       },
       rows: await listProviderReportRowsFromStorage(context)
-    })
+    }, { headers: SECURITY_HEADERS })
   } catch (error) {
-    console.error('Error obteniendo contexto del proveedor:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    const safe = safeErrSummary(error)
+    console.error(
+      `[PROV-CFDI-GET-${incidentFp || fp32(String(Date.now()))}]`,
+      `name=${safe.name}`,
+      `fp=${safe.msgHash.slice(0, 8)}`,
+      safe.msg ? `msg=${safe.msg}` : ''
+    )
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500, headers: SECURITY_HEADERS })
   }
 }
 
 export async function POST(request: NextRequest) {
+  let incidentFp: string | null = null
   try {
+    const sourceIp = getRealClientIp(request.headers) || 'unknown-provider'
+
+    const ipLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.uploadPostIp.key}:${sourceIp}`, {
+      interval: PROVIDER_RATE_LIMITS.uploadPostIp.interval,
+      limit: PROVIDER_RATE_LIMITS.uploadPostIp.limit
+    })
+    if (!ipLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_upload_ip_10_per_min', retry_after_ms: ipLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(ipLimit.retryAfterMs / 1000)) } }
+      )
+    }
+
     const session = await auth()
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401, headers: SECURITY_HEADERS })
+    }
+
+    const userId = session.user.id
+    incidentFp = fp32(`${userId}:provider-cfdi-report-post:${Date.now()}`)
+
+    const userLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.uploadPostUser.key}:${userId}`, {
+      interval: PROVIDER_RATE_LIMITS.uploadPostUser.interval,
+      limit: PROVIDER_RATE_LIMITS.uploadPostUser.limit
+    })
+    if (!userLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_upload_user_6_per_min', retry_after_ms: userLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(userLimit.retryAfterMs / 1000)) } }
+      )
     }
 
     const formData = await request.formData()
-    const orgId = String(formData.get('orgId') || '').trim() || undefined
+    const orgIdRaw = String(formData.get('orgId') || '').trim() || undefined
     const files = formData
       .getAll('files')
       .filter((value): value is File => value instanceof File)
 
     if (files.length === 0) {
-      return NextResponse.json({ error: 'Debes adjuntar al menos un archivo XML o ZIP' }, { status: 400 })
+      return NextResponse.json({ error: 'Debes adjuntar al menos un archivo XML o ZIP' }, { status: 400, headers: SECURITY_HEADERS })
     }
 
-    const context = await resolveProviderContext(session.user.id, orgId)
-    if (!context) {
-      return NextResponse.json({ error: 'No se encontró la membresía del proveedor' }, { status: 404 })
+    const orgParse = validateAndParseOrgId(orgIdRaw, { required: true })
+    if (!orgParse.ok) {
+      return NextResponse.json({ error: orgParse.error }, { status: orgParse.status, headers: SECURITY_HEADERS })
+    }
+
+    const access = await resolveProviderContextWithPermissionCheck(
+      userId,
+      session.user.systemRole as unknown as SystemRole,
+      orgParse.value,
+      Permission.PROVIDER_PORTAL_UPLOAD
+    )
+    if ('error' in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status, headers: SECURITY_HEADERS })
+    }
+    const { context } = access
+
+    const orgLimit = await rateLimit(`${PROVIDER_RATE_LIMITS.uploadPostOrg.key}:${context.organizationId}`, {
+      interval: PROVIDER_RATE_LIMITS.uploadPostOrg.interval,
+      limit: PROVIDER_RATE_LIMITS.uploadPostOrg.limit
+    })
+    if (!orgLimit.success) {
+      return NextResponse.json(
+        { error: 'rate_limited_provider_upload_org_4_per_min', retry_after_ms: orgLimit.retryAfterMs },
+        { status: 429, headers: { ...SECURITY_HEADERS, 'Retry-After': String(Math.ceil(orgLimit.retryAfterMs / 1000)) } }
+      )
     }
 
     if (!context.providerRfc) {
       return NextResponse.json(
         { error: 'La membresía del proveedor no tiene un RFC configurado en members.provider_rfc' },
-        { status: 403 }
+        { status: 403, headers: SECURITY_HEADERS }
       )
     }
 
     if (context.allowedCompanies.length === 0) {
       return NextResponse.json(
         { error: 'El proveedor no tiene empresas asignadas para validar los CFDI cargados' },
-        { status: 403 }
+        { status: 403, headers: SECURITY_HEADERS }
       )
     }
 
@@ -188,7 +346,7 @@ export async function POST(request: NextRequest) {
       await persistProviderAcceptedCfdis({
         records: uploadDecision.acceptedRecords,
         context,
-        uploadedByUserId: session.user.id
+        uploadedByUserId: userId
       })
     }
 
@@ -196,10 +354,10 @@ export async function POST(request: NextRequest) {
       tableName: 'provider_uploaded_cfdis',
       recordId: context.memberId,
       action: 'IMPORT',
-      userId: session.user.id,
+      userId,
       userEmail: session.user.email || 'sin-email',
       description: `Carga de CFDI de proveedor. Aprobados: ${uploadDecision.acceptedRecords.length}. Rechazados: ${uploadDecision.errors.length}.`,
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
+      ipAddress: sourceIp,
       userAgent: request.headers.get('user-agent'),
       newValues: {
         organizationId: context.organizationId,
@@ -207,7 +365,7 @@ export async function POST(request: NextRequest) {
         approvedCount: uploadDecision.acceptedRecords.length,
         rejectedCount: uploadDecision.errors.length,
         uuids: uploadDecision.acceptedRecords.map(record => record.uuid),
-        rejectedFiles: uploadDecision.errors,
+        rejectedFiles: redactAuditErrors(uploadDecision.errors),
         blockedFiles: uploadDecision.blockedRecords.map(record => record.fileName)
       }
     })
@@ -236,7 +394,11 @@ export async function POST(request: NextRequest) {
 
       const rejectedEmails = emailResults.filter(result => result.status === 'rejected')
       if (rejectedEmails.length > 0) {
-        console.error('Error enviando uno o mas correos de validacion XML al proveedor', rejectedEmails)
+        const safe = safeErrSummary(rejectedEmails[0])
+        console.error(
+          `[PROV-CFDI-MAIL-${incidentFp}] count=${rejectedEmails.length}`,
+          `name=${safe.name} fp=${safe.msgHash.slice(0, 8)}`
+        )
       }
     }
 
@@ -247,7 +409,12 @@ export async function POST(request: NextRequest) {
           providerRfc: context.providerRfc
         })
       } catch (complianceError) {
-        console.error('No fue posible sincronizar el bloqueo del proveedor tras cargar un REP:', complianceError)
+        const safe = safeErrSummary(complianceError)
+        console.error(
+          `[PROV-CFDI-COMPLIANCE-${incidentFp}] sync compliance block`,
+          `name=${safe.name} fp=${safe.msgHash.slice(0, 8)}`,
+          safe.msg ? `msg=${safe.msg}` : ''
+        )
       }
     }
 
@@ -268,7 +435,7 @@ export async function POST(request: NextRequest) {
         errors: uploadDecision.errors,
         validationMessages: report.validationMessages,
         summary: uploadDecision.summary
-      }, { status: 403 })
+      }, { status: 403, headers: SECURITY_HEADERS })
     }
 
     return NextResponse.json({
@@ -287,9 +454,14 @@ export async function POST(request: NextRequest) {
       errors: uploadDecision.errors,
       validationMessages: report.validationMessages,
       summary: uploadDecision.summary
-    })
+    }, { headers: SECURITY_HEADERS })
   } catch (error) {
     const message = getProviderUploadErrorMessage(error)
-    return NextResponse.json({ error: message }, { status: 400 })
+    const safe = safeErrSummary(error)
+    console.error(
+      `[PROV-CFDI-POST-${incidentFp || fp32(String(Date.now()))}]`,
+      `name=${safe.name} fp=${safe.msgHash.slice(0, 8)} user_msg=${message}`
+    )
+    return NextResponse.json({ error: message }, { status: 400, headers: SECURITY_HEADERS })
   }
 }

@@ -1,10 +1,10 @@
-import { massDownloadQueue } from '../lib/queue'
+import { getMassDownloadQueue } from '../lib/queue'
 
 async function checkQueue() {
-  const counts = await massDownloadQueue.getJobCounts('wait', 'active', 'completed', 'failed', 'delayed')
+  const counts = await getMassDownloadQueue().getJobCounts('wait', 'active', 'completed', 'failed', 'delayed')
   console.log('Queue Status:', counts)
   
-  const failed = await massDownloadQueue.getFailed()
+  const failed = await getMassDownloadQueue().getFailed()
   if (failed.length > 0) {
     console.log('Failed Jobs:')
     failed.forEach(job => {

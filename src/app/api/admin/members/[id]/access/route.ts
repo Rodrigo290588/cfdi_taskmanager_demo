@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import {
+  resolveRoleForOrg,
+  AdminRoleValidationError
+} from '@/lib/admin-roles'
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -17,8 +21,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const requester = await prisma.member.findFirst({
-      where: { 
+      where: {
         userId: session.user.id,
+        status: 'APPROVED', // [SAST-FIX #5] Solo miembros APPROVED
         organizationId: targetMember.organizationId
       },
       include: { organization: true }
@@ -81,8 +86,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const requester = await prisma.member.findFirst({
-      where: { 
+      where: {
         userId: session.user.id,
+        status: 'APPROVED', // [SAST-FIX #5] Solo miembros APPROVED
         organizationId: targetMember.organizationId
       },
       include: { organization: true }
@@ -92,8 +98,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: 'No tienes acceso a esta organización' }, { status: 403 })
     }
 
-    const company = await prisma.company.findUnique({ where: { id: companyId } })
+    // [SAST-FIX #1] Asegurar que la empresa pertenece a la misma organización del targetMember.
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        id: true,
+        companyAccesses: {
+          where: { organizationId: targetMember.organizationId },
+          take: 1,
+          select: { id: true }
+        }
+      }
+    })
     if (!company) {
+      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
+    }
+    // Company pertenece a la org si existe un CompanyAccess (link Organization <-> Company)
+    // para el organizationId del targetMember.
+    if (company.companyAccesses.length === 0) {
       return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
     }
 
@@ -108,9 +130,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ success: true })
     }
 
-    const isSystemRole = ['ADMIN', 'AUDITOR', 'VIEWER'].includes(roleId)
-    const systemRole = isSystemRole ? roleId as 'ADMIN' | 'AUDITOR' | 'VIEWER' : 'VIEWER'
-    const customRoleId = isSystemRole ? null : roleId
+    // [SAST-FIX #1/#4] Resolver roleId validando pertenencia de CustomRole a la ORG
+    const { systemRole, customRoleId } = await resolveRoleForOrg(
+      roleId,
+      targetMember.organizationId
+    )
 
     const existing = await prisma.companyAccess.findUnique({
       where: { memberId_companyId: { memberId: id, companyId } }
@@ -119,9 +143,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (existing) {
       await prisma.companyAccess.update({
         where: { memberId_companyId: { memberId: id, companyId } },
-        data: { 
+        data: {
           role: systemRole,
-          customRoleId: customRoleId
+          customRoleId
         }
       })
     } else {
@@ -131,15 +155,22 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           companyId,
           memberId: id,
           role: systemRole,
-          customRoleId: customRoleId
+          customRoleId
         }
       })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error desconocido'
-    console.error('Error updating company access:', message)
-    return NextResponse.json({ error: message || 'Error interno del servidor' }, { status: 500 })
+    if (error instanceof AdminRoleValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
+    // [SAST-FIX #7] Nunca exponer error.message de Prisma al cliente.
+    // Solo internamente en logs.
+    console.error('[admin/members/access] Error actualizando acceso de empresa:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
   }
 }

@@ -1,12 +1,34 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, type ChangeEvent, type ReactNode } from 'react'
 import { ProtectedRoute } from '@/components/protected-route'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { XCircle, FileCode, FileText } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  FileCode,
+  FileText,
+  FileUp,
+  ShieldCheck,
+  Upload,
+  XCircle
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 
@@ -14,6 +36,18 @@ type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?:
 
 const formatMXN = (value: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(Number(value || 0))
+
+const formatUtcDate = (value: string | Date | null | undefined) => {
+  if (!value) {
+    return ''
+  }
+
+  try {
+    return new Date(value).toLocaleDateString('es-MX', { timeZone: 'UTC' })
+  } catch {
+    return String(value)
+  }
+}
 
 type InvoiceRow = {
   id: string
@@ -54,6 +88,90 @@ type InvoiceRow = {
   updatedAt: string | Date
 }
 
+type LayoutImportRow = {
+  lineNumber: number
+  uuid: string
+  statusCol9: string
+  cancelableCol10: string
+  processCol11: string
+  reason: string
+  rawLine: string
+}
+
+type LayoutImportUpdatedRow = LayoutImportRow & {
+  previousSatStatus: string
+  nextSatStatus: string
+}
+
+type LayoutImportResult = {
+  success: boolean
+  fileName: string
+  summary: {
+    processed: number
+    updated: number
+    ignored: number
+    notFound: number
+    invalid: number
+    unhandled: number
+  }
+  updatedRows: LayoutImportUpdatedRow[]
+  ignoredRows: LayoutImportRow[]
+  notFoundRows: LayoutImportRow[]
+  invalidRows: LayoutImportRow[]
+  unhandledRows: LayoutImportRow[]
+}
+
+type LayoutResultColumn<T> = {
+  key: string
+  label: string
+  className?: string
+  render: (row: T) => ReactNode
+}
+
+function LayoutResultTable<T extends { lineNumber: number }>(params: {
+  rows: T[]
+  columns: LayoutResultColumn<T>[]
+  emptyMessage: string
+}) {
+  if (params.rows.length === 0) {
+    return (
+      <div className="rounded-md border p-4 text-sm text-muted-foreground">
+        {params.emptyMessage}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+            {params.columns.map(column => (
+              <th key={column.key} className={`px-3 py-2 text-left font-medium ${column.className || ''}`}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {params.rows.map((row, index) => (
+            <tr
+              key={`${row.lineNumber}-${index}`}
+              className="border-b last:border-b-0 hover:bg-muted/30 transition-colors"
+            >
+              {params.columns.map(column => (
+                <td key={column.key} className={`px-3 py-2 align-top ${column.className || ''}`}>
+                  {column.render(row)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function CancelacionesPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
@@ -72,6 +190,11 @@ export default function CancelacionesPage() {
   const [invTotalPages, setInvTotalPages] = useState(0)
   const [invTotal, setInvTotal] = useState(0)
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [layoutFile, setLayoutFile] = useState<File | null>(null)
+  const [layoutImportResult, setLayoutImportResult] = useState<LayoutImportResult | null>(null)
+  const [uploadingLayout, setUploadingLayout] = useState(false)
+  const [layoutDialogOpen, setLayoutDialogOpen] = useState(false)
 
   const columnDefs = useMemo(() => [
     { key: 'issuerRfc', label: 'RFC Emisor', render: (r: InvoiceRow) => r.issuerRfc },
@@ -81,7 +204,7 @@ export default function CancelacionesPage() {
     { key: 'series', label: 'Serie', render: (r: InvoiceRow) => r.series ?? '' },
     { key: 'folio', label: 'Folio', render: (r: InvoiceRow) => r.folio ?? '' },
     { key: 'cfdiType', label: 'Tipo CFDI', render: (r: InvoiceRow) => r.cfdiType },
-    { key: 'issuanceDate', label: 'Fecha', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
+    { key: 'issuanceDate', label: 'Fecha', render: (r: InvoiceRow) => formatUtcDate(r.issuanceDate) },
     { key: 'uuid', label: 'UUID', render: (r: InvoiceRow) => <div className="whitespace-nowrap font-mono text-xs">{r.uuid}</div> },
     { key: 'paymentForm', label: 'Forma de Pago', render: (r: InvoiceRow) => r.paymentForm ?? '' },
     { key: 'paymentMethod', label: 'Método Pago', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
@@ -120,7 +243,52 @@ export default function CancelacionesPage() {
     loadPrefs()
   }, [columnDefs])
 
+  const updatedResultColumns = useMemo<LayoutResultColumn<LayoutImportUpdatedRow>[]>(() => [
+    { key: 'lineNumber', label: 'Línea', render: row => row.lineNumber },
+    { key: 'uuid', label: 'UUID', className: 'font-mono text-xs whitespace-nowrap', render: row => row.uuid },
+    { key: 'previousSatStatus', label: 'Antes', render: row => row.previousSatStatus },
+    { key: 'nextSatStatus', label: 'Después', render: row => row.nextSatStatus },
+    { key: 'reason', label: 'Resultado', render: row => row.reason }
+  ], [])
 
+  const genericResultColumns = useMemo<LayoutResultColumn<LayoutImportRow>[]>(() => [
+    { key: 'lineNumber', label: 'Línea', render: row => row.lineNumber },
+    { key: 'uuid', label: 'UUID', className: 'font-mono text-xs whitespace-nowrap', render: row => row.uuid || '-' },
+    { key: 'statusCol9', label: 'Col 9', render: row => row.statusCol9 || '-' },
+    { key: 'cancelableCol10', label: 'Col 10', render: row => row.cancelableCol10 || '-' },
+    { key: 'processCol11', label: 'Col 11', render: row => row.processCol11 || '-' },
+    { key: 'reason', label: 'Motivo', render: row => row.reason }
+  ], [])
+
+  const invalidResultColumns = useMemo<LayoutResultColumn<LayoutImportRow>[]>(() => [
+    { key: 'lineNumber', label: 'Línea', render: row => row.lineNumber },
+    { key: 'reason', label: 'Motivo', render: row => row.reason },
+    {
+      key: 'rawLine',
+      label: 'Registro',
+      className: 'font-mono text-xs min-w-[320px]',
+      render: row => <span className="break-all">{row.rawLine}</span>
+    }
+  ], [])
+
+  const unhandledRawText = useMemo(() => {
+    if (!layoutImportResult?.unhandledRows?.length) {
+      return ''
+    }
+
+    return layoutImportResult.unhandledRows.map(row => row.rawLine).join('\n')
+  }, [layoutImportResult])
+
+  const hasActiveFilters = useMemo(() => {
+    return Boolean(
+      invQuery.trim()
+      || invCfdiType
+      || invStatus
+      || invDateFrom
+      || invDateTo
+      || Object.values(columnFilters).some(value => value.trim())
+    )
+  }, [columnFilters, invCfdiType, invDateFrom, invDateTo, invQuery, invStatus])
 
   const exportValue = (r: InvoiceRow, key: string): string | number => {
     if (key === 'taxesWithheld') return (r.ivaWithheld || 0) + (r.isrWithheld || 0) + (r.iepsWithheld || 0)
@@ -128,18 +296,21 @@ export default function CancelacionesPage() {
     const dateKeys: Array<keyof InvoiceRow> = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']
     if (v === null || v === undefined) return ''
     if (dateKeys.includes(key as keyof InvoiceRow)) {
-      try {
-        return new Date(v as string | Date).toLocaleDateString('es-MX')
-      } catch {
-        return String(v)
-      }
+      return formatUtcDate(v as string | Date)
     }
     if (typeof v === 'number') return v
     return String(v)
   }
 
   const fetchInvoices = useCallback(async () => {
-    if (!selectedCompanyId) return
+    if (!selectedCompanyId || !hasActiveFilters) {
+      setInvRows([])
+      setInvTotalPages(0)
+      setInvTotal(0)
+      setInvLoading(false)
+      return
+    }
+
     setInvLoading(true)
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
@@ -163,7 +334,273 @@ export default function CancelacionesPage() {
     setInvTotalPages(data?.pagination?.totalPages || 0)
     setInvTotal(data?.pagination?.total || 0)
     setInvLoading(false)
-  }, [selectedCompanyId, invPage, invLimit, invQuery, invCfdiType, invStatus, invSatStatus, invDateFrom, invDateTo, columnFilters])
+  }, [selectedCompanyId, hasActiveFilters, invPage, invLimit, invQuery, invCfdiType, invStatus, invSatStatus, invDateFrom, invDateTo, columnFilters])
+
+  const handleLayoutFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] || null
+
+    if (nextFile && !nextFile.name.toLowerCase().endsWith('.txt')) {
+      toast.error('Solo se permiten archivos .txt')
+      event.target.value = ''
+      setLayoutFile(null)
+      return
+    }
+
+    setLayoutFile(nextFile)
+  }, [])
+
+  const handleLayoutImport = useCallback(async () => {
+    if (!selectedCompanyId) {
+      toast.error('Selecciona una empresa antes de importar')
+      return
+    }
+
+    if (!layoutFile) {
+      toast.error('Selecciona un archivo .txt antes de procesar')
+      return
+    }
+
+    setUploadingLayout(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', layoutFile)
+      formData.append('companyId', selectedCompanyId)
+
+      const res = await fetch('/api/dashboard_fiscal/cancelaciones/import-layout', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo procesar el layout')
+        return
+      }
+
+      setLayoutImportResult(data)
+      toast.success(`Layout procesado: ${data?.summary?.updated || 0} CFDI actualizados`)
+      await fetchInvoices()
+    } catch (error) {
+      console.error(error)
+      toast.error('Ocurrió un error al procesar el layout')
+    } finally {
+      setUploadingLayout(false)
+    }
+  }, [fetchInvoices, layoutFile, selectedCompanyId])
+
+  const handleCopyUnhandledRows = useCallback(async () => {
+    if (!unhandledRawText) {
+      toast.info('No hay registros no contemplados para copiar')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(unhandledRawText)
+      toast.success('Registros no contemplados copiados al portapapeles')
+    } catch (error) {
+      console.error(error)
+      toast.error('No fue posible copiar los registros')
+    }
+  }, [unhandledRawText])
+
+  const layoutImportPanel = (
+    <div className="space-y-4">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,text/plain"
+        className="hidden"
+        onChange={handleLayoutFileChange}
+        disabled={uploadingLayout}
+      />
+
+      <Alert>
+        <ShieldCheck className="h-4 w-4" />
+        <AlertTitle>Reglas de operación y seguridad</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <p>
+            El archivo se valida con las mismas capas de seguridad del flujo masivo: límite de 5MB, extensión
+            `.txt`, MIME `text/plain`, detección de binarios disfrazados, almacenamiento temporal aislado y
+            eliminación segura al terminar.
+          </p>
+          <p>
+            La búsqueda se hace por cualquier UUID existente en la base, aunque la pantalla esté abierta desde
+            una empresa específica. Los casos no contemplados se reportan para revisión manual.
+          </p>
+        </AlertDescription>
+      </Alert>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingLayout}
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Seleccionar archivo
+        </Button>
+        <Button
+          onClick={handleLayoutImport}
+          disabled={!layoutFile || uploadingLayout}
+        >
+          <FileUp className="mr-2 h-4 w-4" />
+          {uploadingLayout ? 'Procesando layout...' : 'Procesar layout'}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setLayoutFile(null)
+            setLayoutImportResult(null)
+            if (fileInputRef.current) {
+              fileInputRef.current.value = ''
+            }
+          }}
+          disabled={uploadingLayout && !layoutFile}
+        >
+          Limpiar
+        </Button>
+        {layoutFile && (
+          <Badge variant="outline">
+            Archivo seleccionado: {layoutFile.name}
+          </Badge>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">Columna 8: UUID</Badge>
+        <Badge variant="secondary">Columna 9: estado SAT</Badge>
+        <Badge variant="secondary">Columna 10: cancelabilidad</Badge>
+        <Badge variant="secondary">Columna 11: proceso</Badge>
+        <Badge variant="outline">Cancelado = actualiza</Badge>
+        <Badge variant="outline">Vigente + No Cancelable = ignora</Badge>
+        <Badge variant="outline">Vigente + Aceptación + En proceso = ignora</Badge>
+      </div>
+
+      {layoutImportResult && (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Procesados</p>
+                <p className="text-2xl font-semibold">{layoutImportResult.summary.processed}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Actualizados</p>
+                <p className="text-2xl font-semibold text-emerald-600">{layoutImportResult.summary.updated}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Ignorados</p>
+                <p className="text-2xl font-semibold">{layoutImportResult.summary.ignored}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">No encontrados</p>
+                <p className="text-2xl font-semibold">{layoutImportResult.summary.notFound}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Inválidos</p>
+                <p className="text-2xl font-semibold text-amber-600">{layoutImportResult.summary.invalid}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">No contemplados</p>
+                <p className="text-2xl font-semibold text-orange-600">{layoutImportResult.summary.unhandled}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Alert className="border-emerald-200 bg-emerald-50">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <AlertTitle>Resultado de la última importación</AlertTitle>
+            <AlertDescription>
+              Archivo procesado: <span className="font-medium">{layoutImportResult.fileName}</span>
+            </AlertDescription>
+          </Alert>
+
+          <Tabs defaultValue="updated" className="w-full">
+            <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 bg-transparent p-0">
+              <TabsTrigger value="updated">Actualizados ({layoutImportResult.updatedRows.length})</TabsTrigger>
+              <TabsTrigger value="ignored">Ignorados ({layoutImportResult.ignoredRows.length})</TabsTrigger>
+              <TabsTrigger value="not-found">No encontrados ({layoutImportResult.notFoundRows.length})</TabsTrigger>
+              <TabsTrigger value="invalid">Inválidos ({layoutImportResult.invalidRows.length})</TabsTrigger>
+              <TabsTrigger value="unhandled">No contemplados ({layoutImportResult.unhandledRows.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="updated">
+              <LayoutResultTable
+                rows={layoutImportResult.updatedRows}
+                columns={updatedResultColumns}
+                emptyMessage="No hubo registros actualizados en la última importación."
+              />
+            </TabsContent>
+
+            <TabsContent value="ignored">
+              <LayoutResultTable
+                rows={layoutImportResult.ignoredRows}
+                columns={genericResultColumns}
+                emptyMessage="No hubo registros ignorados."
+              />
+            </TabsContent>
+
+            <TabsContent value="not-found">
+              <LayoutResultTable
+                rows={layoutImportResult.notFoundRows}
+                columns={genericResultColumns}
+                emptyMessage="Todos los UUID contemplados fueron localizados."
+              />
+            </TabsContent>
+
+            <TabsContent value="invalid">
+              <LayoutResultTable
+                rows={layoutImportResult.invalidRows}
+                columns={invalidResultColumns}
+                emptyMessage="No hubo registros inválidos."
+              />
+            </TabsContent>
+
+            <TabsContent value="unhandled" className="space-y-3">
+              {layoutImportResult.unhandledRows.length > 0 && (
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={handleCopyUnhandledRows}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copiar registros no contemplados
+                  </Button>
+                </div>
+              )}
+              <LayoutResultTable
+                rows={layoutImportResult.unhandledRows}
+                columns={genericResultColumns}
+                emptyMessage="No hubo registros no contemplados."
+              />
+              {layoutImportResult.unhandledRows.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Contenido copiable para revisión manual</span>
+                  </div>
+                  <Textarea
+                    value={unhandledRawText}
+                    readOnly
+                    className="min-h-[180px] font-mono text-xs"
+                  />
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      )}
+    </div>
+  )
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -263,7 +700,18 @@ export default function CancelacionesPage() {
                 <Input type="date" placeholder="Fecha hasta" value={invDateTo} onChange={(e) => setInvDateTo(e.target.value)} />
               </div>
               <Button 
-                onClick={() => { setInvPage(1); fetchInvoices() }}
+                onClick={() => {
+                  if (!hasActiveFilters) {
+                    toast.info('Selecciona al menos un filtro para consultar registros')
+                    setInvRows([])
+                    setInvTotalPages(0)
+                    setInvTotal(0)
+                    return
+                  }
+
+                  setInvPage(1)
+                  fetchInvoices()
+                }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
               >
                 Aplicar
@@ -289,6 +737,7 @@ export default function CancelacionesPage() {
             <div className="flex gap-3 mt-3 flex-wrap">
               <Button 
                 variant="outline" 
+                disabled={!hasActiveFilters || invRows.length === 0}
                 onClick={() => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
@@ -319,6 +768,7 @@ export default function CancelacionesPage() {
               </Button>
               <Button 
                 variant="outline" 
+                disabled={!hasActiveFilters || invRows.length === 0}
                 onClick={() => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
@@ -366,6 +816,29 @@ export default function CancelacionesPage() {
               >
                 Exportar Excel
               </Button>
+              <Dialog open={layoutDialogOpen} onOpenChange={setLayoutDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
+                  >
+                    <FileUp className="h-4 w-4" />
+                    Importación Layout
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="!top-4 !right-4 !bottom-4 !left-4 !w-auto !max-w-none !h-auto !max-h-none !translate-x-0 !translate-y-0 rounded-xl border overflow-y-auto content-start">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <FileUp className="h-5 w-5" />
+                      Importar layout de cancelaciones
+                    </DialogTitle>
+                    <DialogDescription>
+                      Carga directa de layouts `.txt` separados por `|` para actualizar `satStatus` a `CANCELADO`.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {layoutImportPanel}
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="rounded-md border mt-4 overflow-x-auto relative">
@@ -497,7 +970,9 @@ export default function CancelacionesPage() {
                   {invRows.length === 0 && !invLoading && (
                     <tr>
                       <td colSpan={visibleCols.size + 1} className="p-4 text-center text-muted-foreground">
-                        No se encontraron registros
+                        {hasActiveFilters
+                          ? 'No se encontraron registros'
+                          : 'Selecciona al menos un filtro para consultar registros'}
                       </td>
                     </tr>
                   )}

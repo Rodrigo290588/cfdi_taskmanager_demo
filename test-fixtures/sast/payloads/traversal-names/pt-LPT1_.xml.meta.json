@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "LPT1:.xml",
+  "safeLocalPath": "pt-LPT1_.xml",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"LPT1:.xml\" y bytes=pt-LPT1_.xml",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

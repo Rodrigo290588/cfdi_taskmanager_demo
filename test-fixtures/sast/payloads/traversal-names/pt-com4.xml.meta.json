@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "com4.xml",
+  "safeLocalPath": "pt-com4.xml",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"com4.xml\" y bytes=pt-com4.xml",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

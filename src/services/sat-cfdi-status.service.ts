@@ -1,11 +1,76 @@
 import { DOMParser } from '@xmldom/xmldom'
+import { isInternalHostname } from '@/lib/security'
 
 const SAT_CONSULTA_CFDI_URL =
   process.env.SAT_CONSULTA_CFDI_URL || 'https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc'
 const SAT_CONSULTA_CFDI_SOAP_ACTION = 'http://tempuri.org/IConsultaCFDIService/Consulta'
-const SAT_CONSULTA_CFDI_TIMEOUT_MS = Number(process.env.SAT_CONSULTA_CFDI_TIMEOUT_MS || '30000')
+const SAT_CONSULTA_CFDI_TIMEOUT_MS = 5_000
 
 export const SAT_STATUS_OK_MESSAGE = 'Validación Estatus SAT = OK'
+
+export const SAT_CFDI_ALLOWED_HOSTS: ReadonlySet<string> = new Set([
+  'consultaqr.facturaelectronica.sat.gob.mx',
+  'portalconsulta.clients.siat.sat.gob.mx',
+  'omawwcf.siat.sat.gob.mx',
+  'www.sat.gob.mx',
+  'siat.sat.gob.mx',
+  'cfdi.sat.gob.mx'
+])
+
+const SAT_CIRCUIT_BREAKER_THRESHOLD = 20
+const SAT_CIRCUIT_BREAKER_COOL_DOWN_MS = 60_000
+
+const __satCircuitBreaker = {
+  consecutiveFails: 0,
+  openUntil: 0,
+  lastResetAt: 0
+}
+
+function satCircuitOpen(): { open: true; retryAfterSec: number } | { open: false } {
+  const now = Date.now()
+  if (__satCircuitBreaker.openUntil > now) {
+    return { open: true, retryAfterSec: Math.max(1, Math.ceil((__satCircuitBreaker.openUntil - now) / 1000)) }
+  }
+  if (__satCircuitBreaker.openUntil !== 0) {
+    __satCircuitBreaker.openUntil = 0
+    __satCircuitBreaker.consecutiveFails = 0
+    __satCircuitBreaker.lastResetAt = now
+  }
+  return { open: false }
+}
+
+function satCircuitReportOutcome(success: boolean): void {
+  if (success) {
+    if (__satCircuitBreaker.consecutiveFails !== 0) {
+      __satCircuitBreaker.consecutiveFails = 0
+    }
+    return
+  }
+  __satCircuitBreaker.consecutiveFails += 1
+  if (__satCircuitBreaker.consecutiveFails >= SAT_CIRCUIT_BREAKER_THRESHOLD) {
+    __satCircuitBreaker.openUntil = Date.now() + SAT_CIRCUIT_BREAKER_COOL_DOWN_MS
+  }
+}
+
+function safeValidateSatAllowedHost(rawUrl: string): { ok: true; host: string } | { ok: false; error: string } {
+  try {
+    const parsed = new URL(rawUrl)
+    const host = parsed.hostname.toLowerCase().trim()
+    if (!host) return { ok: false, error: 'URL SAT sin hostname valido' }
+    if (isInternalHostname(host)) {
+      return { ok: false, error: `Host SAT prohibido (rango interno): ${host}` }
+    }
+    if (!SAT_CFDI_ALLOWED_HOSTS.has(host)) {
+      return { ok: false, error: `Host SAT fuera de allow-list: ${host}. Contacta soporte para habilitarlo.` }
+    }
+    if (parsed.protocol !== 'https:' && process.env.NODE_ENV !== 'test') {
+      return { ok: false, error: `Protocolo SAT no seguro (${parsed.protocol}). Solo HTTPS permitido en produccion.` }
+    }
+    return { ok: true, host }
+  } catch {
+    return { ok: false, error: 'URL SAT con formato invalido' }
+  }
+}
 
 export type SatCfdiStatusResult = {
   codigoEstatus: string
@@ -228,11 +293,22 @@ export async function validateCfdiStatusWithSat({ fileName, xml }: SatValidation
 }
 
 export async function queryCfdiStatusWithSat({ fileName, xml }: SatValidationInput) {
+  const circuitState = satCircuitOpen()
+  if (circuitState.open) {
+    throw new Error(
+      `${fileName}: consulta estatus SAT temporalmente suspendida por fallos consecutivos (Circuit Breaker). Reintenta en ${circuitState.retryAfterSec}s.`
+    )
+  }
+  const hostCheck = safeValidateSatAllowedHost(SAT_CONSULTA_CFDI_URL)
+  if (!hostCheck.ok) {
+    throw new Error(`SAT SSRF BLOCK: ${hostCheck.error}`)
+  }
   const expresionImpresa = buildExpresionImpresaFromXml(fileName, xml)
   const requestXml = buildConsultaCfdiEnvelope(expresionImpresa)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), SAT_CONSULTA_CFDI_TIMEOUT_MS)
 
+  let successLatch = false
   try {
     const response = await fetch(SAT_CONSULTA_CFDI_URL, {
       method: 'POST',
@@ -250,7 +326,9 @@ export async function queryCfdiStatusWithSat({ fileName, xml }: SatValidationInp
       throw new Error(`${fileName}: el SAT respondió con HTTP ${response.status} al consultar el estatus del CFDI`)
     }
 
-    return parseConsultaCfdiResponse(fileName, responseXml)
+    const result = parseConsultaCfdiResponse(fileName, responseXml)
+    successLatch = true
+    return result
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(`${fileName}: no fue posible consultar el estatus SAT porque el servicio tardó demasiado en responder`)
@@ -263,5 +341,6 @@ export async function queryCfdiStatusWithSat({ fileName, xml }: SatValidationInp
     throw new Error(`${fileName}: no fue posible consultar el estatus SAT del CFDI`)
   } finally {
     clearTimeout(timeout)
+    satCircuitReportOutcome(successLatch)
   }
 }

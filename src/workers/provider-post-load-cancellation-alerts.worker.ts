@@ -1,7 +1,8 @@
 import { Worker } from 'bullmq'
 import {
-  providerPostLoadCancellationAlertsQueue,
-  PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME
+  getProviderPostLoadCancellationAlertsQueue,
+  PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME,
+  resolveRedisConnection
 } from '@/lib/queue'
 import { syncProviderPostLoadCancellationAlerts } from '@/lib/provider-post-load-cancellation-alerts'
 
@@ -11,7 +12,7 @@ const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_CRON = '0 0 * * *'
 const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_TIMEZONE = 'America/Mexico_City'
 
 export async function ensureProviderPostLoadCancellationAlertsRoutineScheduled() {
-  await providerPostLoadCancellationAlertsQueue.add(
+  await getProviderPostLoadCancellationAlertsQueue().add(
     PROVIDER_POST_LOAD_CANCELLATION_ALERTS_JOB_NAME,
     {},
     {
@@ -34,10 +35,7 @@ export function setupProviderPostLoadCancellationAlertsWorker() {
       `[ProviderPostLoadCancellationAlerts] scanned=${result.scannedCandidates} checked=${result.checkedCandidates} cancelled=${result.detectedCancelled} updated=${result.updatedStatuses} errors=${result.errors}`
     )
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    connection: resolveRedisConnection(),
     concurrency: 1
   })
 

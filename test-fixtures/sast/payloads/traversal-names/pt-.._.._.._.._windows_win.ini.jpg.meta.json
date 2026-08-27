@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "../../../../windows/win.ini.jpg",
+  "safeLocalPath": "pt-.._.._.._.._windows_win.ini.jpg",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"../../../../windows/win.ini.jpg\" y bytes=pt-.._.._.._.._windows_win.ini.jpg",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

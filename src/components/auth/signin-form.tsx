@@ -2,16 +2,18 @@
 
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { signInSchema } from '@/schemas/auth'
+import { safeRedirectUrl } from '@/lib/security'
 
 export function SignInForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -22,8 +24,10 @@ export function SignInForm() {
     e.preventDefault()
     setError('')
 
-    // Validar input con Zod antes de enviar
-    const validation = signInSchema.safeParse({ email, password })
+    const validation = signInSchema.safeParse({
+      email,
+      password: password.trim()
+    })
     if (!validation.success) {
       setError(validation.error.issues[0].message)
       return
@@ -33,15 +37,21 @@ export function SignInForm() {
 
     try {
       const result = await signIn('credentials', {
-        email: validation.data.email, // Usar datos sanitizados
+        email: validation.data.email,
         password: validation.data.password,
         redirect: false,
       })
 
       if (result?.error) {
-        setError('Credenciales inválidas. Por favor, intenta de nuevo.')
+        const message = (result?.error || '').toString()
+        if (message?.includes('Configuration') || message === 'Configuration' || !message) {
+          setError('No se pudo conectar con el servicio de autenticación. Intenta de nuevo.')
+        } else {
+          setError(message)
+        }
       } else {
-        router.push('/dashboard')
+        const callback = safeRedirectUrl(searchParams?.get('callbackUrl'))
+        router.push(callback)
         router.refresh()
       }
     } catch {
@@ -53,14 +63,13 @@ export function SignInForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Mensaje de error */}
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      
+
       <div className="space-y-2">
         <Label htmlFor="email" className="text-sm font-medium">
           Correo Electrónico
@@ -113,10 +122,15 @@ export function SignInForm() {
             </span>
           </Button>
         </div>
+        <div className="flex justify-end">
+          <Button variant="link" className="px-0 h-auto text-xs text-muted-foreground" asChild>
+            <a href="/auth/forgot-password">¿Olvidaste tu contraseña?</a>
+          </Button>
+        </div>
       </div>
 
-      <Button 
-        type="submit" 
+      <Button
+        type="submit"
         className="w-full"
         disabled={isLoading}
       >

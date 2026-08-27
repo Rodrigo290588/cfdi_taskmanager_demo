@@ -14,6 +14,154 @@ import { SAT_STATUS_OK_MESSAGE, type SatCfdiStatusResult, validateCfdiStatusWith
 import type { PersistableProviderAcceptedCfdi } from '@/lib/provider-cfdi-storage'
 import { MAX_PROVIDER_CFDI_UPLOAD } from '@/lib/provider-cfdi-report.constants'
 
+export const PROVIDER_XML_MAX_BYTES = 2 * 1024 * 1024
+export const PROVIDER_ZIP_MAX_ENTRIES = 500
+export const PROVIDER_ZIP_MAX_COMPRESSION_RATIO = 103
+export const PROVIDER_ZIP_MAX_DECOMPRESSED_BYTES = 250 * 1024 * 1024
+export const PROVIDER_CFDI_NUMBER_MAX_MAGNITUDE = 9_999_999_999_999
+
+declare global {
+  var __PROVIDER_TEXT_ENCODER_INSTANCE: TextEncoder | undefined
+}
+function getProviderTextEncoder(): TextEncoder {
+  if (!globalThis.__PROVIDER_TEXT_ENCODER_INSTANCE) {
+    globalThis.__PROVIDER_TEXT_ENCODER_INSTANCE = new TextEncoder()
+  }
+  return globalThis.__PROVIDER_TEXT_ENCODER_INSTANCE
+}
+
+interface JSZipObjectInternals {
+  _data?: {
+    compressedSize?: unknown
+    uncompressedSize?: unknown
+  }
+}
+
+const XXE_DTD_SCAN_BYTES = 4096
+const XXE_DTD_BLOCK_PATTERN = /<!(?:DOCTYPE|ENTITY|NOTATION)\b/i
+const PROVIDER_NUL_BYTE_PATTERN = /\u0000/
+
+export interface ProviderDomParseResult {
+  ok: true
+  doc: Document
+}
+
+export interface ProviderDomParseFailure {
+  ok: false
+  error: string
+}
+
+export function safeParseProviderXml(
+  xmlRaw: string,
+  fileNameRef: string
+): ProviderDomParseResult | ProviderDomParseFailure {
+  const trimmed = typeof xmlRaw === 'string' ? xmlRaw : ''
+  if (!trimmed) {
+    return { ok: false, error: `${fileNameRef}: XML vacio. Carga un CFDI timbrado valido del SAT.` }
+  }
+  if (PROVIDER_NUL_BYTE_PATTERN.test(trimmed)) {
+    return { ok: false, error: `${fileNameRef}: XML contiene caracteres nulos prohibidos. El archivo puede estar corrupto o manipulado.` }
+  }
+
+  const encoder = getProviderTextEncoder()
+  const totalBytes = encoder.encode(trimmed).byteLength
+  if (totalBytes > PROVIDER_XML_MAX_BYTES) {
+    return {
+      ok: false,
+      error: `${fileNameRef}: XML supera el maximo permitido de ${PROVIDER_XML_MAX_BYTES} bytes (tamaño detectado: ${totalBytes}). Reduce el tamaño del archivo antes de cargarlo.`
+    }
+  }
+
+  const scanSlice = trimmed.slice(0, XXE_DTD_SCAN_BYTES)
+  if (XXE_DTD_BLOCK_PATTERN.test(scanSlice)) {
+    return {
+      ok: false,
+      error: `${fileNameRef}: XML contiene declaraciones prohibidas (DOCTYPE/ENTITY/NOTATION). La estructura del archivo no corresponde a un CFDI timbrado seguro del SAT.`
+    }
+  }
+
+  try {
+    const parser = new DOMParser({
+      errorHandler: {
+        warning: (msg: unknown) => {
+          const text = typeof msg === 'string' ? msg : String(msg ?? 'XML warning')
+          throw new Error(`${fileNameRef}: Advertencia fatal de parseo XML - ${text.slice(0, 220)}`)
+        },
+        error: (msg: unknown) => {
+          const text = typeof msg === 'string' ? msg : String(msg ?? 'XML error')
+          throw new Error(`${fileNameRef}: Error fatal de parseo XML - ${text.slice(0, 220)}`)
+        },
+        fatalError: (msg: unknown) => {
+          const text = typeof msg === 'string' ? msg : String(msg ?? 'XML fatal error')
+          throw new Error(`${fileNameRef}: Error fatal irrecuperable de XML - ${text.slice(0, 220)}`)
+        }
+      }
+    })
+    const doc = parser.parseFromString(trimmed, 'text/xml')
+    if (doc.getElementsByTagName('parsererror').length > 0) {
+      return { ok: false, error: `${fileNameRef}: el archivo no contiene un XML valido. Verifica que corresponda a un CFDI timbrado del SAT y no este dañado.` }
+    }
+    return { ok: true, doc }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err ?? 'unknown XML error')
+    return {
+      ok: false,
+      error: message.startsWith(fileNameRef + ':') || message.startsWith(`${fileNameRef}:`)
+        ? message
+        : `${fileNameRef}: no fue posible leer la estructura interna del XML - ${message.slice(0, 180)}`
+    }
+  }
+}
+
+export function parseStrictCfdiNumber(
+  value: string | null | undefined,
+  fieldRef: string,
+  fileNameRef: string
+): number {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw) {
+    return 0
+  }
+  if (raw.length > 25) {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} excede longitud maxima permitida (25). Valor recibido: ${raw.slice(0, 32)}`)
+  }
+  if (PROVIDER_NUL_BYTE_PATTERN.test(raw)) {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} contiene caracteres nulos prohibidos.`)
+  }
+  const sanitized = raw.replace(/[^\d.,\-+eE]/g, '')
+  if (!sanitized || sanitized === '-' || sanitized === '+' || sanitized === '.' || sanitized === ',' || sanitized === '-.') {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} no es un numero decimal valido. Valor recibido: ${raw}`)
+  }
+  let normalized = sanitized
+  const lastComma = normalized.lastIndexOf(',')
+  const lastDot = normalized.lastIndexOf('.')
+  if (lastComma !== -1 && lastDot !== -1) {
+    normalized = lastComma > lastDot
+      ? normalized.replace(/\./g, '').replace(',', '.')
+      : normalized.replace(/,/g, '')
+  } else if (lastComma !== -1) {
+    const commas = (normalized.match(/,/g) || []).length
+    const decimalPartLength = normalized.slice(lastComma + 1).length
+    if (commas === 1 && decimalPartLength >= 1 && decimalPartLength <= 8 && /^\d+$/.test(normalized.slice(lastComma + 1))) {
+      normalized = normalized.replace(',', '.')
+    } else {
+      normalized = normalized.replace(/,/g, '')
+    }
+  }
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} no es un numero decimal valido. Valor recibido: ${raw}`)
+  }
+  if (Number.isNaN(parsed)) {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} no es un numero valido (NaN). Valor recibido: ${raw}`)
+  }
+  const magnitude = Math.abs(parsed)
+  if (magnitude > PROVIDER_CFDI_NUMBER_MAX_MAGNITUDE) {
+    throw new Error(`${fileNameRef}: campo ${fieldRef} excede magnitud maxima permitida de $9.999T MXN. Valor detectado: ${parsed}`)
+  }
+  return parsed
+}
+
 export type ProviderContext = {
   memberId: string
   organizationId: string
@@ -101,6 +249,11 @@ type XmlCandidate = {
   xml: string
 }
 
+export type ProviderXmlCandidateInput = {
+  name: string
+  xml: string
+}
+
 type ParsedInvoiceCandidate = {
   kind: 'invoice'
   fileName: string
@@ -179,11 +332,6 @@ function stripFileErrorPrefix(fileName: string, message: string) {
   return normalizedMessage.startsWith(prefix) ? normalizedMessage.slice(prefix.length).trim() : normalizedMessage
 }
 
-function toNumber(value: string | null | undefined) {
-  const parsed = Number((value || '').replace(/,/g, '').trim())
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 function hasExactResicoIsrRetention(root: Document | Element) {
   const retenciones = getElementsByLocalName(root, 'Retencion')
 
@@ -198,43 +346,159 @@ function hasExactResicoIsrRetention(root: Document | Element) {
   })
 }
 
-function hasAllowedIvaTransferBreakdown(root: Document | Element) {
-  const traslados = getElementsByLocalName(root, 'Traslado')
+function hasAttribute(element: Element | null | undefined, attributeName: string) {
+  if (!element) return false
+  const directValue = element.getAttribute(attributeName)
+  if (directValue !== null && directValue !== undefined) return true
+  const normalizedAttributeName = attributeName.toLowerCase()
+  const attributes = element.attributes
+  for (let i = 0; i < attributes.length; i += 1) {
+    const attr = attributes.item(i)
+    if (!attr) continue
+    const currentName = (
+      attr.localName || attr.nodeName.split(':').pop() || attr.name || '').toLowerCase()
+    if (currentName === normalizedAttributeName) return true
+  }
+  return false
+}
 
-  return traslados.some((trasladoNode) => {
-    const impuesto = normalizeText(getAttributeValue(trasladoNode, 'Impuesto')).toUpperCase()
-    const tasaRaw = normalizeText(getAttributeValue(trasladoNode, 'TasaOCuota'))
-    const tasa = tasaRaw ? Number(tasaRaw) : NaN
+function validateObjetoImp02ExentoIvaTraslado(trasladoNode: Element, trasladoRef: string): string[] {
+  const errors: string[] = []
+  const tipoFactor = normalizeText(getAttributeValue(trasladoNode, 'TipoFactor')).toUpperCase()
+  const baseRaw = normalizeText(getAttributeValue(trasladoNode, 'Base'))
+  const impuesto = normalizeText(getAttributeValue(trasladoNode, 'Impuesto')).toUpperCase()
+  const hasTasaOCuota = hasAttribute(trasladoNode, 'TasaOCuota')
+  const hasImporte = hasAttribute(trasladoNode, 'Importe')
 
-    return (impuesto === '002' || impuesto === 'IVA')
-      && Number.isFinite(tasa)
-      && ['0.160000', '0.080000', '0.000000'].includes(tasa.toFixed(6))
-  })
+  if (tipoFactor !== 'EXENTO') {
+    errors.push(`${trasladoRef} el campo TipoFactor del Traslado IVA debe contener estrictamente el valor 'Exento' (valor recibido: '${tipoFactor || '(vacío)'}').`)
+  }
+  if (!baseRaw) {
+    errors.push(`${trasladoRef} el campo Base del Traslado IVA (monto sobre el cual aplica la exención) es obligatorio y no está presente.`)
+  } else {
+    try {
+      parseStrictCfdiNumber(baseRaw, 'Base', trasladoRef)
+    } catch (parseErr) {
+      errors.push(parseErr instanceof Error ? parseErr.message : `${trasladoRef} el campo Base del Traslado IVA debe ser un valor numérico válido (valor recibido: '${baseRaw}').`)
+    }
+  }
+  if (impuesto !== '002') {
+    errors.push(`${trasladoRef} el campo Impuesto del Traslado IVA debe contener exactamente el valor '002' (valor recibido: '${impuesto || '(vacío)'}').`)
+  }
+  if (hasTasaOCuota) {
+    errors.push(`${trasladoRef} el campo TasaOCuota no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
+  }
+  if (hasImporte) {
+    errors.push(`${trasladoRef} el campo Importe no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
+  }
+  return errors
+}
+
+function validateObjetoImp02Retencion(retencionNode: Element, retencionRef: string): string[] {
+  const errors: string[] = []
+  const tipoFactor = normalizeText(getAttributeValue(retencionNode, 'TipoFactor')).toUpperCase()
+  const baseRaw = normalizeText(getAttributeValue(retencionNode, 'Base'))
+  const impuesto = normalizeText(getAttributeValue(retencionNode, 'Impuesto')).toUpperCase()
+  const tasaRaw = normalizeText(getAttributeValue(retencionNode, 'TasaOCuota'))
+  const importeRaw = normalizeText(getAttributeValue(retencionNode, 'Importe'))
+
+  if (!tipoFactor) {
+    errors.push(`${retencionRef} el campo TipoFactor de la Retención es obligatorio y no está presente.`)
+  } else if (tipoFactor === 'EXENTO') {
+    errors.push(`${retencionRef} en Retenciones no existe la figura de TipoFactor 'Exento'; se esperaba 'Tasa' (valor recibido: 'Exento').`)
+  }
+  let baseNum: number | null = null
+  let tasaNum: number | null = null
+  if (!baseRaw) {
+    errors.push(`${retencionRef} el campo Base de la Retención es obligatorio y no está presente.`)
+  } else {
+    try {
+      baseNum = parseStrictCfdiNumber(baseRaw, 'Base', retencionRef)
+    } catch (parseErr) {
+      errors.push(parseErr instanceof Error ? parseErr.message : `${retencionRef} el campo Base de la Retención debe ser un valor numérico válido (valor recibido: '${baseRaw}').`)
+    }
+  }
+  if (!impuesto) {
+    errors.push(`${retencionRef} el campo Impuesto de la Retención es obligatorio y no está presente.`)
+  }
+  if (!tasaRaw) {
+    errors.push(`${retencionRef} el campo TasaOCuota de la Retención es obligatorio y no está presente.`)
+  } else {
+    try {
+      tasaNum = parseStrictCfdiNumber(tasaRaw, 'TasaOCuota', retencionRef)
+    } catch (parseErr) {
+      errors.push(parseErr instanceof Error ? parseErr.message : `${retencionRef} el campo TasaOCuota de la Retención debe ser un valor numérico válido (valor recibido: '${tasaRaw}').`)
+    }
+  }
+  if (!importeRaw) {
+    errors.push(`${retencionRef} el campo Importe de la Retención es obligatorio y no está presente.`)
+  } else {
+    try {
+      const importeNum = parseStrictCfdiNumber(importeRaw, 'Importe', retencionRef)
+      if (baseNum !== null && tasaNum !== null) {
+        const expected = baseNum * tasaNum
+        const diff = Math.abs(expected - importeNum)
+        const tolerance = Math.max(1e-4, Math.abs(expected) * 1e-4)
+        if (diff > tolerance) {
+          errors.push(`${retencionRef} el campo Importe de la Retención (${importeRaw}) no coincide con el cálculo Base × TasaOCuota (${baseRaw} × ${tasaRaw} = ${expected.toFixed(6)}; diferencia ${diff.toFixed(6)}).`)
+        }
+      }
+    } catch (parseErr) {
+      errors.push(parseErr instanceof Error ? parseErr.message : `${retencionRef} el campo Importe de la Retención debe ser un valor numérico válido (valor recibido: '${importeRaw}').`)
+    }
+  }
+  return errors
+}
+
+function isIvaTrasladoNode(trasladoNode: Element) {
+  const impuesto = normalizeText(getAttributeValue(trasladoNode, 'Impuesto')).toUpperCase()
+  return impuesto === '002' || impuesto === 'IVA'
 }
 
 function evaluateObjetoImpTaxMismatch(root: Document | Element) {
   const conceptos = getElementsByLocalName(root, 'Concepto')
   const reasons = new Set<string>()
 
-  conceptos.forEach((conceptoNode) => {
+  conceptos.forEach((conceptoNode, conceptIndex) => {
     const objetoImp = normalizeText(getAttributeValue(conceptoNode, 'ObjetoImp')).toUpperCase()
     if (!objetoImp) return
 
+    const conceptoRef = `[Concepto #${conceptIndex + 1}]`
     const conceptImpuestos = getFirstElementByLocalName(conceptoNode, 'Impuestos')
-    const hasIvaTransferBreakdown = conceptImpuestos ? hasAllowedIvaTransferBreakdown(conceptImpuestos) : false
+    const traslados = conceptImpuestos ? getElementsByLocalName(conceptImpuestos, 'Traslado') : []
+    const retenciones = conceptImpuestos ? getElementsByLocalName(conceptImpuestos, 'Retencion') : []
+    const hasAnyTraslado = traslados.length > 0
+    const hasAnyRetencion = retenciones.length > 0
+    const ivaTraslados = traslados.filter(node => isIvaTrasladoNode(node))
+    const hasAnyIvaTraslado = ivaTraslados.length > 0
 
-    if (objetoImp === '02' && !hasIvaTransferBreakdown) {
-      reasons.add('OBJETOIMP_02_SIN_IVA_TRASLADADO')
-    }
-
-    if ((objetoImp === '01' || objetoImp === '03') && hasIvaTransferBreakdown) {
-      reasons.add('OBJETOIMP_01_03_CON_IVA_TRASLADADO')
+    if (objetoImp === '02') {
+      if (!conceptImpuestos || (!hasAnyTraslado && !hasAnyRetencion)) {
+        reasons.add(`${conceptoRef} ObjetoImp=02 (SÍ objeto del impuesto) debe contener al menos una sección de cfdi:Traslados o cfdi:Retenciones dentro del nodo cfdi:Impuestos del concepto; no se localizó ninguno.`)
+      } else {
+        if (hasAnyIvaTraslado) {
+          ivaTraslados.forEach((trasladoNode, tIdx) => {
+            const trasladoRef = `${conceptoRef}[Traslado #${tIdx + 1}]`
+            const specificErrors = validateObjetoImp02ExentoIvaTraslado(trasladoNode, trasladoRef)
+            specificErrors.forEach(msg => reasons.add(msg))
+          })
+        }
+        if (hasAnyRetencion) {
+          retenciones.forEach((retencionNode, rIdx) => {
+            const retencionRef = `${conceptoRef}[Retención #${rIdx + 1}]`
+            const specificErrors = validateObjetoImp02Retencion(retencionNode, retencionRef)
+            specificErrors.forEach(msg => reasons.add(msg))
+          })
+        }
+      }
+    } else if ((objetoImp === '01' || objetoImp === '03') && hasAnyIvaTraslado) {
+      reasons.add(`${conceptoRef} ObjetoImp=${objetoImp} (01=No objeto de impuesto / 03=Art. 140 RLIVA) pero contiene Traslado IVA desglosado.`)
     }
   })
 
   return {
     hasMismatch: reasons.size > 0,
-    reason: Array.from(reasons).join('; ')
+    reason: Array.from(reasons).join(' | ')
   }
 }
 
@@ -301,10 +565,11 @@ function extractValidationNotificationMetadata(candidate: XmlCandidate, uploaded
   }
 
   try {
-    const doc = new DOMParser().parseFromString(candidate.xml, 'text/xml')
-    if (doc.getElementsByTagName('parsererror').length > 0) {
+    const parseResult = safeParseProviderXml(candidate.xml, candidate.name)
+    if (!parseResult.ok) {
       return fallback
     }
+    const doc = parseResult.doc
 
     const comprobante = getFirstElementByLocalName(doc, 'Comprobante')
     const emisor = getFirstElementByLocalName(doc, 'Emisor')
@@ -374,6 +639,7 @@ function getStatusForInvoice(invoice: ParsedInvoiceCandidate, totalPagado: numbe
 async function extractXmlCandidates(files: File[]) {
   const candidates: XmlCandidate[] = []
   const errors: string[] = []
+  const encoder = getProviderTextEncoder()
 
   for (const file of files) {
     const lowerName = file.name.toLowerCase()
@@ -387,11 +653,17 @@ async function extractXmlCandidates(files: File[]) {
 
     if (isZip) {
       try {
-        const zip = await JSZip.loadAsync(await file.arrayBuffer())
+        const zipBuffer = await file.arrayBuffer()
+        const zip = await JSZip.loadAsync(zipBuffer)
         const entries = Object.values(zip.files).filter(entry => !entry.dir)
 
         if (entries.length === 0) {
           errors.push(fileError(file.name, 'el archivo ZIP esta vacio y no contiene XML para procesar'))
+          continue
+        }
+
+        if (entries.length > PROVIDER_ZIP_MAX_ENTRIES) {
+          errors.push(fileError(file.name, `el ZIP contiene ${entries.length} archivos; maximo permitido ${PROVIDER_ZIP_MAX_ENTRIES}. Fracciona la carga en lotes mas chicos.`))
           continue
         }
 
@@ -401,9 +673,46 @@ async function extractXmlCandidates(files: File[]) {
           continue
         }
 
+        const compressedEstimate = entries.reduce((acc, entry) => {
+          const entryInt = entry as JSZipObjectInternals
+          const compressed = typeof entryInt._data?.compressedSize === 'number'
+            ? Number(entryInt._data.compressedSize)
+            : 0
+          const uncompressed = typeof entryInt._data?.uncompressedSize === 'number'
+            ? Number(entryInt._data.uncompressedSize)
+            : 0
+          return acc + Math.max(compressed, uncompressed, 1)
+        }, 0)
+
+        let decompressedTotalBytes = 0
         for (const entry of entries) {
+          const entryInt = entry as JSZipObjectInternals
+          const entryUncompressed = typeof entryInt._data?.uncompressedSize === 'number'
+            ? Number(entryInt._data.uncompressedSize)
+            : 0
+          decompressedTotalBytes += Math.max(entryUncompressed, 0)
+          if (compressedEstimate > 0 && entryUncompressed > PROVIDER_ZIP_MAX_COMPRESSION_RATIO * Math.max(compressedEstimate / entries.length, 1)) {
+            throw new Error(`entrada ${entry.name} excede razon maxima de compresion (anti ZipBomb)`)
+          }
+        }
+
+        if (decompressedTotalBytes > PROVIDER_ZIP_MAX_DECOMPRESSED_BYTES) {
+          errors.push(fileError(file.name, `el ZIP excede tamaño maximo descomprimido de ${Math.round(PROVIDER_ZIP_MAX_DECOMPRESSED_BYTES / 1024 / 1024)} MB (detectados ${Math.round(decompressedTotalBytes / 1024 / 1024)} MB). Reduce el numero de archivos o fracciona la carga.`))
+          continue
+        }
+
+        for (const entry of entries) {
+          const rawName = entry.name
+          if (PROVIDER_NUL_BYTE_PATTERN.test(rawName)) {
+            errors.push(fileError(file.name, `el ZIP contiene una entrada con caracteres nulos prohibidos en el nombre: ${rawName.slice(0, 64)}`))
+            continue
+          }
+          const safeName = rawName.split('/').pop()?.split('\\').pop()?.trim() || rawName
+          if (!safeName || !safeName.toLowerCase().endsWith('.xml')) {
+            continue
+          }
           candidates.push({
-            name: entry.name,
+            name: safeName,
             xml: await entry.async('string')
           })
         }
@@ -421,9 +730,20 @@ async function extractXmlCandidates(files: File[]) {
       continue
     }
 
+    const xmlText = await file.text()
+    const xmlBytes = encoder.encode(xmlText).byteLength
+    if (xmlBytes > PROVIDER_XML_MAX_BYTES) {
+      errors.push(fileError(file.name, `XML supera maximo permitido de ${PROVIDER_XML_MAX_BYTES} bytes (tamaño: ${xmlBytes})`))
+      continue
+    }
+    if (PROVIDER_NUL_BYTE_PATTERN.test(file.name)) {
+      errors.push(fileError(file.name, 'nombre de archivo contiene caracteres nulos prohibidos'))
+      continue
+    }
+    const safeFileName = file.name.split('/').pop()?.split('\\').pop()?.trim() || file.name
     candidates.push({
-      name: file.name,
-      xml: await file.text()
+      name: safeFileName,
+      xml: xmlText
     })
   }
 
@@ -490,20 +810,22 @@ function parseInvoiceCandidate(
 
     const paymentLinks: PaymentLink[] = []
     const totales = getFirstElementByLocalName(doc, 'Totales')
-    const montoTotalPagos = toNumber(getAttributeValue(totales, 'MontoTotalPagos'))
+    const montoTotalPagos = parseStrictCfdiNumber(getAttributeValue(totales, 'MontoTotalPagos'), 'Totales.MontoTotalPagos', fileName)
     const serie = normalizeText(getAttributeValue(comprobante, 'Serie')) || null
     const folio = normalizeText(getAttributeValue(comprobante, 'Folio')) || null
 
     pagos.forEach(pagoNode => {
       const fechaPago = normalizeText(getAttributeValue(pagoNode, 'FechaPago')) || normalizeText(getAttributeValue(comprobante, 'Fecha'))
       const monedaPago = normalizeText(getAttributeValue(pagoNode, 'MonedaP')) || normalizeText(getAttributeValue(comprobante, 'Moneda')) || 'MXN'
-      const montoPagoNode = toNumber(getAttributeValue(pagoNode, 'Monto'))
+      const montoPagoNode = parseStrictCfdiNumber(getAttributeValue(pagoNode, 'Monto'), 'Pago.Monto', fileName)
       const doctosRelacionados = getElementsByLocalName(pagoNode, 'DoctoRelacionado')
 
       doctosRelacionados.forEach(doctoNode => {
         const relatedUuid = normalizeText(getAttributeValue(doctoNode, 'IdDocumento')).toUpperCase()
         if (!relatedUuid) return
 
+        const rawNumParcialidad = parseStrictCfdiNumber(getAttributeValue(doctoNode, 'NumParcialidad'), 'DoctoRelacionado.NumParcialidad', fileName)
+        const numParcialidadParsed = Math.trunc(rawNumParcialidad)
         paymentLinks.push({
           relatedUuid,
           detail: {
@@ -511,13 +833,13 @@ function parseInvoiceCandidate(
             paymentDate: fechaPago,
             paymentSeries: serie,
             paymentFolio: folio,
-            montoPagado: toNumber(getAttributeValue(doctoNode, 'ImpPagado')),
+            montoPagado: parseStrictCfdiNumber(getAttributeValue(doctoNode, 'ImpPagado'), 'DoctoRelacionado.ImpPagado', fileName),
             montoTotalPagos: montoTotalPagos > 0 ? montoTotalPagos : montoPagoNode,
             monedaPago,
-            equivalenciaDR: toNumber(getAttributeValue(doctoNode, 'EquivalenciaDR')) || 1,
-            numParcialidad: Math.trunc(toNumber(getAttributeValue(doctoNode, 'NumParcialidad'))) || 1,
-            impSaldoAnt: toNumber(getAttributeValue(doctoNode, 'ImpSaldoAnt')),
-            impSaldoInsoluto: toNumber(getAttributeValue(doctoNode, 'ImpSaldoInsoluto'))
+            equivalenciaDR: parseStrictCfdiNumber(getAttributeValue(doctoNode, 'EquivalenciaDR'), 'DoctoRelacionado.EquivalenciaDR', fileName) || 1,
+            numParcialidad: numParcialidadParsed > 0 ? numParcialidadParsed : 1,
+            impSaldoAnt: parseStrictCfdiNumber(getAttributeValue(doctoNode, 'ImpSaldoAnt'), 'DoctoRelacionado.ImpSaldoAnt', fileName),
+            impSaldoInsoluto: parseStrictCfdiNumber(getAttributeValue(doctoNode, 'ImpSaldoInsoluto'), 'DoctoRelacionado.ImpSaldoInsoluto', fileName)
           }
         })
       })
@@ -565,27 +887,31 @@ function parseInvoiceCandidate(
     hasResicoIsrRetention: hasExactResicoIsrRetention(doc),
     hasObjetoImpTaxMismatch: objetoImpTaxCheck.hasMismatch,
     objetoImpTaxMismatchReason: objetoImpTaxCheck.reason,
-    subtotal: toNumber(getAttributeValue(comprobante, 'SubTotal')),
-    totalImpuestosTrasladados: toNumber(getAttributeValue(impuestos, 'TotalImpuestosTrasladados')),
-    totalImpuestosRetenidos: toNumber(getAttributeValue(impuestos, 'TotalImpuestosRetenidos')),
-    descuento: toNumber(getAttributeValue(comprobante, 'Descuento')),
-    total: toNumber(getAttributeValue(comprobante, 'Total')),
+    subtotal: parseStrictCfdiNumber(getAttributeValue(comprobante, 'SubTotal'), 'Comprobante.SubTotal', fileName),
+    totalImpuestosTrasladados: parseStrictCfdiNumber(getAttributeValue(impuestos, 'TotalImpuestosTrasladados'), 'Impuestos.TotalImpuestosTrasladados', fileName),
+    totalImpuestosRetenidos: parseStrictCfdiNumber(getAttributeValue(impuestos, 'TotalImpuestosRetenidos'), 'Impuestos.TotalImpuestosRetenidos', fileName),
+    descuento: parseStrictCfdiNumber(getAttributeValue(comprobante, 'Descuento'), 'Comprobante.Descuento', fileName),
+    total: parseStrictCfdiNumber(getAttributeValue(comprobante, 'Total'), 'Comprobante.Total', fileName),
     moneda: normalizeText(getAttributeValue(comprobante, 'Moneda')) || 'MXN',
     satStatus
   }
 }
 
-export async function buildProviderReport(params: {
-  files: File[]
+export async function buildProviderReportFromXmlCandidates(params: {
+  candidates: ProviderXmlCandidateInput[]
   context: ProviderContext
   uploadedAt?: Date
 }) {
-  const { files, context } = params
+  const { context } = params
   const uploadedAt = params.uploadedAt || new Date()
-  const { candidates, errors } = await extractXmlCandidates(files)
+  const candidates: XmlCandidate[] = params.candidates.map(candidate => ({
+    name: candidate.name,
+    xml: candidate.xml
+  }))
+  const errors: string[] = []
 
   if (candidates.length === 0) {
-    throw new Error(errors[0] || 'No se encontraron CFDI válidos para procesar')
+    throw new Error('No se encontraron CFDI válidos para procesar')
   }
 
   if (candidates.length > MAX_PROVIDER_CFDI_UPLOAD) {
@@ -612,10 +938,11 @@ export async function buildProviderReport(params: {
       validationAnexo20 = pacValidation.successMessage || FACTRONICA_ANEXO20_OK_MESSAGE
       validationMessages.add(validationAnexo20)
 
-      const doc = new DOMParser().parseFromString(candidate.xml, 'text/xml')
-      if (doc.getElementsByTagName('parsererror').length > 0) {
-        throw new Error(`${candidate.name}: el archivo no contiene un XML válido`)
+      const xmlParseResult = safeParseProviderXml(candidate.xml, candidate.name)
+      if (!xmlParseResult.ok) {
+        throw new Error(xmlParseResult.error)
       }
+      const doc = xmlParseResult.doc
 
       const satValidation = await validateCfdiStatusWithSat({
         fileName: candidate.name,
@@ -662,7 +989,12 @@ export async function buildProviderReport(params: {
             hasObjetoImpTaxMismatch: parsed.hasObjetoImpTaxMismatch
           })
         ) {
-          throw new Error(fileError(candidate.name, buildObjetoImpTaxViolationMessage()))
+          throw new Error(
+            fileError(
+              candidate.name,
+              buildObjetoImpTaxViolationMessage(parsed.objetoImpTaxMismatchReason)
+            )
+          )
         }
 
         if (parsedInvoices.has(parsed.uuid)) {
@@ -869,6 +1201,36 @@ export async function buildProviderReport(params: {
       totalFiles: candidates.length,
       acceptedInvoices: rows.length,
       rejectedFiles: errors.length
+    }
+  }
+}
+
+export async function buildProviderReport(params: {
+  files: File[]
+  context: ProviderContext
+  uploadedAt?: Date
+}) {
+  const { files, context } = params
+  const uploadedAt = params.uploadedAt || new Date()
+  const { candidates, errors } = await extractXmlCandidates(files)
+
+  if (candidates.length === 0) {
+    throw new Error(errors[0] || 'No se encontraron CFDI válidos para procesar')
+  }
+
+  const report = await buildProviderReportFromXmlCandidates({
+    candidates,
+    context,
+    uploadedAt
+  })
+
+  return {
+    ...report,
+    errors: [...report.errors, ...errors],
+    summary: {
+      totalFiles: candidates.length,
+      acceptedInvoices: report.summary.acceptedInvoices,
+      rejectedFiles: report.errors.length + errors.length
     }
   }
 }

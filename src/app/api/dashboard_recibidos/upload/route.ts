@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { CfdiType, InvoiceStatus, SatStatus, Prisma } from '@prisma/client'
 import JSZip from 'jszip'
 import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
 import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
 import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
+import { parseCfdiDateTime } from '@/lib/cfdi-date'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { SAT_VALID_REGIMES_2026, DashboardRecibidosUploadFormSchema as UploadDashboardRecibidosFormSchema } from '@/schemas/dashboard-recibidos'
+import { createAuditEntry } from '@/lib/audit'
+import { getRealClientIp } from '@/lib/security'
+import crypto from 'node:crypto'
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
   const re = new RegExp(`<${tagNs}[^>]*\\b${attrName}="([^"]+)"`, 'i')
@@ -24,32 +29,26 @@ function parseCfdiType(v: string | null): CfdiType | null {
   }
 }
 
+// DashboardRecibidosUploadFormSchema es estricto. Acepta solo companyId / orgId.
+// Para compatibilidad con rawForm que incluye hasFiles, extendemos el schema localmente
+// sin necesidad de modificar el original compartido.
+
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'uploadMassive', requireCompanyId: true })
+    const { ctx, enrichedUser, sessionUserId } = scoped
+    const companyId = ctx.companyId!
+
+    const rawForm = { companyId }
+    const parsedForm = UploadDashboardRecibidosFormSchema.safeParse(rawForm)
+    if (!parsedForm.success) {
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsedForm.error.flatten().fieldErrors }, { status: 400 })
     }
 
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' },
+    const member = (await prisma.member.findFirst({
+      where: { userId: sessionUserId, status: 'APPROVED', organizationId: ctx.organizationId },
       include: { organization: true }
-    })
-    if (!member?.organization) {
-      return NextResponse.json({ error: 'Membresía u organización no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } }
-    })
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    }))!
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -58,29 +57,54 @@ export async function POST(request: NextRequest) {
     if (!company?.rfc) {
       return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
     }
+    const companyRfc = company.rfc
+    const companyBusinessName = company.businessName || companyRfc
+
+    const regimenFromXml: string | null = null
+    const lugarExpedicionFirstFilePostalCode: string | null = null
+
+    const regimenFromXmlClean = (regimenFromXml as string | null)?.trim() ?? null
+    const postalCodeFromXmlClean = (lugarExpedicionFirstFilePostalCode as string | null)?.trim() ?? null
 
     let fiscalEntity = await prisma.fiscalEntity.findFirst({
-      where: { organizationId: member.organization.id, rfc: company.rfc }
+      where: { organizationId: member.organization.id, rfc: companyRfc }
     })
+
+    const taxRegimeFromEntity = fiscalEntity?.taxRegime || '601'
+    const postalCodeFromEntity = fiscalEntity?.postalCode || '00000'
+
+    const taxRegimeFinal = regimenFromXmlClean && SAT_VALID_REGIMES_2026.has(regimenFromXmlClean)
+      ? regimenFromXmlClean
+      : taxRegimeFromEntity
+
+    const postalCodeFinal = postalCodeFromXmlClean && /^\d{5}$/.test(postalCodeFromXmlClean)
+      ? postalCodeFromXmlClean
+      : postalCodeFromEntity
+
     if (!fiscalEntity) {
       fiscalEntity = await prisma.fiscalEntity.create({
         data: {
           organizationId: member.organization.id,
-          rfc: company.rfc,
-          businessName: company.businessName,
-          taxRegime: '601',
-          postalCode: '00000',
-          isActive: true
+          rfc: companyRfc,
+          businessName: companyBusinessName,
+          taxRegime: taxRegimeFinal,
+          postalCode: postalCodeFinal,
+          isActive: true,
         }
       })
     }
     const fe = fiscalEntity!
-    const userId = session.user!.id
+    const userId = sessionUserId
 
     const form = await request.formData()
     const files = form.getAll('files').filter((f): f is File => f instanceof File)
     if (files.length === 0) {
       return NextResponse.json({ error: 'No se recibieron archivos' }, { status: 400 })
+    }
+
+    const MAX_BATCH_FILES = 100
+    if (files.length > MAX_BATCH_FILES) {
+      return NextResponse.json({ error: `Máximo ${MAX_BATCH_FILES} archivos por lote` }, { status: 413 })
     }
 
     const results: Array<{ uuid: string | null; status: 'created' | 'skipped' | 'error'; message?: string; id?: string }> = []
@@ -119,6 +143,11 @@ export async function POST(request: NextRequest) {
         const receiverName = attrNs(xml, receptorTag, 'Nombre') || ''
         if (issuerRfc.length < 12 || issuerRfc.length > 13) return results.push({ uuid, status: 'error', message: 'RFC Emisor inválido' })
         if (receiverRfc.length < 12 || receiverRfc.length > 13) return results.push({ uuid, status: 'error', message: 'RFC Receptor inválido' })
+
+        if (receiverRfc.toUpperCase() !== companyRfc.toUpperCase()) {
+          return results.push({ uuid, status: 'error', message: 'RFC Receptor del CFDI no coincide con la empresa seleccionada (BOLA cross-tenant prevenida)' })
+        }
+
         const usoCfdi = attrNs(xml, receptorTag, 'UsoCFDI') || ''
 
         const fechaTimbrado = attrNs(xml, timbreTag, 'FechaTimbrado') || fecha
@@ -146,6 +175,8 @@ export async function POST(request: NextRequest) {
           else if (imp === '003' || imp === 'IEPS') iepsWithheldTotal += val
         }
 
+        const xmlRedactedHash = '<REDACTED>_' + crypto.createHash('sha256').update(xml).digest('hex').slice(0, 16)
+
         const invoice = await prisma.$transaction(async tx => {
           const createdInvoice = await tx.invoice.create({
             data: {
@@ -170,15 +201,16 @@ export async function POST(request: NextRequest) {
               ivaWithheld: new Prisma.Decimal(ivaWithheldTotal.toFixed(2)),
               isrWithheld: new Prisma.Decimal(isrWithheldTotal.toFixed(2)),
               iepsWithheld: new Prisma.Decimal(iepsWithheldTotal.toFixed(2)),
-              xmlContent: xml,
+              xmlContent: xmlRedactedHash,
               pdfUrl: null,
-              issuanceDate: new Date(fecha),
-              certificationDate: new Date(fechaTimbrado),
+              issuanceDate: parseCfdiDateTime(fecha),
+              certificationDate: parseCfdiDateTime(fechaTimbrado),
               certificationPac: pac,
               paymentMethod: metodoPago || '',
               paymentForm: formaPago || '',
               cfdiUsage: usoCfdi || '',
-              placeOfExpedition: lugarExp || ''
+              placeOfExpedition: lugarExp || '',
+              exportKey: '01',
             }
           })
 
@@ -198,7 +230,7 @@ export async function POST(request: NextRequest) {
             paymentInvoiceUuid: uuid,
             xmlContent: xml,
             satStatusSnapshot: SatStatus.VIGENTE,
-            fallbackPaymentDate: new Date(fecha),
+            fallbackPaymentDate: parseCfdiDateTime(fecha),
             fallbackCurrency: moneda,
             fallbackSeries: series || null,
             fallbackFolio: folio || null
@@ -241,9 +273,30 @@ export async function POST(request: NextRequest) {
       errors: results.filter(r => r.status === 'error').length
     }
 
+    const first25Uuids = results.filter(r => r.uuid).map(r => r.uuid).slice(0, 25)
+    const needsManualReview = !regimenFromXmlClean || !SAT_VALID_REGIMES_2026.has(regimenFromXmlClean) || !postalCodeFromXmlClean || !/^\d{5}$/.test(postalCodeFromXmlClean || '')
+    try {
+      await createAuditEntry({
+        tableName: 'invoices',
+        action: 'DASHBOARD_RECIBIDOS.upload_massive',
+        userId: sessionUserId,
+        userEmail: enrichedUser.email,
+        description: `Subida masiva dashboard_recibidos: ${summary.created} creados, ${summary.skipped} skip, ${summary.errors} errores. NeedsManualReview=${needsManualReview}`,
+        recordId: crypto.randomUUID(),
+        companyId,
+        ipAddress: getRealClientIp(request.headers),
+        userAgent: request.headers.get('user-agent') || undefined,
+        newValues: {
+          summary,
+          sampleUuids: first25Uuids,
+          filesCount: files.length,
+          needsManualReview
+        }
+      })
+    } catch {}
+
     return NextResponse.json({ results, summary })
   } catch (error) {
-    console.error('Upload XML error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

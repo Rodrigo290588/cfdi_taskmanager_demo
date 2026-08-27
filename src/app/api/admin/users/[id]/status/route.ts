@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { rateLimitByUserId, RateLimitError } from '@/lib/rate-limit'
 
 export async function PATCH(
   request: NextRequest,
@@ -8,10 +9,18 @@ export async function PATCH(
 ) {
   try {
     const session = await auth()
-    
+
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    // [SAST-FIX #9] Rate limit: 30 cambios de status por minuto por admin.
+    rateLimitByUserId({
+      userId: session.user.id,
+      key: 'admin-status-patch',
+      limit: 30,
+      windowMs: 60_000
+    })
 
     const { id: membershipId } = await context.params
     const body = await request.json()
@@ -68,6 +77,16 @@ export async function PATCH(
     return NextResponse.json({ success: true, message: 'Estado actualizado correctamente' })
 
   } catch (error) {
+    if (error instanceof RateLimitError) {
+      const retrySec = Math.max(1, Math.ceil(error.retryAfterMs / 1000))
+      return NextResponse.json(
+        { error: error.message },
+        {
+          status: error.statusCode,
+          headers: { 'Retry-After': String(retrySec) }
+        }
+      )
+    }
     console.error('Update user status error:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },

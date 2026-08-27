@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { listAgingBalanceDrilldown } from '@/lib/provider-payment-balance-period-summary'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { DashboardRecibidosDrilldownQuerySchema } from '@/schemas/dashboard-recibidos'
 
 function parseDateFilter(value: string | null, bound: 'start' | 'end') {
   if (!value) return null
@@ -29,30 +30,25 @@ function canAccessReception(access: {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'drilldownAgg', requireCompanyId: true })
+    const { ctx, sessionUserId } = scoped
+    const companyId = ctx.companyId!
+
+    const rawQuery = Object.fromEntries(scoped.searchParams.entries())
+    const parsed = DashboardRecibidosDrilldownQuerySchema.safeParse({ ...rawQuery, companyId })
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400 })
     }
+    const q = parsed.data
+    const startDate = parseDateFilter(q.startDate, 'start')
+    const endDate = parseDateFilter(q.endDate, 'end')
 
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
-    const startDate = parseDateFilter(searchParams.get('startDate'), 'start')
-    const endDate = parseDateFilter(searchParams.get('endDate'), 'end')
+    const member = (await prisma.member.findFirst({
+      where: { userId: sessionUserId, status: 'APPROVED', organizationId: ctx.organizationId }
+    }))!
 
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
-    }
-
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' }
-    })
-
-    if (!member) {
-      return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } },
+    const access = (await prisma.companyAccess.findUnique({
+      where: { memberId_companyId: { memberId: ctx.memberId, companyId } },
       include: {
         customRole: {
           select: {
@@ -61,11 +57,7 @@ export async function GET(request: NextRequest) {
           }
         }
       }
-    })
-
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    }))!
 
     if (!canAccessReception(access)) {
       return NextResponse.json({ error: 'Sin permiso para consultar CFDI recibidos' }, { status: 403 })
@@ -96,7 +88,6 @@ export async function GET(request: NextRequest) {
       data: rows
     })
   } catch (error) {
-    console.error('Dashboard recibidos antiguedad de saldos drilldown API error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

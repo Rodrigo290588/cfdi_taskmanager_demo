@@ -4,6 +4,8 @@ import { decryptXmlContent } from '@/lib/provider-cfdi-storage'
 import { prisma } from '@/lib/prisma'
 
 type ProviderTaxXmlSourceRecord = {
+  id: string
+  provider_rfc: string
   uuid: string
   file_name: string
   issuer_rfc: string
@@ -18,6 +20,7 @@ type ProviderTaxXmlSourceRecord = {
   xml_iv: string
   xml_auth_tag: string
   xml_encryption_alg: string
+  xml_key_version: string | null
 }
 
 export type IvaAccreditableBreakdownEntry = {
@@ -70,8 +73,17 @@ function normalizeXmlText(value: string | null | undefined) {
   return (value || '').trim()
 }
 
-function toNumber(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
+function toNumber(value: unknown, fieldRef: string = 'tax_period_field') {
+  const raw = String(value ?? '').trim()
+  if (!raw) return 0
+  if (raw.length > 25) {
+    throw new Error(`[PROV-TAX-DECIMAL] Longitud excedida (${raw.length}/25) en ${fieldRef}`)
+  }
+  const normalized = raw.replace(/,/g, '')
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    return 0
+  }
+  const parsed = Number(normalized)
   return Number.isFinite(parsed) ? parsed : 0
 }
 
@@ -241,6 +253,8 @@ async function queryProviderTaxXmlRecords(params: {
   return prisma.$queryRaw<ProviderTaxXmlSourceRecord[]>(
     Prisma.sql`
       SELECT
+        p.id,
+        p.provider_rfc,
         p.uuid,
         p.file_name,
         p.issuer_rfc,
@@ -254,7 +268,8 @@ async function queryProviderTaxXmlRecords(params: {
         b.xml_ciphertext,
         b.xml_iv,
         b.xml_auth_tag,
-        b.xml_encryption_alg
+        b.xml_encryption_alg,
+        b.xml_key_version
       FROM provider_uploaded_cfdis p
       INNER JOIN provider_uploaded_cfdi_blobs b
         ON b.provider_uploaded_cfdi_id = p.id
@@ -283,7 +298,13 @@ async function buildProviderTaxPeriodDetails(params: {
       ciphertext: record.xml_ciphertext,
       iv: record.xml_iv,
       authTag: record.xml_auth_tag,
-      algorithm: record.xml_encryption_alg
+      algorithm: record.xml_encryption_alg,
+      keyVersion: record.xml_key_version || undefined,
+      aadBindParams: {
+        organizationId: params.organizationId,
+        providerRfc: record.provider_rfc,
+        storageId: record.id
+      }
     })
 
     const baseRow = buildBaseRow(record)

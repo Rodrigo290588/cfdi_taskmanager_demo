@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { MASS_DOWNLOAD_QUEUE_NAME } from '@/lib/queue'
+import { MASS_DOWNLOAD_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
 import { downloadMassPackages } from '@/lib/sat-service'
 import { extractAndProcessMetadataZip } from '@/services/metadata-parser.service'
 import fs from 'fs'
@@ -65,10 +65,7 @@ export function setupDownloadWorker() {
       throw error
     }
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    connection: resolveRedisConnection(),
     concurrency: 5 // Limitar concurrencia
   })
 

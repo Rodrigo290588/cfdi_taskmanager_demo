@@ -48,17 +48,6 @@ const formatDate = (date: string | Date) => {
   }
 }
 
-const getCurrentMonthRange = () => {
-  const now = new Date()
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-
-  return {
-    dateFrom: firstDay.toISOString().split('T')[0],
-    dateTo: lastDay.toISOString().split('T')[0]
-  }
-}
-
 const readSelectedCompanyFromStorage = (): SelectedCompany | null => {
   try {
     const stored = localStorage.getItem('selectedCompany')
@@ -104,6 +93,11 @@ type PartialIncomeInvoice = {
 }
 
 type KPIs = {
+  ingresosPendientesCobro: number
+  ingresosCobradosCrp: number
+  ingresosCobradosTotal: number
+  montoPorCobrarBruto: number
+  sumNotasCreditoAplicadas: number
   totalSaldoInsolutoMXN: number
   totalPorCobrarMXN: number
   count: number
@@ -129,11 +123,10 @@ const formatCurrency = (value: number, currency: string = 'MXN') => {
 }
 
 export default function PartialIncomePage() {
-  const monthRange = getCurrentMonthRange()
   const [hasHydrated, setHasHydrated] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>(monthRange.dateFrom)
-  const [dateTo, setDateTo] = useState<string>(monthRange.dateTo)
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
   
   const [paymentDateFrom, setPaymentDateFrom] = useState<string>('')
   const [paymentDateTo, setPaymentDateTo] = useState<string>('')
@@ -172,7 +165,8 @@ export default function PartialIncomePage() {
   }, [])
 
   const fetchData = useCallback(async () => {
-    if (!hasHydrated || !selectedCompany?.rfc || !dateFrom || !dateTo) return
+    if (!hasHydrated || !selectedCompany?.rfc) return
+    if (!dateFrom || !dateTo) return
 
     setLoading(true)
     try {
@@ -199,8 +193,31 @@ export default function PartialIncomePage() {
     }
   }, [hasHydrated, selectedCompany, dateFrom, dateTo, paymentDateFrom, paymentDateTo, incomeCurrency, paymentCurrency])
 
+  const handleClearFilters = () => {
+    setDateFrom('')
+    setDateTo('')
+    setPaymentDateFrom('')
+    setPaymentDateTo('')
+    setIncomeCurrency('ALL')
+    setPaymentCurrency('ALL')
+    setEscenarioCobro([])
+    setData([])
+    setKpis(null)
+  }
+
+  const hasAnyFilter = Boolean(
+    dateFrom || dateTo || paymentDateFrom || paymentDateTo ||
+    (incomeCurrency && incomeCurrency !== 'ALL') ||
+    (paymentCurrency && paymentCurrency !== 'ALL') ||
+    escenarioCobro.length > 0
+  )
+
   useEffect(() => {
     if (!hasHydrated) {
+      return
+    }
+
+    if (!dateFrom || !dateTo) {
       return
     }
 
@@ -209,7 +226,7 @@ export default function PartialIncomePage() {
     }, 0)
 
     return () => clearTimeout(timeoutId)
-  }, [fetchData, hasHydrated])
+  }, [fetchData, hasHydrated, dateFrom, dateTo])
 
   const toggleRow = (uuid: string) => {
     setExpandedRows(prev => ({
@@ -219,6 +236,7 @@ export default function PartialIncomePage() {
   }
 
   const filteredData = React.useMemo(() => {
+    if (!dateFrom || !dateTo) return []
     return data.filter(invoice => {
       if (escenarioCobro.length > 0) {
         const isNoCobrada = invoice.totalPaid <= 0.01;
@@ -252,7 +270,7 @@ export default function PartialIncomePage() {
       if (columnFilters.estatus && !estatus.includes(columnFilters.estatus.toLowerCase())) return false
       return true
     })
-  }, [data, columnFilters, escenarioCobro])
+  }, [data, columnFilters, escenarioCobro, dateFrom, dateTo])
 
   const handleDownloadZip = async (invoice: PartialIncomeInvoice) => {
     try {
@@ -458,7 +476,7 @@ export default function PartialIncomePage() {
             </p>
           </div>
           
-          <Button onClick={fetchData} disabled={loading} size="sm">
+          <Button onClick={fetchData} disabled={loading || !dateFrom || !dateTo} size="sm">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Actualizar'}
           </Button>
         </div>
@@ -594,37 +612,118 @@ export default function PartialIncomePage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          <div className="space-y-2 md:col-span-5 lg:col-span-5">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Button
+                onClick={fetchData}
+                disabled={loading || !dateFrom || !dateTo}
+                size="sm"
+                className="h-8 rounded-full"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                Aplicar filtros
+              </Button>
+              <Button
+                onClick={handleClearFilters}
+                disabled={loading || (!hasAnyFilter && data.length === 0)}
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-full"
+              >
+                Limpiar
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {dateFrom && dateTo
+                  ? `Consulta válida: ${dateFrom} a ${dateTo}`
+                  : 'Selecciona un rango de Fecha Emisión para consultar'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs homologados con dashboard fiscal */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Saldo por cobrar (MXN)</CardTitle>
+            <CardTitle className="text-sm font-medium">Ingresos Pendientes de Cobro</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-500">
-              {kpis ? formatCurrency(kpis.totalSaldoInsolutoMXN) : '$0.00'}
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-red-500 text-right tabular-nums">
+                {kpis ? formatCurrency(kpis.ingresosPendientesCobro) : '$0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                PPD - CRP - Notas de Crédito
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Suma de saldos pendientes convertidos a MXN
-            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total por Cobrar (Bruto)</CardTitle>
+            <CardTitle className="text-sm font-medium">Ingresos Cobrados (CRP)</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {kpis ? formatCurrency(kpis.totalPorCobrarMXN) : '$0.00'}
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-emerald-600 text-right tabular-nums">
+                {kpis ? formatCurrency(kpis.ingresosCobradosCrp) : '$0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                Pagos reportados en complementos de pago relacionados
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Valor total de facturas no liquidadas
-            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Notas de Crédito Aplicadas</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-orange-600 text-right tabular-nums">
+                {kpis ? formatCurrency(kpis.sumNotasCreditoAplicadas) : '$0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                EGRESO relacionados con facturas PPD del periodo
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Monto por Cobrar (Bruto)</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-right tabular-nums">
+                {kpis ? formatCurrency(kpis.montoPorCobrarBruto) : '$0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                Total de facturas PPD no liquidadas (mismo concepto que dashboard)
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Facturas PPD del periodo</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-right tabular-nums">{kpis?.count || 0}</div>
+              <p className="text-xs text-muted-foreground text-right">
+                Base de cálculo del reporte
+              </p>
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -633,10 +732,12 @@ export default function PartialIncomePage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{kpis?.countPending || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              De un total de {kpis?.count || 0} facturas PPD
-            </p>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-right tabular-nums">{kpis?.countPending || 0}</div>
+              <p className="text-xs text-muted-foreground text-right">
+                Con saldo mayor a cero después de pagos y notas
+              </p>
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -645,10 +746,28 @@ export default function PartialIncomePage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{kpis?.countPaid || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Pagadas al 100%
-            </p>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-green-600 text-right tabular-nums">{kpis?.countPaid || 0}</div>
+              <p className="text-xs text-muted-foreground text-right">
+                Saldo pendiente cero después de pagos y notas
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Saldo por cobrar (ref. MXN)</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-end text-right">
+              <div className="text-2xl font-bold text-rose-600 text-right tabular-nums">
+                {kpis ? formatCurrency(kpis.totalSaldoInsolutoMXN) : '$0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                Referencia en MXN usando exchangeRate por factura
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -661,6 +780,7 @@ export default function PartialIncomePage() {
             variant="default" 
             size="sm"
             onClick={handleExportExcel}
+            disabled={loading || filteredData.length === 0}
             className="shadow-md hover:shadow-lg rounded-full px-6"
           >
             Descargar Reporte

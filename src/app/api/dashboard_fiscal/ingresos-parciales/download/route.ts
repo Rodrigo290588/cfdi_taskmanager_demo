@@ -1,63 +1,121 @@
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import {
+  buildDashboardScopedContext,
+  dashboardJsonErrorResponse,
+  sanitizeDownloadFilename,
+  buildRfc5987ContentDisposition
+} from '@/lib/dashboard-fiscal-route-utils'
 import JSZip from 'jszip'
 import { DOMParser } from '@xmldom/xmldom'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+// @xmldom/xmldom Options shape en su type publico expone únicamente { locator / errorHandler.
+// Runtime sí acepta opciones legacy (disableEntities / xmlMode / etc.), así que las casteamos
+// para preservar la defensa XXE:
+const _SAFE_DOM_PARSER_OPTS = {
+  disableEntities: true,
+  xmlMode: true,
+  errorHandler: {
+    warning() {},
+    error() {},
+    fatalError() {},
+  },
+} as unknown as ConstructorParameters<typeof DOMParser>[0]
+function makeSafeDomParser() { return new DOMParser(_SAFE_DOM_PARSER_OPTS) as DOMParser }
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(req.url)
+    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(req, { routeKey: 'partialDownload', requireCompanyId: true })
+    void _sr
     const uuid = searchParams.get('uuid')
 
     if (!uuid) {
-      return NextResponse.json({ error: 'UUID requerido' }, { status: 400 })
+      return NextResponse.json({ error: 'UUID requerido' }, { status: 400, headers: SECURITY_HEADERS })
     }
 
-    // 1. Fetch PPD Invoice
-    const invoice = await prisma.invoice.findUnique({
-      where: { uuid },
+    // Scope helper: resolviendo FiscalEntity para evitar usos de issuerFiscalEntity relation
+    // en el where de Prisma Invoice (esa columna NO existe en el esquema; la FK correcta es
+    // issuerFiscalEntityId).
+    const companyId = searchParams.get('companyId')
+    const feWhere = ctx.fiscalEntityId
+      ? { feId: ctx.fiscalEntityId }
+      : (() => {
+          throw new Error('No se pudo resolver el contexto de entidad fiscal')
+        })()
+    void companyId
+
+    // 1. Fetch PPD Invoice — scope estricto por organización (DASHBOARD-003 · BOLA cross-tenant bypass)
+    //    Si no pertenece a esta org, se devuelve 404 idéntico al caso no-existe (no enumeración).
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        uuid,
+        issuerFiscalEntityId: feWhere.feId,
+      },
       select: {
         uuid: true,
         series: true,
         folio: true,
         xmlContent: true,
+        issuerFiscalEntityId: true,
       }
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
+      return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404, headers: SECURITY_HEADERS })
     }
 
-    // 2. Fetch Related Payments
-    const relatedCfdis = await prisma.invoiceRelatedCfdi.findMany({
+    // 2. Fetch Related Payments — mismo scope org + invoice CFDI PAGO vigente
+    //    NOTA: Para mantener BOLA defense scope organizationId se usa el campo
+    //    issuerFiscalEntityId sobre la invoice target, comparándolo contra los
+    //    issuerFiscalEntityId permitidos del contexto organizacional. Como fallback
+    //    seguro cruzamos la invoice real contra feWhere posteriormente.
+    const relatedCfdisRaw = await prisma.invoiceRelatedCfdi.findMany({
       where: {
         relatedUuid: uuid,
-        invoice: {
-          cfdiType: 'PAGO',
-          satStatus: 'VIGENTE'
-        }
       },
-      include: {
-        invoice: {
+      select: {
+        id: true,
+        createdAt: true,
+        invoiceId: true,
+        relationType: true,
+        relatedUuid: true,
+      },
+    })
+    const relatedCfdis = await Promise.all(
+      relatedCfdisRaw.map(async rel => {
+        const paymentInvoice = await prisma.invoice.findFirst({
+          where: {
+            id: rel.invoiceId,
+            cfdiType: 'PAGO',
+            satStatus: 'VIGENTE',
+            issuerFiscalEntityId: feWhere.feId,
+          },
           select: {
             uuid: true,
             series: true,
             folio: true,
-            xmlContent: true
-          }
-        }
-      }
-    })
+            xmlContent: true,
+          },
+        })
+        return {
+          ...rel,
+          invoice: paymentInvoice,
+        } as typeof rel & { invoice: typeof paymentInvoice }
+      })
+    ).then(list =>
+      list.filter(row => row.invoice) as unknown as Array<(typeof relatedCfdisRaw)[number] & {
+        invoice: { uuid: string; series: string | null; folio: string | null; xmlContent: string | null }
+      }>
+    )
 
     // 3. Create ZIP
     const zip = new JSZip()
-    const parser = new DOMParser()
+    const parser = makeSafeDomParser()
 
     // Add Invoice XML
     // Nomenclature: UUID + Serie + Folio + Ingreso.xml
@@ -109,17 +167,20 @@ export async function GET(req: NextRequest) {
 
     const content = await zip.generateAsync({ type: 'uint8array' })
     
+    const unsafeZipName = `factura_${invoice.folio || 'docs'}`
+    const sanitizedZipName = sanitizeDownloadFilename(unsafeZipName, 'descarga_ppd', '.zip')
+    const contentDisposition = buildRfc5987ContentDisposition(sanitizedZipName, 'attachment')
+
     // Convert to Blob to satisfy BodyInit type
     // Next.js response works better with array buffer
     return new NextResponse(Buffer.from(content), {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="factura_${invoice.folio || 'docs'}.zip"`
+        'Content-Disposition': contentDisposition
       }
     })
 
   } catch (error) {
-    console.error('Error generating ZIP:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

@@ -1,10 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { updateTenantProgress } from '@/lib/tenant'
-import { prisma } from '@/lib/prisma'
+import { Prisma, SystemRole } from '@prisma/client'
+import type { Prisma as PrismaType } from '@prisma/client'
+import { updateTenantProgress, getPrimaryApprovedMembership, __tenantGetIpFromNextRequest } from '@/lib/tenant'
 import { auth } from '@/lib/auth'
 import { z } from 'zod'
+import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
+import { rateLimitByUserId, rateLimitByClientId, RateLimitError } from '@/lib/rate-limit'
+import { enrichUserWithMemberships, hasPermission, Permission } from '@/lib/permissions'
+import { encrypt, decrypt } from '@/lib/encryption'
 
-// Validation schema for tenant details
+const ENC_PREFIX = '__enc_v1__:'
+
+type TenantSmtpSettings = {
+  host?: unknown
+  port?: unknown
+  secure?: unknown
+  user?: unknown
+  pass?: unknown
+  fromEmail?: unknown
+  timeoutMs?: unknown
+  ehloDomain?: unknown
+}
+
+type TenantSystemSettingsShape = {
+  theme?: unknown
+  smtp?: TenantSmtpSettings
+} & Record<string, unknown>
+
+function __coerceToPrismaJson(value: unknown): PrismaType.InputJsonValue | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return Prisma.JsonNull as unknown as PrismaType.InputJsonValue
+  return value as PrismaType.InputJsonValue
+}
+
+function mergeSatResponseHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    ...SAT_SECURITY_HEADERS,
+    'Cache-Control': 'private, no-store, no-cache',
+    ...(extra ?? {})
+  }
+}
+
 const systemSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).optional(),
   smtp: z.object({
@@ -71,133 +107,235 @@ const tenantDetailsSchema = z.object({
 
 export type TenantDetailsInput = z.infer<typeof tenantDetailsSchema>
 
-// GET /api/tenant - Get current user's tenant
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth()
-    
+
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json(
+        { error: 'No autorizado' },
+        { status: 401, headers: mergeSatResponseHeaders() }
+      )
     }
 
-    // Find the user's organization (tenant)
-    const member = await prisma.member.findFirst({
-      where: { 
-        userId: session.user.id,
-        status: 'APPROVED'
-      },
-      include: {
-        organization: true
+    const ip = __tenantGetIpFromNextRequest(request)
+    try {
+      rateLimitByClientId({ clientId: ip, key: 'tenant:get:ip', limit: 60, windowMs: 60_000 })
+      rateLimitByUserId({ userId: session.user.id, key: 'tenant:get:user', limit: 120, windowMs: 60_000 })
+    } catch (rl) {
+      if (rl instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: rl.message },
+          {
+            status: 429,
+            headers: mergeSatResponseHeaders({
+              'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000))
+            })
+          }
+        )
       }
-    })
-
-    if (!member?.organization) {
-      return NextResponse.json({ error: 'No se encontró el tenant' }, { status: 404 })
+      throw rl
     }
 
-    return NextResponse.json({
-      success: true,
-      tenant: member.organization
+    const membership = await getPrimaryApprovedMembership(session.user.id)
+    if (!membership?.organization) {
+      return NextResponse.json(
+        { error: 'No se encontró el tenant' },
+        { status: 404, headers: mergeSatResponseHeaders() }
+      )
+    }
+    const org = membership.organization
+    if (org.isActive === false) {
+      return NextResponse.json(
+        { error: 'Tenant inactivo' },
+        { status: 403, headers: mergeSatResponseHeaders() }
+      )
+    }
+
+    const enrichedUser = await enrichUserWithMemberships({
+      id: session.user.id,
+      systemRole: ((session.user as { systemRole?: string }).systemRole as SystemRole) || SystemRole.USER
     })
+    if (!hasPermission(enrichedUser, Permission.TENANT_VIEW, org.id)) {
+      return NextResponse.json(
+        { error: 'No tienes permisos para ver esta información' },
+        { status: 403, headers: mergeSatResponseHeaders() }
+      )
+    }
+
+    const tenant = { ...org } as Record<string, unknown>
+    const sysGet = tenant.systemSettings as TenantSystemSettingsShape | null | undefined
+    if (sysGet && typeof sysGet === 'object' && sysGet.smtp && typeof sysGet.smtp === 'object' && sysGet.smtp.pass && typeof sysGet.smtp.pass === 'string') {
+      const raw = sysGet.smtp.pass
+      if (raw.startsWith(ENC_PREFIX)) {
+        if (hasPermission(enrichedUser, Permission.TENANT_MANAGE, org.id)) {
+          try {
+            sysGet.smtp = {
+              ...sysGet.smtp,
+              pass: decrypt(raw.slice(ENC_PREFIX.length))
+            }
+          } catch {
+            sysGet.smtp = { ...sysGet.smtp, pass: null }
+          }
+        } else {
+          sysGet.smtp = { ...sysGet.smtp, pass: null }
+        }
+      }
+      tenant.systemSettings = sysGet
+    }
+
+    return NextResponse.json(
+      { success: true, tenant },
+      { headers: mergeSatResponseHeaders() }
+    )
 
   } catch (error) {
-    console.error('Error getting tenant:', error)
+    const summary = safeErrSummarySat(error)
     return NextResponse.json(
-      { error: 'Error interno del servidor' },
-      { status: 500 }
+      {
+        error: 'Error interno del servidor',
+        incidentFingerprint: summary.incidentFingerprint
+      },
+      { status: 500, headers: mergeSatResponseHeaders() }
     )
   }
 }
 
-// POST /api/tenant - Create or update tenant details
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
-    
+
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    
-    // Validate input data
-    const validatedData = tenantDetailsSchema.parse(body)
-
-    // Find the user's organization
-    const member = await prisma.member.findFirst({
-      where: { 
-        userId: session.user.id,
-        status: 'APPROVED'
-      },
-      include: {
-        organization: true
-      }
-    })
-
-    if (!member?.organization) {
-      return NextResponse.json({ error: 'No se encontró el tenant' }, { status: 404 })
-    }
-
-    // Check if user is the owner or has admin permissions
-    const isOwner = member.organization.ownerId === session.user.id
-    const isAdmin = member.role === 'ADMIN'
-    
-    if (!isOwner && !isAdmin) {
       return NextResponse.json(
-        { error: 'No tienes permisos para modificar esta información' },
-        { status: 403 }
+        { error: 'No autorizado' },
+        { status: 401, headers: mergeSatResponseHeaders() }
       )
     }
 
-    // Update organization with tenant details
-    const updatedTenant = await prisma.organization.update({
-      where: { id: member.organization.id },
-      data: {
-        name: validatedData.name,
-        description: validatedData.description,
-        address: validatedData.address,
-        city: validatedData.city,
-        state: validatedData.state,
-        postalCode: validatedData.postalCode,
-        country: validatedData.country,
-        phone: validatedData.phone,
-        contactEmail: validatedData.contactEmail,
-        businessDescription: validatedData.businessDescription,
-        website: validatedData.website,
-        industry: validatedData.industry,
-        companySize: validatedData.companySize,
-        foundedYear: validatedData.foundedYear,
-        taxId: validatedData.taxId,
-        businessType: validatedData.businessType,
-        operationalAccessEnabled: validatedData.operationalAccessEnabled ?? undefined,
-        systemSettings: validatedData.systemSettings ?? undefined
+    const ip = __tenantGetIpFromNextRequest(request)
+
+    const membership = await getPrimaryApprovedMembership(session.user.id)
+    if (!membership?.organization) {
+      return NextResponse.json(
+        { error: 'No se encontró el tenant' },
+        { status: 404, headers: mergeSatResponseHeaders() }
+      )
+    }
+    const org = membership.organization
+    if (org.isActive === false) {
+      return NextResponse.json(
+        { error: 'Tenant inactivo' },
+        { status: 403, headers: mergeSatResponseHeaders() }
+      )
+    }
+
+    try {
+      rateLimitByClientId({ clientId: ip, key: 'tenant:post:ip', limit: 40, windowMs: 60_000 })
+      rateLimitByUserId({ userId: session.user.id, key: 'tenant:post:user', limit: 10, windowMs: 60_000 })
+      rateLimitByUserId({ userId: `orgday:${org.id}`, key: 'tenant:post:orgday', limit: 1000, windowMs: 24 * 60 * 60 * 1000 })
+    } catch (rl) {
+      if (rl instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: rl.message },
+          {
+            status: 429,
+            headers: mergeSatResponseHeaders({
+              'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000))
+            })
+          }
+        )
       }
+      throw rl
+    }
+
+    const enrichedUser = await enrichUserWithMemberships({
+      id: session.user.id,
+      systemRole: ((session.user as { systemRole?: string }).systemRole as SystemRole) || SystemRole.USER
+    })
+    if (!hasPermission(enrichedUser, Permission.TENANT_MANAGE, org.id)) {
+      return NextResponse.json(
+        { error: 'No tienes permisos para modificar esta información' },
+        { status: 403, headers: mergeSatResponseHeaders() }
+      )
+    }
+
+    const body = await request.json()
+    const parsed = tenantDetailsSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Datos inválidos', details: parsed.error.issues },
+        { status: 400, headers: mergeSatResponseHeaders() }
+      )
+    }
+    const validatedData = parsed.data
+
+    const updateData = {
+      name: validatedData.name,
+      description: validatedData.description,
+      address: validatedData.address,
+      city: validatedData.city,
+      state: validatedData.state,
+      postalCode: validatedData.postalCode,
+      country: validatedData.country,
+      phone: validatedData.phone,
+      contactEmail: validatedData.contactEmail,
+      businessDescription: validatedData.businessDescription,
+      website: validatedData.website,
+      industry: validatedData.industry,
+      companySize: validatedData.companySize,
+      foundedYear: validatedData.foundedYear,
+      taxId: validatedData.taxId,
+      businessType: validatedData.businessType,
+      operationalAccessEnabled: validatedData.operationalAccessEnabled ?? undefined,
+    } as unknown as Prisma.OrganizationUpdateInput
+
+    if (validatedData.systemSettings) {
+      const sys = { ...validatedData.systemSettings } as TenantSystemSettingsShape
+      if (sys.smtp && typeof sys.smtp === 'object' && sys.smtp.pass && typeof sys.smtp.pass === 'string') {
+        const passRaw = sys.smtp.pass
+        if (!passRaw.startsWith(ENC_PREFIX)) {
+          sys.smtp = {
+            ...sys.smtp,
+            pass: `${ENC_PREFIX}${encrypt(passRaw)}`
+          }
+        }
+      }
+      updateData.systemSettings = __coerceToPrismaJson(sys)
+    } else {
+      updateData.systemSettings = undefined
+    }
+
+    const { prisma } = await import('@/lib/prisma')
+    const updatedTenant = await prisma.organization.update({
+      where: { id: org.id },
+      data: updateData
     })
 
     await updateTenantProgress(updatedTenant.id)
 
-    return NextResponse.json({
-      success: true,
-      tenant: updatedTenant,
-      message: 'Información del tenant actualizada exitosamente'
-    })
+    return NextResponse.json(
+      {
+        success: true,
+        tenant: updatedTenant,
+        message: 'Información del tenant actualizada exitosamente'
+      },
+      { headers: mergeSatResponseHeaders() }
+    )
 
   } catch (error) {
-    console.error('Error updating tenant:', error)
-    
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { 
-          error: 'Datos inválidos',
-          details: error.issues 
-        },
-        { status: 400 }
+        { error: 'Datos inválidos', details: error.issues },
+        { status: 400, headers: mergeSatResponseHeaders() }
       )
     }
-
+    const summary = safeErrSummarySat(error)
     return NextResponse.json(
-      { error: 'Error interno del servidor' },
-      { status: 500 }
+      {
+        error: 'Error interno del servidor',
+        incidentFingerprint: summary.incidentFingerprint
+      },
+      { status: 500, headers: mergeSatResponseHeaders() }
     )
   }
 }

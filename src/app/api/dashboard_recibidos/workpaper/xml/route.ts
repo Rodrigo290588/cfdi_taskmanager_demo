@@ -1,37 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getStoredProviderXmlRecordForCompany } from '@/lib/provider-cfdi-storage'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse, sanitizeDownloadFilename, buildRfc5987ContentDisposition } from '@/lib/dashboard-fiscal-route-utils'
+import { DashboardRecibidosDownloadQuerySchema } from '@/schemas/dashboard-recibidos'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'drilldownXml', requireCompanyId: true })
+    const { ctx, sessionUserId } = scoped
+    const companyId = ctx.companyId!
+
+    const rawQuery = Object.fromEntries(scoped.searchParams.entries())
+    const parsed = DashboardRecibidosDownloadQuerySchema.safeParse(rawQuery)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400 })
     }
+    const recordId = parsed.data.id
 
-    const recordId = request.nextUrl.searchParams.get('id')
-    const companyId = request.nextUrl.searchParams.get('companyId')
+    const member = (await prisma.member.findFirst({
+      where: { userId: sessionUserId, status: 'APPROVED', organizationId: ctx.organizationId }
+    }))!
 
-    if (!recordId || !companyId) {
-      return NextResponse.json({ error: 'Parámetros incompletos' }, { status: 400 })
-    }
+    ;(await prisma.companyAccess.findUnique({
+      where: { memberId_companyId: { memberId: ctx.memberId, companyId } }
+    }))!
 
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' }
+    const preCheck = await prisma.providerUploadedCfdi.findFirst({
+      where: {
+        uuid: recordId,
+        organizationId: member.organizationId,
+        receiverCompanyId: companyId
+      },
+      select: { id: true, uuid: true }
     })
-    if (!member) {
-      return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } }
-    })
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
+    if (!preCheck) {
+      return NextResponse.json({ error: 'No se encontró el CFDI solicitado' }, { status: 404 })
     }
 
     const storedRecord = await getStoredProviderXmlRecordForCompany({
@@ -43,15 +49,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No se encontró el CFDI solicitado' }, { status: 404 })
     }
 
+    const safeBasename = sanitizeDownloadFilename('cfdi_' + storedRecord.uuid, 'download', 'xml')
+    const contentDisposition = buildRfc5987ContentDisposition(safeBasename, 'attachment')
+
+    const securityHeaders = {
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "default-src 'self'; script-src 'none'; frame-ancestors 'none'",
+      'Strict-Transport-Security': 'max-age=63072000; includeSubDomains'
+    }
+
     return new NextResponse(storedRecord.xmlContent, {
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
-        'Content-Disposition': `attachment; filename="cfdi_${storedRecord.uuid}.xml"`,
-        'Cache-Control': 'private, no-store, max-age=0'
+        'Content-Disposition': contentDisposition,
+        'Cache-Control': 'private, no-store, max-age=0',
+        ...securityHeaders
       }
     })
   } catch (error) {
-    console.error('Error downloading dashboard_recibidos workpaper XML:', error)
-    return NextResponse.json({ error: 'Error interno al descargar el XML' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

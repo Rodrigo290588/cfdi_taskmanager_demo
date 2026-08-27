@@ -1,0 +1,538 @@
+{
+  "info": {
+    "_postman_id": "cfdi-sast-20260813",
+    "name": "CFDI-TaskManager · SAST API Tests (QA Preflight)",
+    "description": "Coleccion base para ejecutar TEST-PLAN-API-SAST.md. Auth por 5 perfiles (SA/ADM/CAD/OTH/M2M) + smoke tests 12 endpoints + scaffolds IDOR. Modo SAT mock activo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key":"baseUrl","value":"http://localhost:3000","type":"string"},
+    {"key":"sa_email","value":"sa-sast@itcomplements.com","type":"string"},
+    {"key":"sa_password","value":"Sast-Admin-2026!","type":"string"},
+    {"key":"adm_email","value":"rtorreh@itcomplements.com","type":"string"},
+    {"key":"adm_password","value":"Holamundo1?","type":"string"},
+    {"key":"cad_email","value":"audit-sast@itcomplements.com","type":"string"},
+    {"key":"cad_password","value":"Audit-2026!","type":"string"},
+    {"key":"oth_email","value":"other-sast@itcomplements.com","type":"string"},
+    {"key":"oth_password","value":"Other-2026!","type":"string"},
+    {"key":"pnajera_email","value":"pnajera@itcomplements.com","type":"string"},
+    {"key":"pnajera_password","value":"holamundo","type":"string"},
+    {"key":"m2m_client_id","value":"demo-client","type":"string"},
+    {"key":"m2m_client_secret","value":"demo-secret","type":"string"},
+    {"key":"m2m_scope","value":"cfdi:import:batch cfdi:download:massive cfdi:view:pdf cfdi:fiel:credentials","type":"string"},
+    {"key":"token_sa","value":"","type":"string"},
+    {"key":"token_adm","value":"","type":"string"},
+    {"key":"token_cad","value":"","type":"string"},
+    {"key":"token_oth","value":"","type":"string"},
+    {"key":"token_m2m","value":"","type":"string"},
+    {"key":"org_a_id","value":"cmnntrppk000502gcp93ketfx","type":"string"},
+    {"key":"org_a_name","value":"Grupo Demo","type":"string"},
+    {"key":"org_b_id","value":"cmipiwlqk000mvyvtc22tnlrb","type":"string"},
+    {"key":"org_b_name","value":"ITComplements","type":"string"},
+    {"key":"fe_a1_id","value":"cmnnz2tka000102tko4p0hn49","type":"string"},
+    {"key":"fe_a1_rfc","value":"ODE8604257UA","type":"string"},
+    {"key":"fe_b1_id","value":"cmss5ia5r00042qj0tva08qa4","type":"string"},
+    {"key":"fe_b1_rfc","value":"QBB7223997V9","type":"string"},
+    {"key":"company_a2_id","value":"cmss5ia5e00002qj0bu0ccelp","type":"string"},
+    {"key":"company_a2_rfc","value":"QA2190188S3Z","type":"string"},
+    {"key":"company_b2_id","value":"cmss5ia5u00052qj04pwqykqq","type":"string"},
+    {"key":"company_b2_rfc","value":"QB2306260K5Y","type":"string"},
+    {"key":"invoice_own_uuid","value":"11111111-0000-4000-8000-000000000001","type":"string"},
+    {"key":"invoice_other_uuid","value":"11111111-0000-4000-8000-000000000002","type":"string"},
+    {"key":"mdr_own_id","value":"mdr-sast-org-a-prop-001","type":"string"},
+    {"key":"mdr_own_satPackageId","value":"AAAAAAAA-0000-0000-0000-00000000000A","type":"string"},
+    {"key":"mdr_other_id","value":"mdr-sast-org-b-aje-001","type":"string"},
+    {"key":"mdr_other_satPackageId","value":"BBBBBBBB-0000-0000-0000-00000000000B","type":"string"},
+    {"key":"fiel_rfc","value":"QBB7223997V9","type":"string"},
+    {"key":"fiel_password","value":"F1el-Dev-2026!","type":"string"},
+    {"key":"fiel_cer_path","value":"test-fixtures/sast/fiel-dev/fiel-dev-valid.cer","type":"string"},
+    {"key":"fiel_key_path","value":"test-fixtures/sast/fiel-dev/fiel-dev-valid.key","type":"string"},
+    {"key":"sa_userId","value":"cmss5hc3500002qn8o31kjexh","type":"string"},
+    {"key":"backup_path","value":"reports/db-backups/db-snapshot-sast-pre-tests_2026-08-13T23-31-02.json","type":"string"},
+    {"key":"sat_mode","value":"mock","type":"string"}
+  ],
+  "item": [
+    {
+      "name": "0 · Preflight",
+      "item": [
+        {
+          "name": "Ping · health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw":"{{baseUrl}}/api/health","host":["{{baseUrl}}"],"path":["api","health"]}
+          }
+        },
+        {
+          "name": "SAT mock flag (info)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_sa}}"}],
+            "url": {"raw":"{{baseUrl}}/api/dev/info","host":["{{baseUrl}}"],"path":["api","dev","info"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 · Auth · SA SUPER_ADMIN",
+      "item": [
+        {
+          "name": "SA · Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "if (j && j.token) { pm.collectionVariables.set(\"token_sa\", j.token); console.log(\"[SA] token set\"); }",
+                  "else if (j && j.data && j.data.token) { pm.collectionVariables.set(\"token_sa\", j.data.token); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{sa_email}}\",\n  \"password\": \"{{sa_password}}\",\n  \"_strict_extra_field_ignore_me\": true\n}"
+            },
+            "url": {"raw":"{{baseUrl}}/api/auth/login","host":["{{baseUrl}}"],"path":["api","auth","login"]}
+          }
+        },
+        {
+          "name": "SA · Session /me",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_sa}}"}],
+            "url": {"raw":"{{baseUrl}}/api/auth/session","host":["{{baseUrl}}"],"path":["api","auth","session"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · Auth · ADM Org-A (rtorreh)",
+      "item": [
+        {
+          "name": "ADM · Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const t = j?.token || j?.data?.token;",
+                  "if (t) { pm.collectionVariables.set(\"token_adm\", t); console.log(\"[ADM] token set\"); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {"mode":"raw","raw":"{\n  \"email\": \"{{adm_email}}\",\n  \"password\": \"{{adm_password}}\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/auth/login","host":["{{baseUrl}}"],"path":["api","auth","login"]}
+          }
+        },
+        {
+          "name": "ADM · Session",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/auth/session","host":["{{baseUrl}}"],"path":["api","auth","session"]}
+          }
+        },
+        {
+          "name": "ADM · Login (pnajera backup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const t = j?.token || j?.data?.token;",
+                  "if (t && !pm.collectionVariables.get(\"token_adm\")) pm.collectionVariables.set(\"token_adm\", t);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {"mode":"raw","raw":"{\n  \"email\": \"{{pnajera_email}}\",\n  \"password\": \"{{pnajera_password}}\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/auth/login","host":["{{baseUrl}}"],"path":["api","auth","login"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Auth · CAD Org-A (Auditor)",
+      "item": [
+        {
+          "name": "CAD · Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const t = j?.token || j?.data?.token;",
+                  "if (t) { pm.collectionVariables.set(\"token_cad\", t); console.log(\"[CAD] token set\"); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {"mode":"raw","raw":"{\n  \"email\": \"{{cad_email}}\",\n  \"password\": \"{{cad_password}}\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/auth/login","host":["{{baseUrl}}"],"path":["api","auth","login"]}
+          }
+        },
+        {
+          "name": "CAD · Session",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_cad}}"}],
+            "url": {"raw":"{{baseUrl}}/api/auth/session","host":["{{baseUrl}}"],"path":["api","auth","session"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · Auth · OTH Org-B (Atacante)",
+      "item": [
+        {
+          "name": "OTH · Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const t = j?.token || j?.data?.token;",
+                  "if (t) { pm.collectionVariables.set(\"token_oth\", t); console.log(\"[OTH] token set\"); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {"mode":"raw","raw":"{\n  \"email\": \"{{oth_email}}\",\n  \"password\": \"{{oth_password}}\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/auth/login","host":["{{baseUrl}}"],"path":["api","auth","login"]}
+          }
+        },
+        {
+          "name": "OTH · Session",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_oth}}"}],
+            "url": {"raw":"{{baseUrl}}/api/auth/session","host":["{{baseUrl}}"],"path":["api","auth","session"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 · Auth · M2M demo-client",
+      "item": [
+        {
+          "name": "M2M · client_credentials",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const t = j?.access_token || j?.token || j?.data?.access_token;",
+                  "if (t) { pm.collectionVariables.set(\"token_m2m\", t); console.log(\"[M2M] token set\"); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/x-www-form-urlencoded"}],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key":"grant_type","value":"client_credentials"},
+                {"key":"client_id","value":"{{m2m_client_id}}"},
+                {"key":"client_secret","value":"{{m2m_client_secret}}"},
+                {"key":"scope","value":"{{m2m_scope}}"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/external/oauth/token","host":["{{baseUrl}}"],"path":["api","external","oauth","token"]}
+          }
+        },
+        {
+          "name": "M2M · Introspect / info",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_m2m}}"}],
+            "url": {"raw":"{{baseUrl}}/api/external/oauth/introspect","host":["{{baseUrl}}"],"path":["api","external","oauth","introspect"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 · SMOKE Happy-Path · 12 endpoints (token ADM)",
+      "description": "Scaffolds happy-path. Para convertir en IDOR, DUPLICAR request y cambiar token por CAD/OTH + recurso ajeno UUID/ID.",
+      "item": [
+        {
+          "name": "API-00 · Register (skip si cerrado)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"}],
+            "body": {"mode":"raw","raw":"{\n  \"name\": \"QA Smoke\",\n  \"email\": \"qa-smoke-{{$randomInt}}@itcomplements.com\",\n  \"password\": \"Smoke-2026!\",\n  \"organizationName\": \"Smoke Org\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/auth/register","host":["{{baseUrl}}"],"path":["api","auth","register"]}
+          }
+        },
+        {
+          "name": "API-01 · Parse CFDI XML (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"file","type":"file","src":"test-fixtures/sast/payloads/payload-2.6-strict-extra-namespace.xml"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/invoices/parse","host":["{{baseUrl}}"],"path":["api","invoices","parse"]}
+          }
+        },
+        {
+          "name": "API-02 · GET Invoice PDF (own UUID)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/invoices/{{invoice_own_uuid}}/pdf","host":["{{baseUrl}}"],"path":["api","invoices","{{invoice_own_uuid}}","pdf"]}
+          }
+        },
+        {
+          "name": "API-02b · POST Upload PDF (own UUID)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"file","type":"file","src":"test-fixtures/sast/payloads/payload-2.10-pdf-spoof-mime-real-pdf.pdf"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/invoices/{{invoice_own_uuid}}/pdf","host":["{{baseUrl}}"],"path":["api","invoices","{{invoice_own_uuid}}","pdf"]}
+          }
+        },
+        {
+          "name": "API-03 · List Invoices + filter Org-A",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {
+              "raw":"{{baseUrl}}/api/invoices?organizationId={{org_a_id}}&rfcIssuer={{fe_a1_rfc}}&from=2026-01-01&to=2026-12-31",
+              "host":["{{baseUrl}}"],
+              "path":["api","invoices"],
+              "query":[
+                {"key":"organizationId","value":"{{org_a_id}}"},
+                {"key":"rfcIssuer","value":"{{fe_a1_rfc}}"},
+                {"key":"from","value":"2026-01-01"},
+                {"key":"to","value":"2026-12-31"},
+                {"key":"take","value":"50"},
+                {"key":"skip","value":"0"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "API-04 · List Mass Download Requests Org-A",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads?organizationId={{org_a_id}}&companyId={{company_a2_id}}","host":["{{baseUrl}}"],"path":["api","mass-downloads"],
+              "query":[
+                {"key":"organizationId","value":"{{org_a_id}}"},
+                {"key":"companyId","value":"{{company_a2_id}}"}
+              ]}
+          }
+        },
+        {
+          "name": "API-05 · Create Mass Download (EMITIDOS mock)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"},{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "body": {"mode":"raw","raw":"{\n  \"organizationId\": \"{{org_a_id}}\",\n  \"companyId\": \"{{company_a2_id}}\",\n  \"requestType\": \"EMITIDOS\",\n  \"requestingRfc\": \"{{fe_a1_rfc}}\",\n  \"issuerRfc\": \"{{fe_a1_rfc}}\",\n  \"from\": \"2026-01-01\",\n  \"to\": \"2026-01-31\",\n  \"status\": \"Todos\",\n  \"satMode\": \"mock\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads","host":["{{baseUrl}}"],"path":["api","mass-downloads"]}
+          }
+        },
+        {
+          "name": "API-06 · Poll Mass Download Status (own)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads/{{mdr_own_id}}/status","host":["{{baseUrl}}"],"path":["api","mass-downloads","{{mdr_own_id}}","status"]}
+          }
+        },
+        {
+          "name": "API-07 · Mass Download ZIP (own)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads/{{mdr_own_id}}/downloadZip","host":["{{baseUrl}}"],"path":["api","mass-downloads","{{mdr_own_id}}","downloadZip"]}
+          }
+        },
+        {
+          "name": "API-08 · POST FIEL credentials (Org-B QBB)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Authorization","value":"Bearer {{token_oth}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"rfc","value":"{{fiel_rfc}}"},
+                {"key":"password","value":"{{fiel_password}}"},
+                {"key":"organizationId","value":"{{org_b_id}}"},
+                {"key":"certificate","type":"file","src":"{{fiel_cer_path}}"},
+                {"key":"privateKey","type":"file","src":"{{fiel_key_path}}"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads/credentials","host":["{{baseUrl}}"],"path":["api","mass-downloads","credentials"]}
+          }
+        },
+        {
+          "name": "API-09 · External Import (M2M)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Authorization","value":"Bearer {{token_m2m}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"organizationId","value":"{{org_a_id}}"},
+                {"key":"fiscalEntityId","value":"{{fe_a1_id}}"},
+                {"key":"files","type":"file","src":"test-fixtures/sast/payloads/payload-2.6-strict-extra-namespace.xml"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/external/v1/import","host":["{{baseUrl}}"],"path":["api","external","v1","import"]}
+          }
+        },
+        {
+          "name": "API-10a · PATCH Fiscal Entity (FE A1)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"businessName","value":"[SAST smoke] Empresa Demo (patched)"},
+                {"key":"logo","type":"file","src":"test-fixtures/sast/payloads/traversal-names/pt-.._.._.._.._windows_win.ini.jpg"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/fiscal-entities/{{fe_a1_id}}","host":["{{baseUrl}}"],"path":["api","fiscal-entities","{{fe_a1_id}}"]}
+          }
+        },
+        {
+          "name": "API-10b · PATCH Company (A2)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"name","value":"[SAST smoke] Empresa Prueba QA (patched)"},
+                {"key":"logo","type":"file","src":"test-fixtures/sast/payloads/payload-2.9-logo-8MB.png"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/companies/{{company_a2_id}}","host":["{{baseUrl}}"],"path":["api","companies","{{company_a2_id}}"]}
+          }
+        },
+        {
+          "name": "API-11 · SAT Provider · report (M2M)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Content-Type","value":"application/json"},{"key":"Authorization","value":"Bearer {{token_m2m}}"}],
+            "body": {"mode":"raw","raw":"{\n  \"providerRfc\": \"{{fiel_rfc}}\",\n  \"cfdiXml\": \"<fake>base64xml-or-escaped</fake>\",\n  \"source\": \"smoke-sast\"\n}"},
+            "url": {"raw":"{{baseUrl}}/api/provider/cfdi/report","host":["{{baseUrl}}"],"path":["api","provider","cfdi","report"]}
+          }
+        },
+        {
+          "name": "API-12 · Admin users list (SUPER_ADMIN only)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_sa}}"}],
+            "url": {"raw":"{{baseUrl}}/api/admin/users?take=20","host":["{{baseUrl}}"],"path":["api","admin","users"],
+              "query":[{"key":"take","value":"20"},{"key":"skip","value":"0"}]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 · SCAFFOLD IDOR (duplicar y editar token)",
+      "description": "Plantillas base para test de autorizacion transversal. SOLO CAMBIAR: header Authorization = token CAD/OTH y dejar la URL/UUID del recurso ajeno (Org-A). Resultado esperado: 401/403/404, NUNCA 200 ni leak de datos.",
+      "item": [
+        {
+          "name": "[IDOR-TEMPLATE] GET invoice_own_uuid with OTH token",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_oth}}"}],
+            "url": {"raw":"{{baseUrl}}/api/invoices/{{invoice_own_uuid}}/pdf","host":["{{baseUrl}}"],"path":["api","invoices","{{invoice_own_uuid}}","pdf"]}
+          }
+        },
+        {
+          "name": "[IDOR-TEMPLATE] GET mdr_own_id status with CAD token (CAD no access to mass downloads? si tiene CAN view depende de granular)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_cad}}"}],
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads/{{mdr_own_id}}/status","host":["{{baseUrl}}"],"path":["api","mass-downloads","{{mdr_own_id}}","status"]}
+          }
+        },
+        {
+          "name": "[IDOR-TEMPLATE] PATCH fe_a1_id with OTH token (Org-B sobre Org-A)",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key":"Authorization","value":"Bearer {{token_oth}}"}],
+            "body": {"mode":"formdata","formdata":[{"key":"businessName","value":"[HACKED] Org B atacando Org A"}]},
+            "url": {"raw":"{{baseUrl}}/api/fiscal-entities/{{fe_a1_id}}","host":["{{baseUrl}}"],"path":["api","fiscal-entities","{{fe_a1_id}}"]}
+          }
+        },
+        {
+          "name": "[IDOR-TEMPLATE] POST FIEL credentials for Org A RFC but OTH token (tenant mismatch)",
+          "request": {
+            "method": "POST",
+            "header": [{"key":"Authorization","value":"Bearer {{token_oth}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key":"rfc","value":"{{fe_a1_rfc}}"},
+                {"key":"password","value":"{{fiel_password}}"},
+                {"key":"organizationId","value":"{{org_a_id}}"},
+                {"key":"certificate","type":"file","src":"{{fiel_cer_path}}"},
+                {"key":"privateKey","type":"file","src":"{{fiel_key_path}}"}
+              ]
+            },
+            "url": {"raw":"{{baseUrl}}/api/mass-downloads/credentials","host":["{{baseUrl}}"],"path":["api","mass-downloads","credentials"]}
+          }
+        },
+        {
+          "name": "[IDOR-TEMPLATE] GET admin/users with ADM (no SA)",
+          "request": {
+            "method": "GET",
+            "header": [{"key":"Authorization","value":"Bearer {{token_adm}}"}],
+            "url": {"raw":"{{baseUrl}}/api/admin/users","host":["{{baseUrl}}"],"path":["api","admin","users"]}
+          }
+        }
+      ]
+    }
+  ]
+}

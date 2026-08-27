@@ -16,6 +16,18 @@ type SelectedCompany = { id: string; rfc?: string; businessName?: string; name?:
 const formatMXN = (value: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(Number(value || 0))
 
+const formatCfdiDate = (value: string | Date | null | undefined) => {
+  if (!value) return ''
+
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'UTC'
+    }).format(new Date(value))
+  } catch {
+    return String(value)
+  }
+}
+
 type InvoiceRow = {
   id: string
   userId: string
@@ -278,6 +290,8 @@ export default function WorkpaperEmitidosPage() {
   const [invSatStatus, setInvSatStatus] = useState<string>('')
   const [invDateFrom, setInvDateFrom] = useState<string>('')
   const [invDateTo, setInvDateTo] = useState<string>('')
+  const [appliedInvDateFrom, setAppliedInvDateFrom] = useState<string>('')
+  const [appliedInvDateTo, setAppliedInvDateTo] = useState<string>('')
   const [invPage, setInvPage] = useState(1)
   const [invLimit, setInvLimit] = useState(20)
   const [invLoading, setInvLoading] = useState(false)
@@ -342,8 +356,8 @@ export default function WorkpaperEmitidosPage() {
       const val = getProjectedValue(r, 'totalImpuestosRetenidos')
       return val ? formatMXN(Number(val)) : ''
     } },
-    { key: 'issuanceDate', label: 'Fecha', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => new Date(r.issuanceDate).toLocaleDateString('es-MX') },
-    { key: 'certificationDate', label: 'Fecha Certificación', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => r.certificationDate ? new Date(r.certificationDate).toLocaleDateString('es-MX') : '' },
+    { key: 'issuanceDate', label: 'Fecha', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => formatCfdiDate(r.issuanceDate) },
+    { key: 'certificationDate', label: 'Fecha Certificación', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => formatCfdiDate(r.certificationDate) },
     { key: 'certificationPac', label: 'PAC', group: '<tfd:TimbreFiscalDigital>', render: (r: InvoiceRow) => r.certificationPac },
     { key: 'paymentMethod', label: 'Método Pago', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.paymentMethod ?? '' },
     { key: 'paymentForm', label: 'Forma Pago', group: '<cfdi:Comprobante>', render: (r: InvoiceRow) => r.paymentForm ?? '' },
@@ -427,6 +441,18 @@ export default function WorkpaperEmitidosPage() {
 
   const [showColumnPanel, setShowColumnPanel] = useState(false)
 
+  const isInvalidDateRange = useMemo(() => {
+    return Boolean(invDateFrom && invDateTo && invDateFrom > invDateTo)
+  }, [invDateFrom, invDateTo])
+
+  const hasCompleteDateRange = useMemo(() => {
+    return Boolean(invDateFrom && invDateTo)
+  }, [invDateFrom, invDateTo])
+
+  const hasAppliedDateRange = useMemo(() => {
+    return Boolean(appliedInvDateFrom && appliedInvDateTo)
+  }, [appliedInvDateFrom, appliedInvDateTo])
+
   const exportValue = (r: InvoiceRow, key: string): string | number => {
     if (key.startsWith('has')) return getProjectedValue(r, key) ? 'SI' : 'NO'
 
@@ -441,18 +467,21 @@ export default function WorkpaperEmitidosPage() {
     const dateKeys = ['issuanceDate', 'certificationDate', 'createdAt', 'updatedAt']
     if (v === null || v === undefined) return ''
     if (dateKeys.includes(key)) {
-      try {
-        return new Date(v as string | Date).toLocaleDateString('es-MX')
-      } catch {
-        return String(v)
-      }
+      return formatCfdiDate(v as string | Date)
     }
     if (typeof v === 'number') return v
     return String(v)
   }
 
   const fetchInvoices = useCallback(async () => {
-    if (!selectedCompanyId) return
+    if (!selectedCompanyId || !hasAppliedDateRange) {
+      setInvRows([])
+      setInvTotalPages(0)
+      setInvTotal(0)
+      setInvLoading(false)
+      return
+    }
+
     setInvLoading(true)
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
@@ -463,8 +492,8 @@ export default function WorkpaperEmitidosPage() {
     })
     if (invQuery) params.set('query', invQuery)
     if (invSatStatus) params.set('satStatus', invSatStatus)
-    if (invDateFrom) params.set('dateFrom', invDateFrom)
-    if (invDateTo) params.set('dateTo', invDateTo)
+    if (appliedInvDateFrom) params.set('dateFrom', appliedInvDateFrom)
+    if (appliedInvDateTo) params.set('dateTo', appliedInvDateTo)
     Object.entries(columnFilters).forEach(([key, value]) => {
       if (value) params.set(key, value)
     })
@@ -474,10 +503,10 @@ export default function WorkpaperEmitidosPage() {
     setInvTotalPages(data?.pagination?.totalPages || 0)
     setInvTotal(data?.pagination?.total || 0)
     setInvLoading(false)
-  }, [selectedCompanyId, invPage, invLimit, invQuery, invSatStatus, invDateFrom, invDateTo, columnFilters])
+  }, [selectedCompanyId, hasAppliedDateRange, invPage, invLimit, invQuery, invSatStatus, appliedInvDateFrom, appliedInvDateTo, columnFilters])
 
   const fetchAllInvoicesForExport = async () => {
-    if (!selectedCompanyId) return []
+    if (!selectedCompanyId || !hasAppliedDateRange) return []
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       page: '1',
@@ -488,8 +517,8 @@ export default function WorkpaperEmitidosPage() {
     })
     if (invQuery) params.set('query', invQuery)
     if (invSatStatus) params.set('satStatus', invSatStatus)
-    if (invDateFrom) params.set('dateFrom', invDateFrom)
-    if (invDateTo) params.set('dateTo', invDateTo)
+    if (appliedInvDateFrom) params.set('dateFrom', appliedInvDateFrom)
+    if (appliedInvDateTo) params.set('dateTo', appliedInvDateTo)
     Object.entries(columnFilters).forEach(([key, value]) => {
       if (value) params.set(key, value)
     })
@@ -528,13 +557,9 @@ export default function WorkpaperEmitidosPage() {
   }, [])
 
   const rangeLabel =
-    invDateFrom && invDateTo
-      ? `Del ${invDateFrom} al ${invDateTo}`
-      : invDateFrom
-      ? `Desde ${invDateFrom}`
-      : invDateTo
-      ? `Hasta ${invDateTo}`
-      : 'Todos'
+    appliedInvDateFrom && appliedInvDateTo
+      ? `Del ${appliedInvDateFrom} al ${appliedInvDateTo}`
+      : 'Sin periodo aplicado'
   const countLabel = ` — ${invTotal} registros`
 
   if (!selectedCompanyId) {
@@ -595,7 +620,22 @@ export default function WorkpaperEmitidosPage() {
                 <Input type="date" placeholder="Fecha hasta" value={invDateTo} onChange={(e) => setInvDateTo(e.target.value)} />
               </div>
               <Button 
-                onClick={() => { setInvPage(1); fetchInvoices() }}
+                onClick={() => {
+                  if (!invDateFrom || !invDateTo) {
+                    toast.error('Selecciona Fecha Inicio y Fecha Fin antes de consultar')
+                    return
+                  }
+
+                  if (invDateFrom > invDateTo) {
+                    toast.error('La fecha de inicio no puede ser mayor que la fecha final')
+                    return
+                  }
+
+                  setInvPage(1)
+                  setAppliedInvDateFrom(invDateFrom)
+                  setAppliedInvDateTo(invDateTo)
+                }}
+                disabled={isInvalidDateRange || !hasCompleteDateRange}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
               >
                 Aplicar
@@ -606,19 +646,32 @@ export default function WorkpaperEmitidosPage() {
                   setInvSatStatus('')
                   setInvDateFrom('')
                   setInvDateTo('')
+                  setAppliedInvDateFrom('')
+                  setAppliedInvDateTo('')
                   setColumnFilters({})
                   setInvLimit(20)
                   setInvPage(1)
-                  fetchInvoices()
                 }}
+                disabled={!invDateFrom && !invDateTo && !hasAppliedDateRange && !invSatStatus && Object.keys(columnFilters).length === 0}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg rounded-full px-6"
               >
                 Limpiar filtros
               </Button>
             </div>
+            {isInvalidDateRange && (
+              <p className="text-sm text-destructive mt-3">
+                La fecha de inicio no puede ser mayor que la fecha final.
+              </p>
+            )}
+            {!isInvalidDateRange && !hasAppliedDateRange && (
+              <p className="text-sm text-muted-foreground mt-3">
+                Selecciona un periodo con Fecha Inicio y Fecha Fin para consultar la hoja de trabajo.
+              </p>
+            )}
             <div className="flex gap-3 mt-3 flex-wrap">
               <Button 
                 variant="outline" 
+                disabled={!hasAppliedDateRange}
                 onClick={async () => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
@@ -666,6 +719,7 @@ export default function WorkpaperEmitidosPage() {
               </Button>
               <Button 
                 variant="outline" 
+                disabled={!hasAppliedDateRange}
                 onClick={async () => {
                   const selectedCols = columnDefs
                     .filter(c => visibleCols.has(c.key))
@@ -977,6 +1031,8 @@ export default function WorkpaperEmitidosPage() {
                   <tbody>
                     {invLoading ? (
                       <tr><td className="px-2 py-3 text-center" colSpan={visibleCols.size + 2}>Cargando...</td></tr>
+                    ) : !hasAppliedDateRange ? (
+                      <tr><td className="px-2 py-3 text-center" colSpan={visibleCols.size + 2}>Selecciona Fecha Inicio y Fecha Fin y pulsa Aplicar para consultar.</td></tr>
                     ) : invRows.length === 0 ? (
                       <tr><td className="px-2 py-3 text-center" colSpan={visibleCols.size + 2}>Sin resultados</td></tr>
                     ) : (

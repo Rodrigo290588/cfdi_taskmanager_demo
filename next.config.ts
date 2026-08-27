@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    'jalapeno-roping-theology.ngrok-free.dev'
+  ],
   async headers() {
     return [
       {

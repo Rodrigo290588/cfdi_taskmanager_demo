@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { DOMParser } from '@xmldom/xmldom'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 function toNumber(value: unknown) {
   const parsed = Number(value)
@@ -14,23 +19,20 @@ function normalizeUuid(value: string | null | undefined) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
+    void _sr
 
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
+    const companyId = searchParams.get('companyId')!
     const startDateParam = searchParams.get('startDate')
     const endDateParam = searchParams.get('endDate')
     const originParam = searchParams.get('origin') || 'issued'
 
-    if (!companyId) return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
-
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { rfc: true } })
-    if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
+    if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404, headers: SECURITY_HEADERS })
 
     const rfc = company.rfc
-    const fiscalEntity = await prisma.fiscalEntity.findFirst({ where: { rfc } })
-    if (!fiscalEntity) return NextResponse.json({ data: [] })
+    const fiscalEntity = await prisma.fiscalEntity.findFirst({ where: { rfc, organizationId: ctx.organizationId } })
+    if (!fiscalEntity) return NextResponse.json({ data: [] }, { headers: SECURITY_HEADERS })
 
     // Date filters apply to the issuance date of the original PPD invoice
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -115,8 +117,7 @@ export async function GET(request: NextRequest) {
               issuerName: true,
               receiverName: true,
               currency: true,
-              exchangeRate: true,
-              xmlContent: true
+              exchangeRate: true
             }
           }
         },
@@ -173,8 +174,7 @@ export async function GET(request: NextRequest) {
                 issuerName: true,
                 receiverName: true,
                 currency: true,
-                exchangeRate: true,
-                xmlContent: true,
+                exchangeRate: true
               }
             }
           }
@@ -294,10 +294,9 @@ export async function GET(request: NextRequest) {
     // Sort by date descending
     drilldownData.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
 
-    return NextResponse.json({ data: drilldownData })
+    return NextResponse.json({ data: drilldownData }, { headers: SECURITY_HEADERS })
 
   } catch (error) {
-    console.error('Drilldown API Error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

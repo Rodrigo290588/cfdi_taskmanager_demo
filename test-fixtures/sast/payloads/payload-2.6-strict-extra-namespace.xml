@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:evil="http://evil.local/sast" Version="4.0" Folio="EXT-001" Serie="S" SubTotal="1000" Total="1160" Moneda="MXN" FormaPago="01" MetodoPago="PUE" LugarExpedicion="06000" TipoDeComprobante="I" Exportacion="01" Fecha="2026-08-13T23:49:41.349Z">
+  <evil:InjectMe please="parse me" script="onerror&equals;alert(1)">&lt;img src=x onerror=alert(1) /&gt;</evil:InjectMe>
+  <cfdi:Emisor Rfc="ODE8604257UA" Nombre="Strict Extra Test" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="XAXX010101000" Nombre="Publico General" DomicilioFiscalReceptor="06000" RegimenFiscalReceptor="612" UsoCFDI="G01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="01010101" Cantidad="1" ClaveUnidad="H87" Descripcion="Servicio" ValorUnitario="1000" Importe="1000" ObjetoImp="02">
+      <cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="1000" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="160"/></cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="160"/>
+</cfdi:Comprobante>

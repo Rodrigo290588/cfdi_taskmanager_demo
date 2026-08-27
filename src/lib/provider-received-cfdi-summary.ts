@@ -25,6 +25,7 @@ type ProviderReceivedCfdiSummaryDimension = {
   receiverCompanyId: string
   summaryDate: Date
   cfdiType: string
+  validationBucket: 'VALIDO'
   satEstado: string
   issuerRfc: string
   issuerName: string
@@ -93,6 +94,7 @@ function buildProviderReceivedCfdiSummaryDimension(
     receiverCompanyId: record.receiverCompanyId,
     summaryDate: toUtcDateOnly(record.issuanceDate),
     cfdiType: normalizeUpperText(record.cfdiType) || 'SIN_TIPO',
+    validationBucket: 'VALIDO',
     satEstado: normalizeUpperText(record.satEstado) || 'SIN_ESTATUS',
     issuerRfc: normalizeUpperText(record.issuerRfc),
     issuerName: normalizeText(record.issuerName),
@@ -123,6 +125,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
         receiver_company_id,
         summary_date,
         cfdi_type,
+        validation_bucket,
         sat_estado,
         issuer_rfc,
         issuer_name,
@@ -141,6 +144,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
         ${dimension.receiverCompanyId},
         ${dimension.summaryDate},
         ${dimension.cfdiType},
+        CAST(${dimension.validationBucket} AS "validation_bucket"),
         ${dimension.satEstado},
         ${dimension.issuerRfc},
         ${dimension.issuerName},
@@ -158,6 +162,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
         receiver_company_id,
         summary_date,
         cfdi_type,
+        validation_bucket,
         sat_estado,
         issuer_rfc,
         payment_method,
@@ -181,6 +186,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
           AND receiver_company_id = ${dimension.receiverCompanyId}
           AND summary_date = ${dimension.summaryDate}
           AND cfdi_type = ${dimension.cfdiType}
+          AND validation_bucket = CAST(${dimension.validationBucket} AS "validation_bucket")
           AND sat_estado = ${dimension.satEstado}
           AND issuer_rfc = ${dimension.issuerRfc}
           AND payment_method = ${dimension.paymentMethod}

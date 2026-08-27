@@ -65,11 +65,14 @@ export async function POST(request: NextRequest) {
       providerName
     })
 
+    // [SAST-FIX #6] NO exponer invitationToken en la respuesta JSON.
+    // - Reverse proxies, APMs y herramientas SIEM loguean bodies HTTP automáticamente.
+    // - DevTools cachea Network responses indefinidamente.
+    // El token se transmite ÚNICAMENTE por el correo electrónico.
     return NextResponse.json({
       success: true,
-      message: 'Usuario invitado exitosamente',
+      message: 'Usuario invitado exitosamente. Se envió un enlace de acceso al correo proporcionado.',
       existingUser: invitation.existingUser,
-      invitationToken: invitation.invitationToken // Returned ONLY once so the admin can copy it immediately
     })
 
   } catch (error) {

@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { showSuccess, showError } from '@/lib/toast'
 import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Info } from 'lucide-react'
+import { ProtectedRoute } from '@/components/auth/protected-route'
+import { PermissionRequired } from '@/components/auth/permission-guard'
+import { Permission } from '@/lib/permissions'
 
 interface UploadError {
   rowNumber: number
   message: string
 }
 
-export default function BulkUsersPage() {
+function BulkUsersPage() {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUpload] = useState(false)
   const [errors, setErrors] = useState<UploadError[]>([])
@@ -235,3 +238,16 @@ export default function BulkUsersPage() {
     </div>
   )
 }
+
+// [SAST-FIX #8] Bulk invite solo para admins con ADMIN_USERS (propietarios o admins de org).
+function WrappedBulkUsersPage() {
+  return (
+    <ProtectedRoute>
+      <PermissionRequired permission={Permission.ADMIN_USERS}>
+        <BulkUsersPage />
+      </PermissionRequired>
+    </ProtectedRoute>
+  )
+}
+
+export default WrappedBulkUsersPage

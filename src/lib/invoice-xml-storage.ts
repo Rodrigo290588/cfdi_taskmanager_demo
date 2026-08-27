@@ -59,15 +59,42 @@ export function encryptInvoiceXmlContent(xmlContent: string) {
   }
 }
 
+/** Whitelist estricta algoritmos de cifrado AEAD aceptados.
+ *  Regla AGENTS 13: helper reusable entre Next routes + BullMQ workers.
+ *  NUNCA aceptar algoritmos sin autenticación (aes-128-ecb, aes-cbc, etc.).
+ *  INV-007 cryptographic failures → padding oracle attack si algoritmo es manipulado via DB.
+ */
+const INVOICE_CIPHER_WHITELIST: ReadonlySet<string> = new Set<string>([
+  'aes-256-gcm',
+  'aes-128-gcm'
+])
+
+function assertEncryptionAlgorithmAllowed(algorithm: string): asserts algorithm is 'aes-256-gcm' | 'aes-128-gcm' {
+  const normalized = String(algorithm || '').toLowerCase().trim()
+  if (!normalized || !INVOICE_CIPHER_WHITELIST.has(normalized)) {
+    throw new Error(
+      `INV-007: InvoiceBlob encryptionAlg not allowed: ${JSON.stringify(normalized)}. Only AEAD whitelist permitted.`
+    )
+  }
+}
+
 export function decryptInvoiceXmlContent(params: {
   ciphertext: string
   iv: string
   authTag: string
   algorithm: string
 }) {
+  // INV-007 · Cryptographic Failures: whitelist estricto algoritmo AEAD.
+  assertEncryptionAlgorithmAllowed(params.algorithm || INVOICE_XML_ENCRYPTION_ALGORITHM)
+  const safeAlg = (params.algorithm || INVOICE_XML_ENCRYPTION_ALGORITHM).toLowerCase().trim() as 'aes-256-gcm' | 'aes-128-gcm'
+
+  if (!params.authTag) {
+    throw new Error('INV-007: authTag missing; GCM ciphers require 16-byte authentication tag.')
+  }
+
   const key = resolveInvoiceEncryptionKey()
   const decipher = createDecipheriv(
-    params.algorithm || INVOICE_XML_ENCRYPTION_ALGORITHM,
+    safeAlg,
     key,
     Buffer.from(params.iv, 'base64')
   ) as DecipherGCM
@@ -113,7 +140,18 @@ export async function upsertInvoiceXmlBlob(
   })
 }
 
-export async function getInvoiceXmlRecordById(invoiceId: string) {
+/**
+ * Recupera XML Invoice + InvoiceBlob descifrado SÓLO si pertenece a la organización dada.
+ * INV-001 · BOLA Cross-Org: NO se permite retornar XML sin scope organizationId.
+ * Regla AGENTS 12 (Arquitectura CFDI Big Data): InvoiceBlob desacoplado solo se descifra
+ * DESPUÉS de comprobar tenant 100%.
+ */
+export async function getInvoiceXmlRecordById(invoiceId: string, organizationId: string) {
+  if (!organizationId) {
+    // Defense in depth: helper NO acepta llamadas sin org.
+    throw new Error('INV-001: getInvoiceXmlRecordById requires organizationId.')
+  }
+
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     select: {
@@ -121,6 +159,11 @@ export async function getInvoiceXmlRecordById(invoiceId: string) {
       uuid: true,
       satStatus: true,
       xmlContent: true,
+      issuerFiscalEntityId: true,
+      issuerRfc: true,
+      fiscalEntity: {
+        select: { organizationId: true, id: true, rfc: true }
+      },
       blob: {
         select: {
           xmlCiphertext: true,
@@ -136,6 +179,14 @@ export async function getInvoiceXmlRecordById(invoiceId: string) {
     return null
   }
 
+  // INV-001 · BOLA Defense: Assert organizationId coincide con FiscalEntity dueño del Invoice.
+  const targetInvoiceOrgId: unknown = invoice.fiscalEntity?.organizationId
+  if (targetInvoiceOrgId !== organizationId) {
+    throw new Error(
+      `INV-001: Invoice ${invoiceId} does not belong to organization ${organizationId}. Cross-tenant access blocked.`
+    )
+  }
+
   const xmlContent = invoice.blob
     ? decryptInvoiceXmlContent({
         ciphertext: invoice.blob.xmlCiphertext,
@@ -149,6 +200,12 @@ export async function getInvoiceXmlRecordById(invoiceId: string) {
     id: invoice.id,
     uuid: invoice.uuid,
     satStatus: invoice.satStatus,
-    xmlContent
+    xmlContent,
+    // Exponer metadata mínima tenant-safe para route handler (sin PK leak innecesario)
+    _meta: {
+      issuerRfc: invoice.issuerRfc,
+      issuerFiscalEntityId: invoice.issuerFiscalEntityId,
+      organizationId: invoice.fiscalEntity?.organizationId
+    }
   }
 }

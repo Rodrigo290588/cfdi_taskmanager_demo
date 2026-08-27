@@ -1,0 +1,483 @@
+{
+  "generatedAt": "2026-08-13T23:54:51.687Z",
+  "users": {
+    "sa-sast@itcomplements.com": {
+      "userId": "cmss5hc3500002qn8o31kjexh",
+      "systemRole": "SUPER_ADMIN",
+      "passwordSet": [
+        {
+          "orgId": "cmnntrppk000502gcp93ketfx",
+          "orgName": "Grupo Demo",
+          "memberRole": "ADMIN",
+          "memberStatus": "APPROVED",
+          "memberId": "cmss5hc3f00022qn84gxtwjxq"
+        }
+      ]
+    },
+    "rtorreh@itcomplements.com": {
+      "userId": "cmnntrpog000302gco5nxqrdn",
+      "systemRole": "ADMIN",
+      "passwordSet": [
+        {
+          "orgId": "cmnntrppk000502gcp93ketfx",
+          "orgName": "Grupo Demo",
+          "memberRole": "ADMIN",
+          "memberStatus": "APPROVED",
+          "memberId": "cmnntrpqh000702gc3bdfxoqr"
+        }
+      ]
+    },
+    "pnajera@itcomplements.com": {
+      "userId": "cmipiwlqh000kvyvtvip09kot",
+      "systemRole": "ADMIN",
+      "passwordSet": [
+        {
+          "orgId": "cmipiwlqk000mvyvtc22tnlrb",
+          "orgName": "ITComplements",
+          "memberRole": "ADMIN",
+          "memberStatus": "APPROVED",
+          "memberId": "cmipiwlqm000ovyvt4xbw62ll"
+        }
+      ]
+    },
+    "audit-sast@itcomplements.com": {
+      "userId": "cmss5hc5e00032qn83ka2fxsv",
+      "systemRole": "USER",
+      "passwordSet": [
+        {
+          "orgId": "cmnntrppk000502gcp93ketfx",
+          "orgName": "Grupo Demo",
+          "memberRole": "AUDITOR",
+          "memberStatus": "APPROVED",
+          "memberId": "cmss5hc5o00052qn8ji5fww4x"
+        }
+      ]
+    },
+    "other-sast@itcomplements.com": {
+      "userId": "cmss5hc7l00062qn8hvipo7ua",
+      "systemRole": "USER",
+      "passwordSet": [
+        {
+          "orgId": "cmipiwlqk000mvyvtc22tnlrb",
+          "orgName": "ITComplements",
+          "memberRole": "VIEWER",
+          "memberStatus": "APPROVED",
+          "memberId": "cmss5hc7p00082qn8ylclql5t"
+        }
+      ]
+    }
+  },
+  "orgs": [
+    {
+      "id": "cmlsoj45j0002fdr8k3e3cydd",
+      "name": "Org Demo"
+    },
+    {
+      "id": "cmipiwlqk000mvyvtc22tnlrb",
+      "name": "ITComplements"
+    },
+    {
+      "id": "cmnntrppk000502gcp93ketfx",
+      "name": "Grupo Demo"
+    },
+    {
+      "id": "cmrclnxru000202j0vjokh899",
+      "name": "Juan Carlos Hernandez's Organization"
+    }
+  ],
+  "fiscalEntities": [
+    {
+      "id": "cmnnz2tka000102tko4p0hn49",
+      "rfc": "ODE8604257UA",
+      "businessName": "Empresa Demo",
+      "organizationId": "cmnntrppk000502gcp93ketfx"
+    },
+    {
+      "id": "cmss5ia5r00042qj0tva08qa4",
+      "rfc": "QBB7223997V9",
+      "businessName": "Entidad Fiscal Prueba QBB7223997V9",
+      "organizationId": "cmipiwlqk000mvyvtc22tnlrb"
+    }
+  ],
+  "companies": [
+    {
+      "id": "cmss5ia5e00002qj0bu0ccelp",
+      "rfc": "QA2190188S3Z",
+      "name": "Empresa Prueba QA2190188S3Z",
+      "companyAccesses": [
+        {
+          "id": "cmss5ia5m00022qj012sx0kq2",
+          "organizationId": "cmnntrppk000502gcp93ketfx",
+          "companyId": "cmss5ia5e00002qj0bu0ccelp",
+          "memberId": "cmnntrpqh000702gc3bdfxoqr",
+          "role": "ADMIN",
+          "customRoleId": null,
+          "createdAt": "2026-08-13T23:30:19.498Z",
+          "updatedAt": "2026-08-13T23:30:19.498Z",
+          "member": {
+            "id": "cmnntrpqh000702gc3bdfxoqr",
+            "userId": "cmnntrpog000302gco5nxqrdn",
+            "organizationId": "cmnntrppk000502gcp93ketfx",
+            "role": "ADMIN",
+            "customRoleId": null,
+            "createdAt": "2026-04-06T23:32:07.816Z",
+            "updatedAt": "2026-08-13T23:30:19.304Z",
+            "status": "APPROVED",
+            "approvedBy": "cmnntrpog000302gco5nxqrdn",
+            "approvedAt": "2026-04-06T23:32:07.809Z",
+            "invitationTokenHash": null,
+            "invitationExpiresAt": null,
+            "canViewEmission": true,
+            "canViewReception": true,
+            "canViewPayroll": false,
+            "canViewSatPortal": false,
+            "canViewMassDownloads": true,
+            "canManageOrg": true,
+            "granularPermissions": {},
+            "providerRfc": null,
+            "providerName": null,
+            "providerUploadBlockedAt": null,
+            "providerUploadBlockedReason": null,
+            "providerUploadBlockedBySystem": false,
+            "user": {
+              "id": "cmnntrpog000302gco5nxqrdn",
+              "name": "Rodrigo Edmundo Torre Hernández",
+              "email": "rtorreh@itcomplements.com",
+              "emailVerified": null,
+              "image": null,
+              "password": "$2b$10$g2oqGIJXe.hLIKLxSCgavOpdLk8GxwAeHOJ53N.bV5uh8.5xsrtuK",
+              "createdAt": "2026-04-06T23:32:07.742Z",
+              "updatedAt": "2026-08-13T23:30:19.292Z",
+              "systemRole": "ADMIN",
+              "onboardingStep": "TENANT_SETUP",
+              "onboardingData": {
+                "progress": 0,
+                "currentStep": "TENANT_SETUP",
+                "preferences": {
+                  "tables": {
+                    "workpaperEmitidos": {
+                      "visibleColumns": [
+                        "issuerRfc",
+                        "receiverRfc",
+                        "receiverName",
+                        "series",
+                        "folio",
+                        "uuid",
+                        "subtotal",
+                        "totalImpuestosTrasladados",
+                        "totalImpuestosRetenidos",
+                        "discount",
+                        "total",
+                        "issuanceDate",
+                        "certificationDate",
+                        "cfdiType",
+                        "tipoRelacion",
+                        "cfdiRelacionado",
+                        "currency",
+                        "paymentMethod",
+                        "paymentForm"
+                      ]
+                    }
+                  }
+                },
+                "completedSteps": []
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cmss5ia5u00052qj04pwqykqq",
+      "rfc": "QB2306260K5Y",
+      "name": "Empresa Prueba QB2306260K5Y",
+      "companyAccesses": [
+        {
+          "id": "cmss5ia5w00072qj0w85x9hsw",
+          "organizationId": "cmipiwlqk000mvyvtc22tnlrb",
+          "companyId": "cmss5ia5u00052qj04pwqykqq",
+          "memberId": "cmss5hc7p00082qn8ylclql5t",
+          "role": "ADMIN",
+          "customRoleId": null,
+          "createdAt": "2026-08-13T23:30:19.508Z",
+          "updatedAt": "2026-08-13T23:30:19.508Z",
+          "member": {
+            "id": "cmss5hc7p00082qn8ylclql5t",
+            "userId": "cmss5hc7l00062qn8hvipo7ua",
+            "organizationId": "cmipiwlqk000mvyvtc22tnlrb",
+            "role": "VIEWER",
+            "customRoleId": null,
+            "createdAt": "2026-08-13T23:29:35.509Z",
+            "updatedAt": "2026-08-13T23:30:19.483Z",
+            "status": "APPROVED",
+            "approvedBy": null,
+            "approvedAt": null,
+            "invitationTokenHash": null,
+            "invitationExpiresAt": null,
+            "canViewEmission": true,
+            "canViewReception": true,
+            "canViewPayroll": true,
+            "canViewSatPortal": true,
+            "canViewMassDownloads": true,
+            "canManageOrg": false,
+            "granularPermissions": {},
+            "providerRfc": null,
+            "providerName": null,
+            "providerUploadBlockedAt": null,
+            "providerUploadBlockedReason": null,
+            "providerUploadBlockedBySystem": false,
+            "user": {
+              "id": "cmss5hc7l00062qn8hvipo7ua",
+              "name": "QA Usuario Externo Org-B (atacante)",
+              "email": "other-sast@itcomplements.com",
+              "emailVerified": "2026-08-13T23:29:35.504Z",
+              "image": null,
+              "password": "$2b$10$Dn688qIOY4cEnDNQhkCapuPbvEqVp5OwMjpGhRzIQP9eV0gKgWGKO",
+              "createdAt": "2026-08-13T23:29:35.506Z",
+              "updatedAt": "2026-08-13T23:30:19.480Z",
+              "systemRole": "USER",
+              "onboardingStep": "initial",
+              "onboardingData": {}
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "keptInvoices": [
+    {
+      "uuid": "11111111-0000-4000-8000-000000000001",
+      "issuerRfc": "ODE8604257UA",
+      "receiverRfc": "XAXX010101000",
+      "total": "1160",
+      "series": null,
+      "folio": null,
+      "status": "ACTIVE",
+      "issuerFiscalEntityId": "cmnnz2tka000102tko4p0hn49",
+      "fiscalEntity": {
+        "organizationId": "cmnntrppk000502gcp93ketfx"
+      }
+    },
+    {
+      "uuid": "11111111-0000-4000-8000-000000000002",
+      "issuerRfc": "QBB7223997V9",
+      "receiverRfc": "XAXX010101000",
+      "total": "1160",
+      "series": null,
+      "folio": null,
+      "status": "ACTIVE",
+      "issuerFiscalEntityId": "cmss5ia5r00042qj0tva08qa4",
+      "fiscalEntity": {
+        "organizationId": "cmipiwlqk000mvyvtc22tnlrb"
+      }
+    }
+  ],
+  "massDownloads": [
+    {
+      "id": "mdr-sast-org-a-prop-001",
+      "requestType": "EMITIDOS",
+      "requestingRfc": "ODE8604257UA",
+      "issuerRfc": "ODE8604257UA",
+      "status": "Todos",
+      "satPackageId": "AAAAAAAA-0000-0000-0000-00000000000A",
+      "company": {
+        "id": "cmss5ia5e00002qj0bu0ccelp",
+        "name": "Empresa Prueba QA2190188S3Z",
+        "rfc": "QA2190188S3Z",
+        "businessName": "Empresa Prueba QA2190188S3Z SA de CV",
+        "legalRepresentative": null,
+        "taxRegime": "601",
+        "postalCode": "06000",
+        "address": null,
+        "city": null,
+        "state": null,
+        "country": "México",
+        "phone": null,
+        "email": null,
+        "website": null,
+        "industry": null,
+        "employeesCount": null,
+        "incorporationDate": null,
+        "status": "APPROVED",
+        "approvedBy": null,
+        "approvedAt": null,
+        "rejectionReason": null,
+        "notes": null,
+        "createdAt": "2026-08-13T23:30:19.490Z",
+        "updatedAt": "2026-08-13T23:30:19.490Z",
+        "createdBy": "seed-sast",
+        "updatedBy": "seed-sast",
+        "companyAccesses": [
+          {
+            "id": "cmss5ia5m00022qj012sx0kq2",
+            "organizationId": "cmnntrppk000502gcp93ketfx",
+            "companyId": "cmss5ia5e00002qj0bu0ccelp",
+            "memberId": "cmnntrpqh000702gc3bdfxoqr",
+            "role": "ADMIN",
+            "customRoleId": null,
+            "createdAt": "2026-08-13T23:30:19.498Z",
+            "updatedAt": "2026-08-13T23:30:19.498Z",
+            "member": {
+              "id": "cmnntrpqh000702gc3bdfxoqr",
+              "userId": "cmnntrpog000302gco5nxqrdn",
+              "organizationId": "cmnntrppk000502gcp93ketfx",
+              "role": "ADMIN",
+              "customRoleId": null,
+              "createdAt": "2026-04-06T23:32:07.816Z",
+              "updatedAt": "2026-08-13T23:30:19.304Z",
+              "status": "APPROVED",
+              "approvedBy": "cmnntrpog000302gco5nxqrdn",
+              "approvedAt": "2026-04-06T23:32:07.809Z",
+              "invitationTokenHash": null,
+              "invitationExpiresAt": null,
+              "canViewEmission": true,
+              "canViewReception": true,
+              "canViewPayroll": false,
+              "canViewSatPortal": false,
+              "canViewMassDownloads": true,
+              "canManageOrg": true,
+              "granularPermissions": {},
+              "providerRfc": null,
+              "providerName": null,
+              "providerUploadBlockedAt": null,
+              "providerUploadBlockedReason": null,
+              "providerUploadBlockedBySystem": false,
+              "user": {
+                "id": "cmnntrpog000302gco5nxqrdn",
+                "name": "Rodrigo Edmundo Torre Hernández",
+                "email": "rtorreh@itcomplements.com",
+                "emailVerified": null,
+                "image": null,
+                "password": "$2b$10$g2oqGIJXe.hLIKLxSCgavOpdLk8GxwAeHOJ53N.bV5uh8.5xsrtuK",
+                "createdAt": "2026-04-06T23:32:07.742Z",
+                "updatedAt": "2026-08-13T23:30:19.292Z",
+                "systemRole": "ADMIN",
+                "onboardingStep": "TENANT_SETUP",
+                "onboardingData": {
+                  "progress": 0,
+                  "currentStep": "TENANT_SETUP",
+                  "preferences": {
+                    "tables": {
+                      "workpaperEmitidos": {
+                        "visibleColumns": [
+                          "issuerRfc",
+                          "receiverRfc",
+                          "receiverName",
+                          "series",
+                          "folio",
+                          "uuid",
+                          "subtotal",
+                          "totalImpuestosTrasladados",
+                          "totalImpuestosRetenidos",
+                          "discount",
+                          "total",
+                          "issuanceDate",
+                          "certificationDate",
+                          "cfdiType",
+                          "tipoRelacion",
+                          "cfdiRelacionado",
+                          "currency",
+                          "paymentMethod",
+                          "paymentForm"
+                        ]
+                      }
+                    }
+                  },
+                  "completedSteps": []
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mdr-sast-org-b-aje-001",
+      "requestType": "EMITIDOS",
+      "requestingRfc": "QBB7223997V9",
+      "issuerRfc": "QBB7223997V9",
+      "status": "Todos",
+      "satPackageId": "BBBBBBBB-0000-0000-0000-00000000000B",
+      "company": {
+        "id": "cmss5ia5u00052qj04pwqykqq",
+        "name": "Empresa Prueba QB2306260K5Y",
+        "rfc": "QB2306260K5Y",
+        "businessName": "Empresa Prueba QB2306260K5Y SA de CV",
+        "legalRepresentative": null,
+        "taxRegime": "601",
+        "postalCode": "06000",
+        "address": null,
+        "city": null,
+        "state": null,
+        "country": "México",
+        "phone": null,
+        "email": null,
+        "website": null,
+        "industry": null,
+        "employeesCount": null,
+        "incorporationDate": null,
+        "status": "APPROVED",
+        "approvedBy": null,
+        "approvedAt": null,
+        "rejectionReason": null,
+        "notes": null,
+        "createdAt": "2026-08-13T23:30:19.506Z",
+        "updatedAt": "2026-08-13T23:30:19.506Z",
+        "createdBy": "seed-sast",
+        "updatedBy": "seed-sast",
+        "companyAccesses": [
+          {
+            "id": "cmss5ia5w00072qj0w85x9hsw",
+            "organizationId": "cmipiwlqk000mvyvtc22tnlrb",
+            "companyId": "cmss5ia5u00052qj04pwqykqq",
+            "memberId": "cmss5hc7p00082qn8ylclql5t",
+            "role": "ADMIN",
+            "customRoleId": null,
+            "createdAt": "2026-08-13T23:30:19.508Z",
+            "updatedAt": "2026-08-13T23:30:19.508Z",
+            "member": {
+              "id": "cmss5hc7p00082qn8ylclql5t",
+              "userId": "cmss5hc7l00062qn8hvipo7ua",
+              "organizationId": "cmipiwlqk000mvyvtc22tnlrb",
+              "role": "VIEWER",
+              "customRoleId": null,
+              "createdAt": "2026-08-13T23:29:35.509Z",
+              "updatedAt": "2026-08-13T23:30:19.483Z",
+              "status": "APPROVED",
+              "approvedBy": null,
+              "approvedAt": null,
+              "invitationTokenHash": null,
+              "invitationExpiresAt": null,
+              "canViewEmission": true,
+              "canViewReception": true,
+              "canViewPayroll": true,
+              "canViewSatPortal": true,
+              "canViewMassDownloads": true,
+              "canManageOrg": false,
+              "granularPermissions": {},
+              "providerRfc": null,
+              "providerName": null,
+              "providerUploadBlockedAt": null,
+              "providerUploadBlockedReason": null,
+              "providerUploadBlockedBySystem": false,
+              "user": {
+                "id": "cmss5hc7l00062qn8hvipo7ua",
+                "name": "QA Usuario Externo Org-B (atacante)",
+                "email": "other-sast@itcomplements.com",
+                "emailVerified": "2026-08-13T23:29:35.504Z",
+                "image": null,
+                "password": "$2b$10$Dn688qIOY4cEnDNQhkCapuPbvEqVp5OwMjpGhRzIQP9eV0gKgWGKO",
+                "createdAt": "2026-08-13T23:29:35.506Z",
+                "updatedAt": "2026-08-13T23:30:19.480Z",
+                "systemRole": "USER",
+                "onboardingStep": "initial",
+                "onboardingData": {}
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "satCredentials": []
+}

@@ -1,6 +1,20 @@
-import { NextResponse } from "next/server"
 import { Prisma, CfdiType, SatStatus } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { auth } from "@/lib/auth"
+import { hasPermission, Permission } from "@/lib/permissions"
+import {
+  FiscalControlQuerySchema,
+  validateFcDynamicFilters,
+  ALLOWED_FC_DB_FIELDS,
+  fp32,
+  safeErrSummary,
+  parsePositiveInt,
+  massDownloadJsonResponse,
+} from "@/lib/mass-downloads-route-utils"
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 function parseNumber(value: string | null): number | null {
   if (!value) return null
@@ -9,28 +23,95 @@ function parseNumber(value: string | null): number | null {
 }
 
 export async function GET(request: Request) {
+  const reqId = crypto.randomUUID()
   try {
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get("companyId")
-    const rfcFilter = searchParams.get("rfc")?.trim().toUpperCase() || ""
-    const cfdiTypeParam = searchParams.get("cfdiType") || ""
-    const satStatusParam = searchParams.get("satStatus") || ""
-    const yearParam = parseNumber(searchParams.get("year"))
-    const monthParam = parseNumber(searchParams.get("month"))
-    const pageParam = parseNumber(searchParams.get("page")) || 1
-    const pageSizeParam = parseNumber(searchParams.get("pageSize")) || 50
+    const session = await auth()
+    if (!session?.user?.id) {
+      return massDownloadJsonResponse({ error: "No autorizado", reqId }, { status: 401 })
+    }
 
-    if (!companyId) {
-      return NextResponse.json({ error: "companyId es requerido" }, { status: 400 })
+    const { searchParams } = new URL(request.url)
+    const rawQuery = {
+      companyId: searchParams.get("companyId") || undefined,
+      rfc: searchParams.get("rfc")?.trim().toUpperCase() || undefined,
+      cfdiType: searchParams.get("cfdiType") || undefined,
+      satStatus: searchParams.get("satStatus") || undefined,
+      year: parseNumber(searchParams.get("year")),
+      month: parseNumber(searchParams.get("month")),
+      page: parsePositiveInt(searchParams.get("page") || null, 1, 10000),
+      pageSize: parsePositiveInt(searchParams.get("pageSize") || null, 50, 200),
+    }
+
+    const parsedQuery = FiscalControlQuerySchema.safeParse(rawQuery)
+    if (!parsedQuery.success) {
+      return massDownloadJsonResponse(
+        { error: "Parámetros inválidos", reqId, issues: parsedQuery.error.issues.map(i => i.path.join('.')) },
+        { status: 400 }
+      )
+    }
+
+    const { companyId, cfdiType: cfdiTypeParam, satStatus: satStatusParam, year: yearParam, month: monthParam, page: pageParam, pageSize: pageSizeParam, rfc: rfcParam } = parsedQuery.data
+    const rfcFilter = rfcParam?.trim().toUpperCase() || ""
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        systemRole: true,
+        memberships: {
+          where: { status: 'APPROVED' },
+          select: { id: true, organizationId: true, role: true, status: true }
+        }
+      }
+    })
+    if (!user || user.memberships.length === 0) {
+      return massDownloadJsonResponse({ error: "Sin membresía activa", reqId }, { status: 403 })
     }
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { rfc: true, businessName: true },
+      select: {
+        rfc: true,
+        businessName: true,
+        id: true,
+      },
     })
 
     if (!company) {
-      return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
+      return massDownloadJsonResponse({ error: "Empresa no encontrada", reqId }, { status: 404 })
+    }
+
+    const fiscalEntityForCompany = await prisma.fiscalEntity.findFirst({
+      where: { rfc: company.rfc, isActive: true },
+      select: { organizationId: true, id: true },
+    })
+
+    const fallbackOrgViaAccess = fiscalEntityForCompany
+      ? null
+      : await prisma.companyAccess.findFirst({
+          where: { companyId: company.id },
+          select: { organizationId: true },
+        })
+
+    const targetOrgId = fiscalEntityForCompany?.organizationId ?? fallbackOrgViaAccess?.organizationId ?? null
+
+    if (!targetOrgId) {
+      return massDownloadJsonResponse({ error: "Empresa sin organización asociada", reqId }, { status: 403 })
+    }
+
+    const orgIdsAllowed = new Set(user.memberships.map(m => m.organizationId))
+    if (!orgIdsAllowed.has(targetOrgId)) {
+      return massDownloadJsonResponse({ error: "Sin acceso a la empresa", reqId }, { status: 403 })
+    }
+
+    const member = user.memberships.find(m => m.organizationId === targetOrgId)
+    if (!member) {
+      return massDownloadJsonResponse({ error: "Sin acceso a la organización", reqId }, { status: 403 })
+    }
+
+    const canViewFiscal = hasPermission(user, Permission.DASHBOARD_FISCAL_VIEW, targetOrgId)
+    if (!canViewFiscal) {
+      return massDownloadJsonResponse({ error: "Permiso insuficiente: Panel Fiscal", reqId }, { status: 403 })
     }
 
     const targetRfc = company.rfc
@@ -43,13 +124,14 @@ export async function GET(request: Request) {
       'PAGO': 'P'
     }
 
-    // Extract dynamic column filters
-    const columnFilters: Record<string, string> = {}
+    // Extract dynamic column filters (whitelist only)
+    const rawFilters: Record<string, string> = {}
     searchParams.forEach((value, key) => {
       if (key.startsWith("filter_") && value.trim() !== "") {
-        columnFilters[key.replace("filter_", "")] = value.trim()
+        rawFilters[key.replace("filter_", "")] = value.trim()
       }
     })
+    const columnFilters = validateFcDynamicFilters(rawFilters)
 
     const baseSatWhere: Prisma.SatMetadataWhereInput = {
       OR: [
@@ -94,55 +176,42 @@ export async function GET(request: Request) {
       }
     }
 
-    // Apply dynamic column filters to baseSatWhere
+    // Apply dynamic column filters to baseSatWhere (whitelist only)
     if (Object.keys(columnFilters).length > 0) {
       if (!baseSatWhere.AND) baseSatWhere.AND = []
       
       Object.entries(columnFilters).forEach(([key, value]) => {
         const query = value.toLowerCase()
         const andArray = baseSatWhere.AND as Prisma.SatMetadataWhereInput[]
-        
+        const dbField = ALLOWED_FC_DB_FIELDS[key]
+        if (!dbField) return
+
         switch(key) {
           case 'uuid':
-            andArray.push({ uuid: { contains: query, mode: 'insensitive' } })
-            break
           case 'issuerRfc':
-            andArray.push({ rfcEmisor: { contains: query, mode: 'insensitive' } })
-            break
           case 'receiverRfc':
-            andArray.push({ rfcReceptor: { contains: query, mode: 'insensitive' } })
-            break
           case 'receiverName':
-            andArray.push({ nombreReceptor: { contains: query, mode: 'insensitive' } })
-            break
           case 'issuerName':
-            andArray.push({ nombreEmisor: { contains: query, mode: 'insensitive' } })
-            break
           case 'certificationPac':
-            andArray.push({ rfcPac: { contains: query, mode: 'insensitive' } })
+            andArray.push({ [dbField]: { contains: query, mode: 'insensitive' } })
             break
           case 'cfdiType':
             const mapInverse: Record<string, string> = {
               'ingreso': 'I', 'egreso': 'E', 'traslado': 'T', 'nomina': 'N', 'pago': 'P'
             }
             if (mapInverse[query]) {
-              andArray.push({ efectoComprobante: mapInverse[query] })
+              andArray.push({ [dbField]: mapInverse[query] })
             } else {
-              andArray.push({ efectoComprobante: { contains: query, mode: 'insensitive' } })
+              andArray.push({ [dbField]: { contains: query, mode: 'insensitive' } })
             }
             break
           case 'total':
             const num = Number(query.replace(/[^0-9.-]+/g, ""))
-            if (!isNaN(num)) andArray.push({ monto: { equals: num } })
+            if (!isNaN(num)) andArray.push({ [dbField]: { equals: num } })
             break
           case 'issuanceDate':
           case 'certificationDate':
           case 'cancelationDate':
-            const dbField = key === 'issuanceDate' ? 'fechaEmision' 
-                          : key === 'certificationDate' ? 'fechaCertificacionSat' 
-                          : 'fechaCancelacion'
-            
-            // Expected formats: DD/MM/YYYY or MM/YYYY or YYYY
             const parts = query.split(/[\/\-]/).map(Number).filter(n => !isNaN(n))
             if (parts.length === 3) {
               const [day, month, year] = parts
@@ -359,59 +428,66 @@ export async function GET(request: Request) {
       prisma.satMetadata.count({ where: baseSatWhere }),
     ])
 
-    const rowsWithXml = await Promise.all(
-      satRows.map(async (row) => {
-        const xml = await prisma.invoice.findUnique({
-          where: { uuid: row.uuid },
-          select: { id: true, xmlContent: true },
-        })
-        
-        // Map types back to readable
-        const mapType = (t: string | null) => {
-          if (t === 'I') return 'INGRESO'
-          if (t === 'E') return 'EGRESO'
-          if (t === 'T') return 'TRASLADO'
-          if (t === 'N') return 'NOMINA'
-          if (t === 'P') return 'PAGO'
-          return 'DESCONOCIDO'
-        }
-
-        return {
-          uuid: row.uuid,
-          issuerRfc: row.rfcEmisor,
-          issuerName: row.nombreEmisor || "",
-          receiverRfc: row.rfcReceptor,
-          receiverName: row.nombreReceptor || "",
-          issuanceDate: row.fechaEmision,
-          total: Number(row.monto || 0),
-          satStatus: row.estatus === "1" ? "VIGENTE" : "CANCELADO",
-          hasXml: Boolean(xml),
-          xmlContent: xml?.xmlContent || "",
-          cfdiType: mapType(row.efectoComprobante),
-          series: "",
-          folio: "",
-          currency: "MXN",
-          exchangeRate: 1,
-          subtotal: 0,
-          discount: 0,
-          ivaTrasladado: 0,
-          ivaRetenido: 0,
-          isrRetenido: 0,
-          iepsRetenido: 0,
-          certificationDate: row.fechaCertificacionSat,
-          cancelationDate: row.fechaCancelacion,
-          certificationPac: row.rfcPac || "",
-          paymentMethod: "",
-          paymentForm: "",
-          usageCfdi: "",
-          expeditionPlace: "",
-        }
+    // [MD-008 FIX] Batch IN query: single findMany instead of N findUnique + no xmlContent leak
+    const satRowUuids = satRows.map(r => r.uuid)
+    const existingInvoicesMap = new Map<string, { id: string }>()
+    if (satRowUuids.length > 0) {
+      const existingInvoices = await prisma.invoice.findMany({
+        where: { uuid: { in: satRowUuids } },
+        select: { uuid: true, id: true },
       })
-    )
+      for (const inv of existingInvoices) {
+        existingInvoicesMap.set(inv.uuid, { id: inv.id })
+      }
+    }
+
+    const mapType = (t: string | null) => {
+      if (t === 'I') return 'INGRESO'
+      if (t === 'E') return 'EGRESO'
+      if (t === 'T') return 'TRASLADO'
+      if (t === 'N') return 'NOMINA'
+      if (t === 'P') return 'PAGO'
+      return 'DESCONOCIDO'
+    }
+
+    const rowsWithXml = satRows.map((row) => {
+      const xml = existingInvoicesMap.get(row.uuid)
+      return {
+        uuid: row.uuid,
+        issuerRfc: row.rfcEmisor,
+        issuerName: row.nombreEmisor || "",
+        receiverRfc: row.rfcReceptor,
+        receiverName: row.nombreReceptor || "",
+        issuanceDate: row.fechaEmision,
+        total: Number(row.monto || 0),
+        satStatus: row.estatus === "1" ? "VIGENTE" : "CANCELADO",
+        hasXml: Boolean(xml),
+        xmlContent: "",
+        cfdiType: mapType(row.efectoComprobante),
+        series: "",
+        folio: "",
+        currency: "MXN",
+        exchangeRate: 1,
+        subtotal: 0,
+        discount: 0,
+        ivaTrasladado: 0,
+        ivaRetenido: 0,
+        isrRetenido: 0,
+        iepsRetenido: 0,
+        certificationDate: row.fechaCertificacionSat,
+        cancelationDate: row.fechaCancelacion,
+        certificationPac: row.rfcPac || "",
+        paymentMethod: "",
+        paymentForm: "",
+        usageCfdi: "",
+        expeditionPlace: "",
+      }
+    })
 
     const totalPages = satTotal === 0 ? 0 : Math.ceil(satTotal / pageSize)
 
-    return NextResponse.json({
+    return massDownloadJsonResponse({
+      reqId,
       kpis: {
         metadataTotal,
         xmlTotal,
@@ -431,9 +507,12 @@ export async function GET(request: Request) {
         },
       },
     })
-  } catch {
-    return NextResponse.json(
-      { error: "Error al obtener datos del Panel de Control Fiscal" },
+  } catch (err) {
+    const summary = safeErrSummary(err)
+    const errId = fp32(JSON.stringify(summary))
+    console.error('[fiscal-control 500]', { reqId, errId, summary })
+    return massDownloadJsonResponse(
+      { error: "Error al obtener datos del Panel de Control Fiscal", reqId, errId },
       { status: 500 }
     )
   }

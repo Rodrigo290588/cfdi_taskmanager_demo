@@ -105,11 +105,8 @@ export default function CompaniesSearchPage() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }))
         console.error('API Error:', errorData)
-        // Mostrar mensaje de error más detallado
-        const errorMessage = errorData.details ? 
-          `${errorData.error}: ${JSON.stringify(errorData.details)}` : 
-          errorData.error || 'Error al buscar empresas'
-        throw new Error(errorMessage)
+        // COMP-011 FIX MEDIO: NO hacer JSON.stringify(details) raw al toast (leak Zod attack surface map)
+        throw new Error(errorData.error || 'Error al buscar empresas')
       }
 
       const data: SearchResponse = await response.json()

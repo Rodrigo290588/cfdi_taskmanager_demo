@@ -104,12 +104,15 @@ export function hasObjetoImpTaxViolation(params: {
   return params.hasObjetoImpTaxMismatch === true
 }
 
-export function buildObjetoImpTaxViolationMessage() {
-  return [
-    'Error de Coherencia de Impuestos en CFDI 4.0.',
-    'Se detectó inconsistencia entre ObjetoImp y los impuestos trasladados de IVA en los conceptos.',
-    'El SAT rechazará ese amarre de IVA en sus prellenados.'
+export function buildObjetoImpTaxViolationMessage(details?: string | null | undefined) {
+  const header = [
+    'Error de Coherencia de Impuestos en CFDI 4.0 (ObjetoImp vs IVA Trasladado Exento / No Exento).',
+    'El SAT rechazará este amarre de IVA en sus prellenados y validaciones post-carga.'
   ].join(' ')
+  if (!details) {
+    return `${header} Consulte el detalle técnico de este archivo para revisar concepto por concepto.`
+  }
+  return `${header} Detalle por concepto y traslado: ${details}`
 }
 
 export async function getPaymentMethodVsPaymentFormRuleSummary(params: {

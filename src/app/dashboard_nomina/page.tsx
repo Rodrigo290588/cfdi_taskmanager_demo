@@ -65,6 +65,20 @@ function KPICard({ title, value, subtext, color = 'blue' }: KpiCardProps) {
   )
 }
 
+// ============================================================
+// DASH-SAST-006: buildDashboardUrl URL-safe con URLSearchParams.
+// Previene parameter injection vía template literals ?x=${y} manuales.
+// ============================================================
+function buildDashboardUrl(base: string, params: Record<string, string | number | boolean | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === null || v === undefined || v === '') continue;
+    sp.append(k, String(v));
+  }
+  const qs = sp.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 export default function DashboardNominaPage() {
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -92,7 +106,7 @@ export default function DashboardNominaPage() {
     if (!selectedCompanyId) return
     try {
       setLoading(true)
-      const res = await fetch(`/api/dashboard_nomina?companyId=${selectedCompanyId}`)
+      const res = await fetch(buildDashboardUrl('/api/dashboard_nomina', { companyId: selectedCompanyId }), { cache: 'no-store' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error al cargar métricas')
       setMetrics(data)

@@ -1,15 +1,24 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { RequestStatus } from '@prisma/client'
+import { Prisma, RequestStatus } from '@prisma/client'
 import { authenticateWithSat } from '@/lib/sat-service'
 import { SatSoapService } from '@/services/sat-soap.service'
-import { MASS_DOWNLOAD_QUEUE_NAME, massVerificationQueue } from '@/lib/queue'
+import { MASS_DOWNLOAD_QUEUE_NAME, getMassVerificationQueue, resolveRedisConnection } from '@/lib/queue'
 import { decrypt } from '@/lib/encryption'
 import { redis } from '@/lib/redis'
 import crypto from 'crypto'
+import {
+  RFC_SEMAPHORE_TTL_SECONDS,
+  RFC_CONCURRENCY_LIMIT,
+  RFC_SEMAPHORE_LUA_SCRIPT,
+  REDACT_HEADER_KEYS,
+  truncateSatPreview,
+  redactSatErrorLog,
+} from '@/lib/mass-downloads-route-utils'
 
 const satSoapService = new SatSoapService()
 const SAT_SOLICITA_URL = 'https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/SolicitaDescargaService.svc'
+const SAT_RESPONSE_PREVIEW_MAX = 200
 
 function getSoapAction(retrievalType: string): string {
   const baseUrl = 'http://DescargaMasivaTerceros.sat.gob.mx/ISolicitaDescargaService'
@@ -20,28 +29,74 @@ function getSoapAction(retrievalType: string): string {
   }
 }
 
-// This would typically be in a separate process or instrumentation file
+async function acquireRfcSemaphore(rfc: string): Promise<void> {
+  const key = `active_jobs:${rfc}`
+  try {
+    if (typeof (redis as unknown as { eval?: (s: string, k: string[], a: (string | number)[]) => Promise<unknown> }).eval === 'function') {
+      const result = await (redis as unknown as { eval: (s: string, k: string[], a: (string | number)[]) => Promise<number> }).eval(
+        RFC_SEMAPHORE_LUA_SCRIPT,
+        [key],
+        [RFC_SEMAPHORE_TTL_SECONDS, RFC_CONCURRENCY_LIMIT]
+      )
+      if (typeof result === 'object' && result && (result as { err?: unknown }).err === 'RFC_CONCURRENCY_LIMIT') {
+        throw new Error('RFC_CONCURRENCY_LIMIT')
+      }
+      return
+    }
+  } catch (luaErr) {
+    if (luaErr instanceof Error && luaErr.message === 'RFC_CONCURRENCY_LIMIT') {
+      throw luaErr
+    }
+    console.warn('[semaphore] Lua eval unavailable or transient error, fallback to non-atomic', {
+      rfc,
+      err: luaErr instanceof Error ? luaErr.message : String(luaErr),
+    })
+  }
+  // Fallback non-atomic pero con TTL doble capa + expire() siempre
+  const activeCount = await redis.incr(key)
+  try {
+    await redis.expire(key, RFC_SEMAPHORE_TTL_SECONDS)
+  } catch {
+    // ignore expire transient
+  }
+  if (activeCount > RFC_CONCURRENCY_LIMIT) {
+    try {
+      const after = await redis.decr(key)
+      if (after === 0) {
+        try { await redis.del(key) } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+    throw new Error('RFC_CONCURRENCY_LIMIT')
+  }
+  // Safe-guard doble expire: asegura TTL incluso si el incr previo existía sin TTL
+  try {
+    await redis.expire(key, RFC_SEMAPHORE_TTL_SECONDS)
+  } catch { /* ignore */ }
+}
+
+async function releaseRfcSemaphore(rfc: string): Promise<void> {
+  const key = `active_jobs:${rfc}`
+  try {
+    const after = await redis.decr(key)
+    if (after <= 0) {
+      try { await redis.del(key) } catch { /* ignore */ }
+    }
+  } catch { /* ignore cleanup transient failures */ }
+}
+
 export function setupMassDownloadWorker() {
   const worker = new Worker(MASS_DOWNLOAD_QUEUE_NAME, async (job: Job) => {
     const { requestId, rfc } = job.data
-    const rfcKey = `active_jobs:${rfc}`
 
-    // Manual Concurrency Check (Max 2 per RFC)
-    const activeCount = await redis.incr(rfcKey)
-    if (activeCount > 2) {
-      await redis.decr(rfcKey)
-      throw new Error('RFC_CONCURRENCY_LIMIT')
-    }
+    await acquireRfcSemaphore(rfc)
 
     try {
       try {
-      // 1. Update status to EN_PROCESO
       await prisma.massDownloadRequest.update({
         where: { id: requestId },
         data: { requestStatus: RequestStatus.EN_PROCESO }
       })
 
-      // 2. Fetch Request Data
       const request = await prisma.massDownloadRequest.findUnique({
         where: { id: requestId },
         include: { company: true }
@@ -49,13 +104,10 @@ export function setupMassDownloadWorker() {
 
       if (!request) throw new Error('Request not found')
 
-      console.log(`Processing request ${requestId} for RFC: ${request.requestingRfc}`)
+      console.log(`[mass-dl-worker] Processing request ${requestId} for RFC: ${request.requestingRfc}`)
 
-      // 3. Authenticate (Get Token)
-      // Note: authenticateWithSat handles Redis caching (9 min TTL)
       const token = await authenticateWithSat(request.requestingRfc)
 
-      // 4. Get Credentials for Signing
       const credential = await prisma.satCredential.findFirst({
         where: { rfc: request.requestingRfc }
       })
@@ -66,7 +118,6 @@ export function setupMassDownloadWorker() {
       const privateKeyPassword = decrypt(credential.encryptedPassword)
       const certificate = credential.certificate
 
-      // Convert Encrypted DER/Base64 to Decrypted PEM
       const privateKeyObject = crypto.createPrivateKey({
         key: Buffer.from(privateKeyBase64, 'base64'),
         format: 'der',
@@ -79,7 +130,6 @@ export function setupMassDownloadWorker() {
         type: 'pkcs8'
       }) as string
 
-      // 5. Generate SOAP XML
       const soapXml = satSoapService.generateSolicitaDescargaSoap({
         rfcSolicitante: request.requestingRfc,
         startDate: request.startDate!,
@@ -93,9 +143,8 @@ export function setupMassDownloadWorker() {
         privateKey: privateKeyPem
       })
 
-      // 6. Send to SAT
-      console.log(`Sending SOAP request to SAT for request ${requestId}...`)
-      
+      console.log(`[mass-dl-worker] Sending SOAP request to SAT for request ${requestId}...`)
+
       const soapAction = getSoapAction(request.retrievalType)
 
       const response = await fetch(SAT_SOLICITA_URL, {
@@ -103,104 +152,105 @@ export function setupMassDownloadWorker() {
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `"${soapAction}"`,
-          'Authorization': `WRAP access_token="${token}"`
+          'Authorization': `WRAP access_token="[REDACTED len=${token.length} sha256=${crypto.createHash('sha256').update(token).digest('hex').slice(0, 12)}]"`
         },
         body: soapXml
       })
 
-      console.log(`SAT Response Status: ${response.status} ${response.statusText}`)
-      
-      // Log headers
-      console.log('SAT Response Headers:')
-      response.headers.forEach((val, key) => console.log(`${key}: ${val}`))
-      
-      const responseText = await response.text()
-      console.log(`SAT Response Body Length: ${responseText.length}`)
-      if (responseText.length < 500) {
-        console.log(`SAT Response Body Preview: ${responseText}`)
+      console.log(`[mass-dl-worker] SAT Response Status: ${response.status} ${response.statusText}`)
+
+      // Log headers but redact sensitive keys
+      const safeHeaders: Array<{ k: string; v: string }> = []
+      response.headers.forEach((val, key) => {
+        const k = key.toLowerCase()
+        if (REDACT_HEADER_KEYS.has(k)) {
+          safeHeaders.push({ k, v: `[REDACTED len=${val.length}]` })
+        } else {
+          const v = val.length > 160 ? `${val.slice(0, 160)}...[truncated]` : val
+          safeHeaders.push({ k, v })
+        }
+      })
+      if (safeHeaders.length > 0) {
+        console.log(`[mass-dl-worker] SAT Response Headers (redacted):`, safeHeaders)
       }
 
-      // 7. Handle Response
+      const responseText = await response.text()
+      console.log(`[mass-dl-worker] SAT Response Body Length: ${responseText.length}`)
+      if (responseText.length > 0) {
+        const preview = truncateSatPreview(responseText, SAT_RESPONSE_PREVIEW_MAX)
+        console.log(`[mass-dl-worker] SAT Response Body Preview: ${preview}`)
+      }
+
       if (!response.ok) {
-        // Parse Fault
-        await handleSatError(requestId, responseText)
+        await handleSatError(requestId, responseText, response.status)
         return
       }
 
-      // 8. Parse Success (Extract IdSolicitud)
-      // <SolicitaDescargaResult IdSolicitud="..." Mensaje="..."/>
-      // Also check for CodigoEstatus if present
       const idPaqueteMatch = responseText.match(/IdPaquete="([^"]+)"/)
       const idSolicitudMatch = responseText.match(/IdSolicitud="([^"]+)"/)
       const mensajeMatch = responseText.match(/Mensaje="([^"]+)"/)
-      
-      // If we got a 200 OK but no IdPaquete/IdSolicitud, check if it's a "valid" error response inside the XML
-      // e.g. <SolicitaDescargaResult CodigoEstatus="5000" Mensaje="Solicitud recibida con éxito" .../>
-      
+
       if (idPaqueteMatch || idSolicitudMatch) {
         const satId = idPaqueteMatch ? idPaqueteMatch[1] : idSolicitudMatch![1]
-        
-        // Schedule verification
-        const delay = 60000 // 1 minute
+
+        const delay = 60000
         const nextCheck = new Date(Date.now() + delay)
 
         await prisma.massDownloadRequest.update({
           where: { id: requestId },
           data: {
-            requestStatus: RequestStatus.EN_PROCESO, // Keep as EN_PROCESO until verification finishes
+            requestStatus: RequestStatus.EN_PROCESO,
             satPackageId: satId,
             satMessage: mensajeMatch ? mensajeMatch[1] : 'Solicitud aceptada',
             nextCheck
           }
         })
 
-        // Add to Verification Queue
-        await massVerificationQueue.add('verify-request', { requestId, rfc }, {
+        await getMassVerificationQueue().add('verify-request', { requestId, rfc }, {
           delay
         })
-        
-        console.log(`Request ${requestId} accepted (ID: ${satId}). Scheduled verification.`)
+
+        console.log(`[mass-dl-worker] Request ${requestId} accepted (ID: ${satId}). Scheduled verification.`)
 
       } else {
-        // Log detailed parsing failure
-        console.warn(`Failed to parse IdPaquete from response for request ${requestId}. Response length: ${responseText.length}`)
-        await handleSatError(requestId, responseText)
+        console.warn(`[mass-dl-worker] Failed to parse IdPaquete from response for request ${requestId}. Response length: ${responseText.length}`)
+        await handleSatError(requestId, responseText, response.status)
       }
 
     } catch (error: unknown) {
       const err = error as Error
-      console.error(`Job ${job.id} failed:`, err)
+      console.error(`[mass-dl-worker] Job ${job.id} failed:`, {
+        message: err.message,
+        stack: err.stack ? truncateSatPreview(err.stack, 1024) : undefined,
+      })
+      const baseErr = {
+        message: `${err.message} (RFC Used: ${rfc || 'unknown'})`,
+        stack: err.stack ? truncateSatPreview(err.stack, 4096) : undefined,
+        timestamp: new Date().toISOString(),
+      }
       await prisma.massDownloadRequest.update({
         where: { id: requestId },
         data: {
           requestStatus: RequestStatus.ERROR,
-          errorLog: {
-            message: `${err.message} (RFC Used: ${rfc || 'unknown'})`,
-            stack: err.stack,
-            timestamp: new Date().toISOString()
-          }
+          errorLog: baseErr,
         }
       })
       throw error
     }
   } finally {
-    await redis.decr(rfcKey)
+    await releaseRfcSemaphore(rfc)
   }
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
-    concurrency: 20, // Global concurrency increased
+    connection: resolveRedisConnection(),
+    concurrency: 20,
   })
-  
+
   return worker
 }
 
-async function handleSatError(requestId: string, responseText: string) {
-  // Translate common errors
+async function handleSatError(requestId: string, responseText: string, httpStatus?: number) {
   let errorMsg = 'Unknown SAT Error'
-  
+
   if (responseText.includes('ActionNotSupported')) {
     errorMsg = 'La acción solicitada no es soportada por el servicio SAT.'
   } else if (responseText.includes('Token') && responseText.includes('Invalid')) {
@@ -208,8 +258,7 @@ async function handleSatError(requestId: string, responseText: string) {
   } else if (responseText.includes('305')) {
     errorMsg = 'Certificado Inválido o Caducado.'
   }
-  
-  // Extract fault string if possible (Standard SOAP Fault)
+
   const faultString = responseText.match(/<faultstring[^>]*>([\s\S]*?)<\/faultstring>/i)?.[1]
   const faultCode = responseText.match(/<faultcode[^>]*>([\s\S]*?)<\/faultcode>/i)?.[1]
 
@@ -218,17 +267,12 @@ async function handleSatError(requestId: string, responseText: string) {
       if (faultCode) errorMsg = `[${faultCode}] ${errorMsg}`
   }
 
-  // Check for specialized SAT messages in Body if not a standard Fault
   const satMensaje = responseText.match(/Mensaje="([^"]+)"/)?.[1]
   const codEstatus = responseText.match(/CodEstatus="([^"]+)"/)?.[1]
 
-  // If status is 5000 (Solicitud recibida con éxito), treat as success/warning, not error
-  // But if we are in handleSatError, it means something went wrong or we failed to parse IdSolicitud
-  // If CodEstatus="5000" but we missed IdSolicitud parsing, this fallback logic catches it
   if (codEstatus === '5000' && satMensaje) {
       const idSolicitudMatch = responseText.match(/IdSolicitud="([^"]+)"/)
       if (idSolicitudMatch) {
-        // Recover from "error" if it's actually a success we missed
         await prisma.massDownloadRequest.update({
           where: { id: requestId },
           data: {
@@ -244,30 +288,33 @@ async function handleSatError(requestId: string, responseText: string) {
   if (satMensaje && errorMsg === 'Unknown SAT Error') {
       errorMsg = satMensaje
   }
-  
+
+  const safeErrorLog = redactSatErrorLog({
+    rawResponse: responseText,
+    httpStatus: httpStatus ?? undefined,
+    timestamp: new Date().toISOString(),
+  })
+
   await prisma.massDownloadRequest.update({
     where: { id: requestId },
     data: {
       requestStatus: RequestStatus.ERROR,
       satMessage: errorMsg,
-      errorLog: {
-        rawResponse: responseText,
-        timestamp: new Date().toISOString()
-      }
+      errorLog: safeErrorLog as unknown as Prisma.InputJsonValue,
     }
   })
-  
-  // Log to Audit Log (assuming there is a table/function for it, as requested)
-  // "regístralos en un log de auditoría"
+
   try {
+    const emailHash = crypto.createHash('sha256').update('system@localhost').digest('hex').slice(0, 16)
     await prisma.auditLog.create({
       data: {
         action: 'SAT_ERROR',
         tableName: 'mass_download_requests',
         recordId: requestId,
-        description: errorMsg,
-        userId: 'SYSTEM', // System worker
-        userEmail: 'system@localhost',
+        description: truncateSatPreview(errorMsg, 500),
+        userId: 'SYSTEM',
+        userEmail: `[REDACTED sha256=${emailHash}]`,
+        oldValues: safeErrorLog as unknown as Prisma.InputJsonValue,
       }
     })
   } catch {

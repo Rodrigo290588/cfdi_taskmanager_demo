@@ -14,6 +14,9 @@ import { Building2, ChevronDown } from 'lucide-react'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { toast } from 'sonner'
 import { showSuccess, showError } from '@/lib/toast'
+import { ProtectedRoute } from '@/components/auth/protected-route'
+import { PermissionRequired } from '@/components/auth/permission-guard'
+import { Permission } from '@/lib/permissions'
 
 export interface Invitation {
   id: string
@@ -30,7 +33,7 @@ interface ActiveUser extends Invitation {
   companyIds: string[]
 }
 
-export default function UsersManagementPage() {
+function UsersManagementPage() {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -531,3 +534,17 @@ export default function UsersManagementPage() {
     </div>
   )
 }
+
+// [SAST-FIX #8] Wrapper externo. Si la sesión no tiene permiso, PermissionRequired
+// redirige o muestra fallback antes de renderizar el shell del admin.
+function WrappedUsersManagementPage() {
+  return (
+    <ProtectedRoute>
+      <PermissionRequired permission={Permission.ADMIN_USERS}>
+        <UsersManagementPage />
+      </PermissionRequired>
+    </ProtectedRoute>
+  )
+}
+
+export default WrappedUsersManagementPage

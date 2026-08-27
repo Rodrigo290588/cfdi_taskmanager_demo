@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import {
+  resolveRoleForOrg,
+  AdminRoleValidationError
+} from '@/lib/admin-roles'
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -27,8 +31,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     const requesterMembership = await prisma.member.findFirst({
-      where: { 
-        userId: session.user.id, 
+      where: {
+        userId: session.user.id,
         status: 'APPROVED',
         organizationId: targetMember.organizationId
       },
@@ -45,9 +49,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: 'Sin permisos para asignar roles' }, { status: 403 })
     }
 
-    const isSystemRole = ['ADMIN', 'AUDITOR', 'VIEWER'].includes(roleId)
-    const systemRole = isSystemRole ? roleId as 'ADMIN' | 'AUDITOR' | 'VIEWER' : 'VIEWER'
-    const customRoleId = isSystemRole ? null : roleId
+    // [SAST-FIX #1/#4] Resolver roleId validando pertenencia de CustomRole a la ORG
+    const { systemRole, customRoleId } = await resolveRoleForOrg(
+      roleId,
+      targetMember.organizationId
+    )
 
     const updated = await prisma.member.update({
       where: { id: targetMember.id },
@@ -76,6 +82,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
     })
   } catch (error) {
+    if (error instanceof AdminRoleValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error updating member role:', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }

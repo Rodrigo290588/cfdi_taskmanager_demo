@@ -37,25 +37,25 @@ model Session {
 }
 
 model User {
-  id             String        @id @default(cuid())
-  name           String?
-  email          String        @unique
-  emailVerified  DateTime?     @map("email_verified")
-  image          String?
-  password       String?
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
-  systemRole     SystemRole    @default(USER) @map("system_role")
-  onboardingStep String?       @default("initial")
-  onboardingData Json?         @default("{}")
-  accounts       Account[]
-  apiKeys        ApiKey[]
-  invoices       Invoice[]
+  id                    String                 @id @default(cuid())
+  name                  String?
+  email                 String                 @unique
+  emailVerified         DateTime?              @map("email_verified")
+  image                 String?
+  password              String?
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  systemRole            SystemRole             @default(USER) @map("system_role")
+  onboardingStep        String?                @default("initial")
+  onboardingData        Json?                  @default("{}")
+  accounts              Account[]
+  apiKeys               ApiKey[]
+  invoices              Invoice[]
   providerUploadedCfdis ProviderUploadedCfdi[] @relation("ProviderUploadedCfdiUser")
-  satInvoices    SatInvoice[]
-  memberships    Member[]
-  organizations  Organization?
-  sessions       Session[]
+  satInvoices           SatInvoice[]
+  memberships           Member[]
+  organizations         Organization?
+  sessions              Session[]
 
   @@map("users")
 }
@@ -70,43 +70,45 @@ model VerificationToken {
 }
 
 model Organization {
-  id                       String         @id @default(cuid())
-  name                     String
-  slug                     String         @unique
-  logo                     String?
-  description              String?
-  createdAt                DateTime       @default(now()) @map("created_at")
-  updatedAt                DateTime       @updatedAt @map("updated_at")
-  ownerId                  String?        @unique
-  onboardingCompleted      Boolean        @default(false)
-  setupRequirements        Json           @default("{\"minUsers\": 2, \"minCompanies\": 1}")
-  operationalAccessEnabled Boolean        @default(false)
-  systemSettings           Json?          @default("{}") @map("system_settings")
-  address                  String?
-  city                     String?
-  state                    String?
-  postalCode               String?        @map("postal_code")
-  country                  String?        @default("México")
-  phone                    String?
-  contactEmail             String?        @map("contact_email")
-  businessDescription      String?        @map("business_description")
-  website                  String?
-  industry                 String?
-  companySize              String?        @map("company_size")
-  foundedYear              Int?           @map("founded_year")
-  taxId                    String?        @map("tax_id")
-  businessType             String?        @map("business_type")
-  fiscalEntities           FiscalEntity[]
-  members                  Member[]
-  machineClients           MachineClient[]
-  providerUploadedCfdis    ProviderUploadedCfdi[]
+  id                                 String                             @id @default(cuid())
+  name                               String
+  slug                               String                             @unique
+  logo                               String?
+  description                        String?
+  createdAt                          DateTime                           @default(now()) @map("created_at")
+  updatedAt                          DateTime                           @updatedAt @map("updated_at")
+  ownerId                            String?                            @unique
+  onboardingCompleted                Boolean                            @default(false)
+  setupRequirements                  Json                               @default("{\"minUsers\": 2, \"minCompanies\": 1}")
+  operationalAccessEnabled           Boolean                            @default(false)
+  systemSettings                     Json?                              @default("{}") @map("system_settings")
+  address                            String?
+  city                               String?
+  state                              String?
+  postalCode                         String?                            @map("postal_code")
+  country                            String?                            @default("México")
+  phone                              String?
+  contactEmail                       String?                            @map("contact_email")
+  businessDescription                String?                            @map("business_description")
+  website                            String?
+  industry                           String?
+  companySize                        String?                            @map("company_size")
+  foundedYear                        Int?                               @map("founded_year")
+  taxId                              String?                            @map("tax_id")
+  businessType                       String?                            @map("business_type")
+  fiscalEntities                     FiscalEntity[]
+  members                            Member[]
+  machineClients                     MachineClient[]
+  importRuns                         ImportRun[]
+  importDirectorySessions            ImportDirectorySession[]
+  providerUploadedCfdis              ProviderUploadedCfdi[]
   providerReceivedCfdiDailySummaries ProviderReceivedCfdiDailySummary[]
-  invoicePaymentComplementDetails InvoicePaymentComplementDetail[]
-  invoiceIssuedDailySummaries InvoiceIssuedDailySummary[]
-  customRoles              CustomRole[]
-  companyAccesses          CompanyAccess[]
-  satCredentials           SatCredential[]
-  users                    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoicePaymentComplementDetails    InvoicePaymentComplementDetail[]
+  invoiceIssuedDailySummaries        InvoiceIssuedDailySummary[]
+  customRoles                        CustomRole[]
+  companyAccesses                    CompanyAccess[]
+  satCredentials                     SatCredential[]
+  users                              User?                              @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([onboardingCompleted])
   @@index([operationalAccessEnabled])
@@ -137,58 +139,58 @@ model MachineClient {
 }
 
 model CustomRole {
-  id                  String       @id @default(cuid())
-  organizationId      String       @map("organization_id")
-  name                String
-  description         String?
-  canViewEmission     Boolean      @default(true)  @map("can_view_emission")
-  canViewReception    Boolean      @default(true)  @map("can_view_reception")
-  canViewPayroll      Boolean      @default(true)  @map("can_view_payroll")
-  canViewSatPortal    Boolean      @default(true)  @map("can_view_sat_portal")
-  canViewMassDownloads Boolean      @default(true)  @map("can_view_mass_downloads")
-  canManageOrg        Boolean      @default(false) @map("can_manage_org")
-  granularPermissions Json?        @default("{}")  @map("granular_permissions")
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
-  
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members             Member[]
-  companyAccesses     CompanyAccess[]
+  id                   String   @id @default(cuid())
+  organizationId       String   @map("organization_id")
+  name                 String
+  description          String?
+  canViewEmission      Boolean  @default(true) @map("can_view_emission")
+  canViewReception     Boolean  @default(true) @map("can_view_reception")
+  canViewPayroll       Boolean  @default(true) @map("can_view_payroll")
+  canViewSatPortal     Boolean  @default(true) @map("can_view_sat_portal")
+  canViewMassDownloads Boolean  @default(true) @map("can_view_mass_downloads")
+  canManageOrg         Boolean  @default(false) @map("can_manage_org")
+  granularPermissions  Json?    @default("{}") @map("granular_permissions")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members         Member[]
+  companyAccesses CompanyAccess[]
 
   @@unique([organizationId, name])
   @@map("custom_roles")
 }
 
 model Member {
-  id                  String       @id @default(cuid())
-  userId              String       @map("user_id")
-  organizationId      String       @map("organization_id")
-  role                MemberRole   @default(VIEWER)
-  customRoleId        String?      @map("custom_role_id")
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
-  status              String       @default("PENDING")
-  approvedBy          String?
-  approvedAt          DateTime?    @db.Timestamp(6)
-  invitationTokenHash String?      @map("invitation_token_hash")
-  invitationExpiresAt DateTime?    @db.Timestamp(6)
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  customRole          CustomRole?  @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
-  companyAccesses     CompanyAccess[]
-  providerUploadedCfdis ProviderUploadedCfdi[]
-  canViewEmission     Boolean      @default(true)  @map("can_view_emission")
-  canViewReception    Boolean      @default(true)  @map("can_view_reception")
-  canViewPayroll      Boolean      @default(true)  @map("can_view_payroll")
-  canViewSatPortal    Boolean      @default(true)  @map("can_view_sat_portal")
-  canViewMassDownloads Boolean      @default(true)  @map("can_view_mass_downloads")
-  canManageOrg        Boolean      @default(false) @map("can_manage_org")
-  granularPermissions Json?        @default("{}")  @map("granular_permissions")
-  providerRfc         String?      @map("provider_rfc")
-  providerName        String?      @map("provider_name")
-  providerUploadBlockedAt DateTime? @map("provider_upload_blocked_at")
-  providerUploadBlockedReason String? @map("provider_upload_blocked_reason")
-  providerUploadBlockedBySystem Boolean @default(false) @map("provider_upload_blocked_by_system")
+  id                            String                 @id @default(cuid())
+  userId                        String                 @map("user_id")
+  organizationId                String                 @map("organization_id")
+  role                          MemberRole             @default(VIEWER)
+  customRoleId                  String?                @map("custom_role_id")
+  createdAt                     DateTime               @default(now()) @map("created_at")
+  updatedAt                     DateTime               @updatedAt @map("updated_at")
+  status                        String                 @default("PENDING")
+  approvedBy                    String?
+  approvedAt                    DateTime?              @db.Timestamp(6)
+  invitationTokenHash           String?                @map("invitation_token_hash")
+  invitationExpiresAt           DateTime?              @db.Timestamp(6)
+  organization                  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRole                    CustomRole?            @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+  companyAccesses               CompanyAccess[]
+  providerUploadedCfdis         ProviderUploadedCfdi[]
+  canViewEmission               Boolean                @default(true) @map("can_view_emission")
+  canViewReception              Boolean                @default(true) @map("can_view_reception")
+  canViewPayroll                Boolean                @default(true) @map("can_view_payroll")
+  canViewSatPortal              Boolean                @default(true) @map("can_view_sat_portal")
+  canViewMassDownloads          Boolean                @default(true) @map("can_view_mass_downloads")
+  canManageOrg                  Boolean                @default(false) @map("can_manage_org")
+  granularPermissions           Json?                  @default("{}") @map("granular_permissions")
+  providerRfc                   String?                @map("provider_rfc")
+  providerName                  String?                @map("provider_name")
+  providerUploadBlockedAt       DateTime?              @map("provider_upload_blocked_at")
+  providerUploadBlockedReason   String?                @map("provider_upload_blocked_reason")
+  providerUploadBlockedBySystem Boolean                @default(false) @map("provider_upload_blocked_by_system")
 
   @@unique([userId, organizationId])
   @@index([invitationTokenHash])
@@ -199,68 +201,68 @@ model Member {
 }
 
 model FiscalEntity {
-  id             String       @id @default(cuid())
-  organizationId String       @map("organization_id")
-  rfc            String       @unique
-  businessName   String       @map("business_name")
-  taxRegime      String       @map("tax_regime")
-  postalCode     String       @map("postal_code")
-  isActive       Boolean      @default(true) @map("is_active")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  invoices       Invoice[]
+  id                              String                           @id @default(cuid())
+  organizationId                  String                           @map("organization_id")
+  rfc                             String                           @unique
+  businessName                    String                           @map("business_name")
+  taxRegime                       String                           @map("tax_regime")
+  postalCode                      String                           @map("postal_code")
+  isActive                        Boolean                          @default(true) @map("is_active")
+  createdAt                       DateTime                         @default(now()) @map("created_at")
+  updatedAt                       DateTime                         @updatedAt @map("updated_at")
+  organization                    Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices                        Invoice[]
   invoicePaymentComplementDetails InvoicePaymentComplementDetail[]
-  invoiceIssuedDailySummaries InvoiceIssuedDailySummary[]
-  satInvoices    SatInvoice[]
+  invoiceIssuedDailySummaries     InvoiceIssuedDailySummary[]
+  satInvoices                     SatInvoice[]
 
   @@map("fiscal_entities")
 }
 
 model Invoice {
-  id                   String        @id @default(cuid())
-  userId               String?       @map("user_id")
-  issuerFiscalEntityId String        @map("issuer_fiscal_entity_id")
-  uuid                 String        @unique
-  cfdiType             CfdiType      @map("cfdi_type")
-  series               String?
-  folio                String?
-  currency             String        @default("MXN")
-  exchangeRate         Float?        @map("exchange_rate")
-  status               InvoiceStatus @default(ACTIVE)
-  satStatus            SatStatus     @default(VIGENTE) @map("sat_status")
-  issuerRfc            String        @map("issuer_rfc")
-  issuerName           String        @map("issuer_name")
-  receiverRfc          String        @map("receiver_rfc")
-  receiverName         String        @map("receiver_name")
-  subtotal             Decimal       @db.Decimal(15, 2)
-  discount             Decimal       @default(0) @db.Decimal(15, 2)
-  total                Decimal       @db.Decimal(15, 2)
-  ivaTransferred       Decimal       @default(0) @map("iva_transferred") @db.Decimal(15, 2)
-  ivaWithheld          Decimal       @default(0) @map("iva_withheld") @db.Decimal(15, 2)
-  isrWithheld          Decimal       @default(0) @map("isr_withheld") @db.Decimal(15, 2)
-  iepsWithheld         Decimal       @default(0) @map("ieps_withheld") @db.Decimal(15, 2)
-  xmlContent           String        @map("xml_content")
-  pdfUrl               String?       @map("pdf_url")
-  issuanceDate         DateTime      @map("issuance_date")
-  certificationDate    DateTime      @map("certification_date")
-  certificationPac     String        @map("certification_pac")
-  paymentMethod        String        @map("payment_method")
-  paymentForm          String        @map("payment_form")
-  cfdiUsage            String        @map("cfdi_usage")
-  placeOfExpedition    String        @map("place_of_expedition")
-  exportKey            String        @default("01") @map("export_key")
-  objectTaxComprobante String?       @map("object_tax_comprobante")
-  paymentConditions    String?       @map("payment_conditions")
-  createdAt            DateTime      @default(now()) @map("created_at")
-  updatedAt            DateTime      @updatedAt @map("updated_at")
-  fiscalEntity         FiscalEntity  @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
-  user                 User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  concepts             InvoiceConcept[]
-  relatedCfdis         InvoiceRelatedCfdi[]
-  blob                 InvoiceBlob?
-  complementIndex      InvoiceComplementIndex?
-  complementAttributes InvoiceComplementAttribute[]
+  id                                String                           @id @default(cuid())
+  userId                            String?                          @map("user_id")
+  issuerFiscalEntityId              String                           @map("issuer_fiscal_entity_id")
+  uuid                              String                           @unique
+  cfdiType                          CfdiType                         @map("cfdi_type")
+  series                            String?
+  folio                             String?
+  currency                          String                           @default("MXN")
+  exchangeRate                      Float?                           @map("exchange_rate")
+  status                            InvoiceStatus                    @default(ACTIVE)
+  satStatus                         SatStatus                        @default(VIGENTE) @map("sat_status")
+  issuerRfc                         String                           @map("issuer_rfc")
+  issuerName                        String                           @map("issuer_name")
+  receiverRfc                       String                           @map("receiver_rfc")
+  receiverName                      String                           @map("receiver_name")
+  subtotal                          Decimal                          @db.Decimal(15, 2)
+  discount                          Decimal                          @default(0) @db.Decimal(15, 2)
+  total                             Decimal                          @db.Decimal(15, 2)
+  ivaTransferred                    Decimal                          @default(0) @map("iva_transferred") @db.Decimal(15, 2)
+  ivaWithheld                       Decimal                          @default(0) @map("iva_withheld") @db.Decimal(15, 2)
+  isrWithheld                       Decimal                          @default(0) @map("isr_withheld") @db.Decimal(15, 2)
+  iepsWithheld                      Decimal                          @default(0) @map("ieps_withheld") @db.Decimal(15, 2)
+  xmlContent                        String                           @map("xml_content")
+  pdfUrl                            String?                          @map("pdf_url")
+  issuanceDate                      DateTime                         @map("issuance_date")
+  certificationDate                 DateTime                         @map("certification_date")
+  certificationPac                  String                           @map("certification_pac")
+  paymentMethod                     String                           @map("payment_method")
+  paymentForm                       String                           @map("payment_form")
+  cfdiUsage                         String                           @map("cfdi_usage")
+  placeOfExpedition                 String                           @map("place_of_expedition")
+  exportKey                         String                           @default("01") @map("export_key")
+  objectTaxComprobante              String?                          @map("object_tax_comprobante")
+  paymentConditions                 String?                          @map("payment_conditions")
+  createdAt                         DateTime                         @default(now()) @map("created_at")
+  updatedAt                         DateTime                         @updatedAt @map("updated_at")
+  fiscalEntity                      FiscalEntity                     @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+  user                              User?                            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  concepts                          InvoiceConcept[]
+  relatedCfdis                      InvoiceRelatedCfdi[]
+  blob                              InvoiceBlob?
+  complementIndex                   InvoiceComplementIndex?
+  complementAttributes              InvoiceComplementAttribute[]
   paymentComplementDetailsAsPayment InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailPaymentInvoice")
   paymentComplementDetailsAsRelated InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailRelatedInvoice")
 
@@ -294,19 +296,19 @@ model InvoiceBlob {
 }
 
 model InvoiceComplementIndex {
-  id                     String   @id @default(cuid())
-  invoiceId              String   @unique @map("invoice_id")
-  hasPagos               Boolean  @default(false) @map("has_pagos")
-  pagosVersion           String?  @map("pagos_version")
-  hasNomina              Boolean  @default(false) @map("has_nomina")
-  nominaVersion          String?  @map("nomina_version")
-  hasCartaPorte          Boolean  @default(false) @map("has_carta_porte")
-  cartaPorteVersion      String?  @map("carta_porte_version")
-  hasComercioExterior    Boolean  @default(false) @map("has_comercio_exterior")
-  comercioExteriorVersion String? @map("comercio_exterior_version")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
-  invoice                Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id                      String   @id @default(cuid())
+  invoiceId               String   @unique @map("invoice_id")
+  hasPagos                Boolean  @default(false) @map("has_pagos")
+  pagosVersion            String?  @map("pagos_version")
+  hasNomina               Boolean  @default(false) @map("has_nomina")
+  nominaVersion           String?  @map("nomina_version")
+  hasCartaPorte           Boolean  @default(false) @map("has_carta_porte")
+  cartaPorteVersion       String?  @map("carta_porte_version")
+  hasComercioExterior     Boolean  @default(false) @map("has_comercio_exterior")
+  comercioExteriorVersion String?  @map("comercio_exterior_version")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  invoice                 Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([hasPagos], map: "invoice_complement_index_has_pagos_idx")
   @@index([hasNomina], map: "invoice_complement_index_has_nomina_idx")
@@ -337,34 +339,34 @@ model InvoiceComplementAttribute {
 }
 
 model InvoicePaymentComplementDetail {
-  id                String       @id @default(cuid())
-  organizationId    String       @map("organization_id")
-  issuerFiscalEntityId String    @map("issuer_fiscal_entity_id")
-  paymentInvoiceId  String       @map("payment_invoice_id")
-  paymentInvoiceUuid String      @map("payment_invoice_uuid")
-  relatedInvoiceId  String?      @map("related_invoice_id")
-  relatedInvoiceUuid String      @map("related_invoice_uuid")
-  paymentNodeIndex  Int          @default(1) @map("payment_node_index")
-  paymentDate       DateTime     @map("payment_date")
-  paymentSeries     String?      @map("payment_series")
-  paymentFolio      String?      @map("payment_folio")
-  montoTotalPagos   Decimal      @default(0) @map("monto_total_pagos") @db.Decimal(18, 6)
-  baseP             Decimal      @default(0) @map("base_p") @db.Decimal(18, 6)
-  importeP          Decimal      @default(0) @map("importe_p") @db.Decimal(18, 6)
-  impPagado         Decimal      @default(0) @map("imp_pagado") @db.Decimal(18, 6)
-  impSaldoAnt       Decimal      @default(0) @map("imp_saldo_ant") @db.Decimal(18, 6)
-  impSaldoInsoluto  Decimal      @default(0) @map("imp_saldo_insoluto") @db.Decimal(18, 6)
-  monedaP           String       @default("MXN") @map("moneda_p")
-  monedaDR          String       @default("MXN") @map("moneda_dr")
-  equivalenciaDR    Decimal      @default(1) @map("equivalencia_dr") @db.Decimal(18, 6)
-  numParcialidad    Int          @default(1) @map("num_parcialidad")
-  satStatusSnapshot String       @default("SIN_ESTATUS") @map("sat_status_snapshot")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  issuerFiscalEntity FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
-  paymentInvoice    Invoice      @relation("InvoicePaymentComplementDetailPaymentInvoice", fields: [paymentInvoiceId], references: [id], onDelete: Cascade)
-  relatedInvoice    Invoice?     @relation("InvoicePaymentComplementDetailRelatedInvoice", fields: [relatedInvoiceId], references: [id], onDelete: SetNull)
+  id                   String       @id @default(cuid())
+  organizationId       String       @map("organization_id")
+  issuerFiscalEntityId String       @map("issuer_fiscal_entity_id")
+  paymentInvoiceId     String       @map("payment_invoice_id")
+  paymentInvoiceUuid   String       @map("payment_invoice_uuid")
+  relatedInvoiceId     String?      @map("related_invoice_id")
+  relatedInvoiceUuid   String       @map("related_invoice_uuid")
+  paymentNodeIndex     Int          @default(1) @map("payment_node_index")
+  paymentDate          DateTime     @map("payment_date")
+  paymentSeries        String?      @map("payment_series")
+  paymentFolio         String?      @map("payment_folio")
+  montoTotalPagos      Decimal      @default(0) @map("monto_total_pagos") @db.Decimal(18, 6)
+  baseP                Decimal      @default(0) @map("base_p") @db.Decimal(18, 6)
+  importeP             Decimal      @default(0) @map("importe_p") @db.Decimal(18, 6)
+  impPagado            Decimal      @default(0) @map("imp_pagado") @db.Decimal(18, 6)
+  impSaldoAnt          Decimal      @default(0) @map("imp_saldo_ant") @db.Decimal(18, 6)
+  impSaldoInsoluto     Decimal      @default(0) @map("imp_saldo_insoluto") @db.Decimal(18, 6)
+  monedaP              String       @default("MXN") @map("moneda_p")
+  monedaDR             String       @default("MXN") @map("moneda_dr")
+  equivalenciaDR       Decimal      @default(1) @map("equivalencia_dr") @db.Decimal(18, 6)
+  numParcialidad       Int          @default(1) @map("num_parcialidad")
+  satStatusSnapshot    String       @default("SIN_ESTATUS") @map("sat_status_snapshot")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuerFiscalEntity   FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+  paymentInvoice       Invoice      @relation("InvoicePaymentComplementDetailPaymentInvoice", fields: [paymentInvoiceId], references: [id], onDelete: Cascade)
+  relatedInvoice       Invoice?     @relation("InvoicePaymentComplementDetailRelatedInvoice", fields: [relatedInvoiceId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, issuerFiscalEntityId, relatedInvoiceUuid], map: "invoice_payment_comp_entity_rel_uuid_idx")
   @@index([organizationId, issuerFiscalEntityId, paymentDate], map: "invoice_payment_comp_entity_pay_date_idx")
@@ -376,33 +378,33 @@ model InvoicePaymentComplementDetail {
 }
 
 model InvoiceIssuedDailySummary {
-  id                    String       @id @default(cuid())
-  organizationId        String       @map("organization_id")
-  issuerFiscalEntityId  String       @map("issuer_fiscal_entity_id")
-  summaryDate           DateTime     @map("summary_date") @db.Date
-  cfdiType              String       @map("cfdi_type")
-  satStatus             String       @default("SIN_ESTATUS") @map("sat_status")
-  receiverRfc           String       @default("") @map("receiver_rfc")
-  receiverName          String       @default("") @map("receiver_name")
-  paymentMethod         String       @default("") @map("payment_method")
-  salesBucket           String       @default("NO_APLICA") @map("sales_bucket")
-  paymentStatusBucket   String       @default("NO_APLICA") @map("payment_status_bucket")
-  cfdiCount             Int          @default(0) @map("cfdi_count")
-  subtotalAmount        Decimal      @default(0) @map("subtotal_amount") @db.Decimal(18, 6)
-  discountAmount        Decimal      @default(0) @map("discount_amount") @db.Decimal(18, 6)
-  totalAmount           Decimal      @default(0) @map("total_amount") @db.Decimal(18, 6)
-  ivaTransferredTotal   Decimal      @default(0) @map("iva_transferred_total") @db.Decimal(18, 6)
-  ivaWithheldTotal      Decimal      @default(0) @map("iva_withheld_total") @db.Decimal(18, 6)
-  isrWithheldTotal      Decimal      @default(0) @map("isr_withheld_total") @db.Decimal(18, 6)
-  iepsWithheldTotal     Decimal      @default(0) @map("ieps_withheld_total") @db.Decimal(18, 6)
-  collectedAmount       Decimal      @default(0) @map("collected_amount") @db.Decimal(18, 6)
-  pendingAmount         Decimal      @default(0) @map("pending_amount") @db.Decimal(18, 6)
-  overdueAmount         Decimal      @default(0) @map("overdue_amount") @db.Decimal(18, 6)
-  creditNoteAppliedAmount Decimal    @default(0) @map("credit_note_applied_amount") @db.Decimal(18, 6)
-  createdAt             DateTime     @default(now()) @map("created_at")
-  updatedAt             DateTime     @updatedAt @map("updated_at")
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  issuerFiscalEntity    FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
+  id                      String       @id @default(cuid())
+  organizationId          String       @map("organization_id")
+  issuerFiscalEntityId    String       @map("issuer_fiscal_entity_id")
+  summaryDate             DateTime     @map("summary_date") @db.Date
+  cfdiType                String       @map("cfdi_type")
+  satStatus               String       @default("SIN_ESTATUS") @map("sat_status")
+  receiverRfc             String       @default("") @map("receiver_rfc")
+  receiverName            String       @default("") @map("receiver_name")
+  paymentMethod           String       @default("") @map("payment_method")
+  salesBucket             String       @default("NO_APLICA") @map("sales_bucket")
+  paymentStatusBucket     String       @default("NO_APLICA") @map("payment_status_bucket")
+  cfdiCount               Int          @default(0) @map("cfdi_count")
+  subtotalAmount          Decimal      @default(0) @map("subtotal_amount") @db.Decimal(18, 6)
+  discountAmount          Decimal      @default(0) @map("discount_amount") @db.Decimal(18, 6)
+  totalAmount             Decimal      @default(0) @map("total_amount") @db.Decimal(18, 6)
+  ivaTransferredTotal     Decimal      @default(0) @map("iva_transferred_total") @db.Decimal(18, 6)
+  ivaWithheldTotal        Decimal      @default(0) @map("iva_withheld_total") @db.Decimal(18, 6)
+  isrWithheldTotal        Decimal      @default(0) @map("isr_withheld_total") @db.Decimal(18, 6)
+  iepsWithheldTotal       Decimal      @default(0) @map("ieps_withheld_total") @db.Decimal(18, 6)
+  collectedAmount         Decimal      @default(0) @map("collected_amount") @db.Decimal(18, 6)
+  pendingAmount           Decimal      @default(0) @map("pending_amount") @db.Decimal(18, 6)
+  overdueAmount           Decimal      @default(0) @map("overdue_amount") @db.Decimal(18, 6)
+  creditNoteAppliedAmount Decimal      @default(0) @map("credit_note_applied_amount") @db.Decimal(18, 6)
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuerFiscalEntity      FiscalEntity @relation(fields: [issuerFiscalEntityId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, issuerFiscalEntityId, summaryDate, cfdiType, satStatus, receiverRfc, paymentMethod, salesBucket, paymentStatusBucket], map: "invoice_issued_daily_summary_unique_dim_idx")
   @@index([organizationId, issuerFiscalEntityId, summaryDate], map: "invoice_issued_daily_summary_entity_date_idx")
@@ -459,23 +461,23 @@ model SatInvoice {
 }
 
 model InvoiceConcept {
-  id                     Int      @id @default(autoincrement())
-  invoiceId              String   @map("invoice_id")
-  productServiceKey      String   @map("product_service_key")
-  identificationNumber   String?  @map("identification_number")
-  unitQuantity           Decimal  @map("unit_quantity") @db.Decimal(18, 6)
-  unitKey                String   @map("unit_key")
-  unitDescription        String?  @map("unit_description")
-  description            String
-  unitValue              Decimal  @map("unit_value") @db.Decimal(18, 6)
-  amount                 Decimal  @db.Decimal(18, 6)
-  discount               Decimal  @default(0) @db.Decimal(15, 2)
-  objectOfTax            String   @map("object_of_tax")
-  transferredTaxesJson   Json?    @map("transferred_taxes_json")
-  withheldTaxesJson      Json?    @map("withheld_taxes_json")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
-  invoice                Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id                   Int      @id @default(autoincrement())
+  invoiceId            String   @map("invoice_id")
+  productServiceKey    String   @map("product_service_key")
+  identificationNumber String?  @map("identification_number")
+  unitQuantity         Decimal  @map("unit_quantity") @db.Decimal(18, 6)
+  unitKey              String   @map("unit_key")
+  unitDescription      String?  @map("unit_description")
+  description          String
+  unitValue            Decimal  @map("unit_value") @db.Decimal(18, 6)
+  amount               Decimal  @db.Decimal(18, 6)
+  discount             Decimal  @default(0) @db.Decimal(15, 2)
+  objectOfTax          String   @map("object_of_tax")
+  transferredTaxesJson Json?    @map("transferred_taxes_json")
+  withheldTaxesJson    Json?    @map("withheld_taxes_json")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  invoice              Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@map("invoice_concepts")
@@ -511,37 +513,37 @@ model ApiKey {
 }
 
 model Company {
-  id                  String        @id @default(cuid())
-  name                String
-  rfc                 String        @unique
-  businessName        String        @map("business_name")
-  legalRepresentative String?       @map("legal_representative")
-  taxRegime           String        @map("tax_regime")
-  postalCode          String        @map("postal_code")
-  address             String?
-  city                String?
-  state               String?
-  country             String        @default("México")
-  phone               String?
-  email               String?
-  website             String?
-  industry            String?
-  employeesCount      Int?          @map("employees_count")
-  incorporationDate   DateTime?     @map("incorporation_date")
-  status              CompanyStatus @default(PENDING)
-  approvedBy          String?       @map("approved_by")
-  approvedAt          DateTime?     @map("approved_at")
-  rejectionReason     String?       @map("rejection_reason")
-  notes               String?
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
-  createdBy           String        @map("created_by")
-  updatedBy           String        @map("updated_by")
-  auditLogs           AuditLog[]
-  companyAccesses     CompanyAccess[]
-  providerUploadedCfdis ProviderUploadedCfdi[]
+  id                                 String                             @id @default(cuid())
+  name                               String
+  rfc                                String                             @unique
+  businessName                       String                             @map("business_name")
+  legalRepresentative                String?                            @map("legal_representative")
+  taxRegime                          String                             @map("tax_regime")
+  postalCode                         String                             @map("postal_code")
+  address                            String?
+  city                               String?
+  state                              String?
+  country                            String                             @default("México")
+  phone                              String?
+  email                              String?
+  website                            String?
+  industry                           String?
+  employeesCount                     Int?                               @map("employees_count")
+  incorporationDate                  DateTime?                          @map("incorporation_date")
+  status                             CompanyStatus                      @default(PENDING)
+  approvedBy                         String?                            @map("approved_by")
+  approvedAt                         DateTime?                          @map("approved_at")
+  rejectionReason                    String?                            @map("rejection_reason")
+  notes                              String?
+  createdAt                          DateTime                           @default(now()) @map("created_at")
+  updatedAt                          DateTime                           @updatedAt @map("updated_at")
+  createdBy                          String                             @map("created_by")
+  updatedBy                          String                             @map("updated_by")
+  auditLogs                          AuditLog[]
+  companyAccesses                    CompanyAccess[]
+  providerUploadedCfdis              ProviderUploadedCfdi[]
   providerReceivedCfdiDailySummaries ProviderReceivedCfdiDailySummary[]
-  massDownloadRequests MassDownloadRequest[]
+  massDownloadRequests               MassDownloadRequest[]
 
   @@index([rfc])
   @@index([status])
@@ -550,39 +552,39 @@ model Company {
 }
 
 model MassDownloadRequest {
-  id            String   @id @default(cuid())
-  companyId     String   @map("company_id")
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  startDate     DateTime? @map("start_date")
-  endDate       DateTime? @map("end_date")
-  
-  receiverRfc   String?  @map("receiver_rfc")
-  issuerRfc     String   @map("issuer_rfc")
-  requestingRfc String   @map("requesting_rfc")
-  
-  requestType   String   @map("request_type")
-  retrievalType String   @default("emitidos") @map("retrieval_type")
+  id        String  @id @default(cuid())
+  companyId String  @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+
+  receiverRfc   String? @map("receiver_rfc")
+  issuerRfc     String  @map("issuer_rfc")
+  requestingRfc String  @map("requesting_rfc")
+
+  requestType   String  @map("request_type")
+  retrievalType String  @default("emitidos") @map("retrieval_type")
   folio         String?
-  voucherType   String?  @map("voucher_type")
-  status        String   @default("Todos")
+  voucherType   String? @map("voucher_type")
+  status        String  @default("Todos")
 
   // Processing fields
   requestStatus RequestStatus @default(SOLICITADO) @map("request_status")
   satPackageId  String?       @map("sat_package_id")
   satMessage    String?       @map("sat_message") // For faultcode or success messages
-  errorLog      Json?         @map("error_log")   // For detailed error tracking
-  
+  errorLog      Json?         @map("error_log") // For detailed error tracking
+
   // Verification fields (New)
-  packageIds          Json?     @map("package_ids")         // Array of package IDs generated by SAT
-  verificationAttempts Int      @default(0) @map("verification_attempts")
-  nextCheck           DateTime? @map("next_check")
-  
-  thirdPartyRfc String?  @map("third_party_rfc")
+  packageIds           Json?     @map("package_ids") // Array of package IDs generated by SAT
+  verificationAttempts Int       @default(0) @map("verification_attempts")
+  nextCheck            DateTime? @map("next_check")
+
+  thirdPartyRfc String? @map("third_party_rfc")
   complement    String?
-  
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([companyId])
   @@map("mass_download_requests")
@@ -602,9 +604,9 @@ model SatMetadata {
   efectoComprobante     String?   @map("efecto_comprobante")
   estatus               String?
   fechaCancelacion      DateTime? @map("fecha_cancelacion")
-  
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([rfcEmisor])
   @@index([rfcReceptor])
@@ -615,19 +617,19 @@ model SatMetadata {
 }
 
 model CompanyAccess {
-  id             String             @id @default(cuid())
-  organizationId String             @map("organization_id")
-  companyId      String             @map("company_id")
-  memberId       String             @map("member_id")
-  role           CompanyAccessRole  @default(VIEWER)
-  customRoleId   String?            @map("custom_role_id")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+  id             String            @id @default(cuid())
+  organizationId String            @map("organization_id")
+  companyId      String            @map("company_id")
+  memberId       String            @map("member_id")
+  role           CompanyAccessRole @default(VIEWER)
+  customRoleId   String?           @map("custom_role_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  member         Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  customRole     CustomRole?        @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  customRole   CustomRole?  @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
   @@unique([memberId, companyId])
   @@map("company_access")
@@ -663,21 +665,21 @@ model AuditLog {
 }
 
 model SatValidationErrorKnowledge {
-  id                 String   @id @default(cuid())
-  sourceSystem       String   @map("source_system")
-  rawErrorHash       String   @unique @map("raw_error_hash")
-  rawErrorText       String   @map("raw_error_text")
-  normalizedErrorText String  @map("normalized_error_text")
-  detectedCode       String   @default("N/A") @map("detected_code")
-  humanMessage       String   @map("human_message")
-  correctiveAction   String   @map("corrective_action")
-  responsible        String
-  aiProvider         String?  @map("ai_provider")
-  aiModel            String?  @map("ai_model")
-  usageCount         Int      @default(1) @map("usage_count")
-  lastSeenAt         DateTime @default(now()) @map("last_seen_at")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(cuid())
+  sourceSystem        String   @map("source_system")
+  rawErrorHash        String   @unique @map("raw_error_hash")
+  rawErrorText        String   @map("raw_error_text")
+  normalizedErrorText String   @map("normalized_error_text")
+  detectedCode        String   @default("N/A") @map("detected_code")
+  humanMessage        String   @map("human_message")
+  correctiveAction    String   @map("corrective_action")
+  responsible         String
+  aiProvider          String?  @map("ai_provider")
+  aiModel             String?  @map("ai_model")
+  usageCount          Int      @default(1) @map("usage_count")
+  lastSeenAt          DateTime @default(now()) @map("last_seen_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@index([sourceSystem])
   @@index([detectedCode])
@@ -686,67 +688,68 @@ model SatValidationErrorKnowledge {
 }
 
 model ProviderUploadedCfdi {
-  id                     String   @id @default(cuid())
-  organizationId         String   @map("organization_id")
-  memberId               String   @map("member_id")
-  uploadedByUserId       String?  @map("uploaded_by_user_id")
-  receiverCompanyId      String?  @map("receiver_company_id")
-  fileName               String   @map("file_name")
-  uuid                   String
-  providerRfc            String   @map("provider_rfc")
-  providerName           String?  @map("provider_name")
-  issuerRfc              String   @map("issuer_rfc")
-  issuerName             String?  @map("issuer_name")
-  receiverRfc            String   @map("receiver_rfc")
-  receiverName           String?  @map("receiver_name")
-  cfdiType               String   @map("cfdi_type")
-  series                 String?
-  folio                  String?
-  paymentMethod          String?  @map("payment_method")
-  paymentForm            String?  @map("payment_form")
-  issuerFiscalRegime     String?  @map("issuer_fiscal_regime")
-  hasResicoIsrRetention  Boolean  @default(false) @map("has_resico_isr_retention")
-  hasObjetoImpTaxMismatch Boolean @default(false) @map("has_objetoimp_tax_mismatch")
-  objetoImpTaxMismatchReason String? @map("objetoimp_tax_mismatch_reason")
-  currency               String   @default("MXN")
-  subtotal               Decimal? @db.Decimal(18, 6)
-  transferredTaxesTotal  Decimal? @map("transferred_taxes_total") @db.Decimal(18, 6)
-  withheldTaxesTotal     Decimal? @map("withheld_taxes_total") @db.Decimal(18, 6)
-  discount               Decimal? @db.Decimal(18, 6)
-  total                  Decimal   @db.Decimal(18, 6)
-  issuanceDate           DateTime? @map("issuance_date")
-  certificationDate      DateTime? @map("certification_date")
-  validationStatus       String   @default("APPROVED") @map("validation_status")
-  validationAnexo20      String?  @map("validation_anexo20")
-  validationSat          String?  @map("validation_sat")
-  satCodigoEstatus       String?  @map("sat_codigo_estatus")
-  satEstado              String?  @map("sat_estado")
-  satInitialEstado       String?  @map("sat_initial_estado")
-  satEsCancelable        String?  @map("sat_es_cancelable")
-  satEstatusCancelacion  String?  @map("sat_estatus_cancelacion")
-  satValidacionEFOS      String?  @map("sat_validacion_efos")
-  satStatusLastCheckedAt DateTime? @map("sat_status_last_checked_at")
-  satStatusChangedAt     DateTime? @map("sat_status_changed_at")
-  satCancellationDetectedAt DateTime? @map("sat_cancellation_detected_at")
-  paymentLinksJson       Json?    @map("payment_links_json")
-  paymentStatusManual    String?  @map("payment_status_manual")
-  paymentDateManual      DateTime? @map("payment_date_manual")
-  paymentStatusUpdatedAt DateTime? @map("payment_status_updated_at")
-  paymentStatusUpdatedByClientId String? @map("payment_status_updated_by_client_id")
-  paymentComplementDueDate DateTime? @map("payment_complement_due_date")
-  xmlSha256              String   @map("xml_sha256")
-  firstValidatedAt       DateTime @default(now()) @map("first_validated_at")
-  lastValidatedAt        DateTime @default(now()) @map("last_validated_at")
-  uploadCount            Int      @default(1) @map("upload_count")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
-  member                 Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  receiverCompany        Company? @relation(fields: [receiverCompanyId], references: [id], onDelete: SetNull)
-  uploadedByUser         User?    @relation("ProviderUploadedCfdiUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
-  xmlBlob                ProviderUploadedCfdiBlob?
-  complementIndex        ProviderUploadedCfdiComplementIndex?
-  complementAttributes   ProviderUploadedCfdiComplementAttribute[]
+  id                             String                                    @id @default(cuid())
+  organizationId                 String                                    @map("organization_id")
+  memberId                       String                                    @map("member_id")
+  uploadedByUserId               String?                                   @map("uploaded_by_user_id")
+  receiverCompanyId              String?                                   @map("receiver_company_id")
+  fileName                       String                                    @map("file_name")
+  uuid                           String
+  providerRfc                    String                                    @map("provider_rfc")
+  providerName                   String?                                   @map("provider_name")
+  issuerRfc                      String                                    @map("issuer_rfc")
+  issuerName                     String?                                   @map("issuer_name")
+  receiverRfc                    String                                    @map("receiver_rfc")
+  receiverName                   String?                                   @map("receiver_name")
+  cfdiType                       String                                    @map("cfdi_type")
+  series                         String?
+  folio                          String?
+  paymentMethod                  String?                                   @map("payment_method")
+  paymentForm                    String?                                   @map("payment_form")
+  issuerFiscalRegime             String?                                   @map("issuer_fiscal_regime")
+  hasResicoIsrRetention          Boolean                                   @default(false) @map("has_resico_isr_retention")
+  hasObjetoImpTaxMismatch        Boolean                                   @default(false) @map("has_objetoimp_tax_mismatch")
+  objetoImpTaxMismatchReason     String?                                   @map("objetoimp_tax_mismatch_reason")
+  currency                       String                                    @default("MXN")
+  subtotal                       Decimal?                                  @db.Decimal(18, 6)
+  transferredTaxesTotal          Decimal?                                  @map("transferred_taxes_total") @db.Decimal(18, 6)
+  withheldTaxesTotal             Decimal?                                  @map("withheld_taxes_total") @db.Decimal(18, 6)
+  discount                       Decimal?                                  @db.Decimal(18, 6)
+  total                          Decimal                                   @db.Decimal(18, 6)
+  issuanceDate                   DateTime?                                 @map("issuance_date")
+  certificationDate              DateTime?                                 @map("certification_date")
+  validationStatus               String                                    @default("APPROVED") @map("validation_status")
+  validationAnexo20              String?                                   @map("validation_anexo20")
+  validationSat                  String?                                   @map("validation_sat")
+  validationErrorMessage         String?                                   @map("validation_error_message")
+  satCodigoEstatus               String?                                   @map("sat_codigo_estatus")
+  satEstado                      String?                                   @map("sat_estado")
+  satInitialEstado               String?                                   @map("sat_initial_estado")
+  satEsCancelable                String?                                   @map("sat_es_cancelable")
+  satEstatusCancelacion          String?                                   @map("sat_estatus_cancelacion")
+  satValidacionEFOS              String?                                   @map("sat_validacion_efos")
+  satStatusLastCheckedAt         DateTime?                                 @map("sat_status_last_checked_at")
+  satStatusChangedAt             DateTime?                                 @map("sat_status_changed_at")
+  satCancellationDetectedAt      DateTime?                                 @map("sat_cancellation_detected_at")
+  paymentLinksJson               Json?                                     @map("payment_links_json")
+  paymentStatusManual            String?                                   @map("payment_status_manual")
+  paymentDateManual              DateTime?                                 @map("payment_date_manual")
+  paymentStatusUpdatedAt         DateTime?                                 @map("payment_status_updated_at")
+  paymentStatusUpdatedByClientId String?                                   @map("payment_status_updated_by_client_id")
+  paymentComplementDueDate       DateTime?                                 @map("payment_complement_due_date")
+  xmlSha256                      String                                    @map("xml_sha256")
+  firstValidatedAt               DateTime                                  @default(now()) @map("first_validated_at")
+  lastValidatedAt                DateTime                                  @default(now()) @map("last_validated_at")
+  uploadCount                    Int                                       @default(1) @map("upload_count")
+  createdAt                      DateTime                                  @default(now()) @map("created_at")
+  updatedAt                      DateTime                                  @updatedAt @map("updated_at")
+  member                         Member                                    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  organization                   Organization                              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receiverCompany                Company?                                  @relation(fields: [receiverCompanyId], references: [id], onDelete: SetNull)
+  uploadedByUser                 User?                                     @relation("ProviderUploadedCfdiUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  xmlBlob                        ProviderUploadedCfdiBlob?
+  complementIndex                ProviderUploadedCfdiComplementIndex?
+  complementAttributes           ProviderUploadedCfdiComplementAttribute[]
 
   @@unique([organizationId, uuid])
   @@index([organizationId, providerRfc])
@@ -771,33 +774,33 @@ model ProviderUploadedCfdi {
 }
 
 model ProviderUploadedCfdiBlob {
-  providerUploadedCfdiId String             @id @map("provider_uploaded_cfdi_id")
-  xmlCiphertext          String             @map("xml_ciphertext")
-  xmlIv                  String             @map("xml_iv")
-  xmlAuthTag             String             @map("xml_auth_tag")
-  xmlEncryptionAlg       String             @default("aes-256-gcm") @map("xml_encryption_alg")
-  xmlKeyVersion          String             @default("v1") @map("xml_key_version")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
+  providerUploadedCfdiId String               @id @map("provider_uploaded_cfdi_id")
+  xmlCiphertext          String               @map("xml_ciphertext")
+  xmlIv                  String               @map("xml_iv")
+  xmlAuthTag             String               @map("xml_auth_tag")
+  xmlEncryptionAlg       String               @default("aes-256-gcm") @map("xml_encryption_alg")
+  xmlKeyVersion          String               @default("v1") @map("xml_key_version")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
   providerUploadedCfdi   ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
 
   @@map("provider_uploaded_cfdi_blobs")
 }
 
 model ProviderUploadedCfdiComplementIndex {
-  id                       String               @id @default(cuid())
-  providerUploadedCfdiId   String               @unique @map("provider_uploaded_cfdi_id")
-  hasPagos                 Boolean              @default(false) @map("has_pagos")
-  pagosVersion             String?              @map("pagos_version")
-  hasNomina                Boolean              @default(false) @map("has_nomina")
-  nominaVersion            String?              @map("nomina_version")
-  hasCartaPorte            Boolean              @default(false) @map("has_carta_porte")
-  cartaPorteVersion        String?              @map("carta_porte_version")
-  hasComercioExterior      Boolean              @default(false) @map("has_comercio_exterior")
-  comercioExteriorVersion  String?              @map("comercio_exterior_version")
-  createdAt                DateTime             @default(now()) @map("created_at")
-  updatedAt                DateTime             @updatedAt @map("updated_at")
-  providerUploadedCfdi     ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
+  id                      String               @id @default(cuid())
+  providerUploadedCfdiId  String               @unique @map("provider_uploaded_cfdi_id")
+  hasPagos                Boolean              @default(false) @map("has_pagos")
+  pagosVersion            String?              @map("pagos_version")
+  hasNomina               Boolean              @default(false) @map("has_nomina")
+  nominaVersion           String?              @map("nomina_version")
+  hasCartaPorte           Boolean              @default(false) @map("has_carta_porte")
+  cartaPorteVersion       String?              @map("carta_porte_version")
+  hasComercioExterior     Boolean              @default(false) @map("has_comercio_exterior")
+  comercioExteriorVersion String?              @map("comercio_exterior_version")
+  createdAt               DateTime             @default(now()) @map("created_at")
+  updatedAt               DateTime             @updatedAt @map("updated_at")
+  providerUploadedCfdi    ProviderUploadedCfdi @relation(fields: [providerUploadedCfdiId], references: [id], onDelete: Cascade)
 
   @@index([hasPagos], map: "provider_uploaded_cfdi_complement_index_has_pagos_idx")
   @@index([hasNomina], map: "provider_uploaded_cfdi_complement_index_has_nomina_idx")
@@ -828,46 +831,151 @@ model ProviderUploadedCfdiComplementAttribute {
 }
 
 model ProviderReceivedCfdiDailySummary {
-  id                  String       @id @default(cuid())
-  organizationId      String       @map("organization_id")
-  receiverCompanyId   String       @map("receiver_company_id")
-  summaryDate         DateTime     @map("summary_date") @db.Date
-  cfdiType            String       @map("cfdi_type")
-  satEstado           String       @default("SIN_ESTATUS") @map("sat_estado")
-  issuerRfc           String       @default("") @map("issuer_rfc")
-  issuerName          String       @default("") @map("issuer_name")
-  paymentMethod       String       @default("") @map("payment_method")
-  paymentStatusBucket String       @default("NO_APLICA") @map("payment_status_bucket")
-  cfdiCount           Int          @default(0) @map("cfdi_count")
-  totalAmount         Decimal      @default(0) @map("total_amount") @db.Decimal(18, 6)
-  transferredTaxesTotal Decimal    @default(0) @map("transferred_taxes_total") @db.Decimal(18, 6)
-  withheldTaxesTotal  Decimal      @default(0) @map("withheld_taxes_total") @db.Decimal(18, 6)
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  receiverCompany     Company      @relation(fields: [receiverCompanyId], references: [id], onDelete: Cascade)
+  id                    String           @id @default(cuid())
+  organizationId        String           @map("organization_id")
+  receiverCompanyId     String           @map("receiver_company_id")
+  summaryDate           DateTime         @map("summary_date") @db.Date
+  cfdiType              String           @map("cfdi_type")
+  validationBucket      ValidationBucket @default(VALIDO) @map("validation_bucket")
+  satEstado             String           @default("SIN_ESTATUS") @map("sat_estado")
+  issuerRfc             String           @default("") @map("issuer_rfc")
+  issuerName            String           @default("") @map("issuer_name")
+  paymentMethod         String           @default("") @map("payment_method")
+  paymentStatusBucket   String           @default("NO_APLICA") @map("payment_status_bucket")
+  cfdiCount             Int              @default(0) @map("cfdi_count")
+  totalAmount           Decimal          @default(0) @map("total_amount") @db.Decimal(18, 6)
+  transferredTaxesTotal Decimal          @default(0) @map("transferred_taxes_total") @db.Decimal(18, 6)
+  withheldTaxesTotal    Decimal          @default(0) @map("withheld_taxes_total") @db.Decimal(18, 6)
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receiverCompany       Company          @relation(fields: [receiverCompanyId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, receiverCompanyId, summaryDate, cfdiType, satEstado, issuerRfc, paymentMethod, paymentStatusBucket], map: "provider_received_cfdi_daily_summary_unique_dim_idx")
+  @@unique([organizationId, receiverCompanyId, summaryDate, cfdiType, validationBucket, satEstado, issuerRfc, paymentMethod, paymentStatusBucket], map: "provider_received_cfdi_daily_summary_unique_dim_idx")
   @@index([organizationId, receiverCompanyId, summaryDate], map: "provider_received_cfdi_daily_summary_company_date_idx")
   @@index([organizationId, receiverCompanyId, cfdiType], map: "provider_received_cfdi_daily_summary_company_type_idx")
+  @@index([organizationId, receiverCompanyId, validationBucket], map: "provider_received_cfdi_daily_summary_company_validation_idx")
   @@index([organizationId, receiverCompanyId, satEstado], map: "provider_received_cfdi_daily_summary_company_status_idx")
   @@index([organizationId, receiverCompanyId, issuerRfc], map: "provider_received_cfdi_daily_summary_company_supplier_idx")
   @@index([organizationId, receiverCompanyId, paymentStatusBucket], map: "provider_received_cfdi_daily_summary_company_payment_bucket_idx")
   @@map("provider_received_cfdi_daily_summary")
 }
 
+model ImportRun {
+  id                             String          @id @default(cuid())
+  organizationId                 String          @map("organization_id")
+  source                         ImportRunSource
+  batchId                        String?         @map("batch_id")
+  directorySessionId             String?         @map("directory_session_id")
+  status                         ImportRunStatus @default(QUEUED)
+  totalItems                     Int             @default(0) @map("total_items")
+  processedItems                 Int             @default(0) @map("processed_items")
+  createdEmitted                 Int             @default(0) @map("created_emitted")
+  createdReceived                Int             @default(0) @map("created_received")
+  skippedItems                   Int             @default(0) @map("skipped_items")
+  errorItems                     Int             @default(0) @map("error_items")
+  waitingExternalValidationItems Int             @default(0) @map("waiting_external_validation_items")
+  startedAt                      DateTime?       @map("started_at")
+  finishedAt                     DateTime?       @map("finished_at")
+  createdByMachineClientId       String?         @map("created_by_machine_client_id")
+  createdAt                      DateTime        @default(now()) @map("created_at")
+  updatedAt                      DateTime        @updatedAt @map("updated_at")
+  organization                   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  directorySession               ImportDirectorySession? @relation(fields: [directorySessionId], references: [id], onDelete: SetNull)
+  items                          ImportRunItem[]
+
+  @@unique([organizationId, source, batchId], map: "import_runs_org_source_batch_id_key")
+  @@index([directorySessionId], map: "import_runs_directory_session_idx")
+  @@index([organizationId, status, createdAt], map: "import_runs_org_status_created_idx")
+  @@index([organizationId, source, createdAt], map: "import_runs_org_source_created_idx")
+  @@index([createdByMachineClientId], map: "import_runs_machine_client_idx")
+  @@map("import_runs")
+}
+
+model ImportDirectorySession {
+  id                       String          @id @default(cuid())
+  organizationId           String          @map("organization_id")
+  source                   ImportRunSource
+  executionId              String          @map("execution_id")
+  totalXmlFiles            Int             @map("total_xml_files")
+  skippedByProgressFiles   Int             @map("skipped_by_progress_files")
+  newXmlFiles              Int             @map("new_xml_files")
+  createdByMachineClientId String?         @map("created_by_machine_client_id")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+  organization             Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importRuns               ImportRun[]
+
+  @@unique([organizationId, source, executionId], map: "import_directory_sessions_org_source_exec_key")
+  @@index([organizationId, createdAt], map: "import_directory_sessions_org_created_idx")
+  @@map("import_directory_sessions")
+}
+
+model ImportRunItem {
+  id                             String                        @id @default(cuid())
+  importRunId                    String                        @map("import_run_id")
+  organizationId                 String                        @map("organization_id")
+  fileName                       String                        @map("file_name")
+  xmlSha256                      String                        @map("xml_sha256")
+  uuid                           String?
+  issuerRfc                      String?                       @map("issuer_rfc")
+  receiverRfc                    String?                       @map("receiver_rfc")
+  receiverCompanyId              String?                       @map("receiver_company_id")
+  classificationResult           ImportRunClassificationResult @default(NONE) @map("classification_result")
+  direction                      ImportRunItemDirection?
+  status                         ImportRunItemStatus           @default(QUEUED)
+  validationStatus               String?                       @map("validation_status")
+  validationBucket               ValidationBucket?             @map("validation_bucket")
+  errorCode                      String?                       @map("error_code")
+  errorMessage                   String?                       @map("error_message")
+  nextExternalRetryAt            DateTime?                     @map("next_external_retry_at")
+  attemptCountInternal           Int                           @default(0) @map("attempt_count_internal")
+  attemptCountExternal           Int                           @default(0) @map("attempt_count_external")
+  emittedInvoiceId               String?                       @map("emitted_invoice_id")
+  receivedProviderUploadedCfdiId String?                       @map("received_provider_uploaded_cfdi_id")
+  processingStartedAt            DateTime?                     @map("processing_started_at")
+  processingFinishedAt           DateTime?                     @map("processing_finished_at")
+  createdAt                      DateTime                      @default(now()) @map("created_at")
+  updatedAt                      DateTime                      @updatedAt @map("updated_at")
+  importRun                      ImportRun                     @relation(fields: [importRunId], references: [id], onDelete: Cascade)
+  xmlBlob                        ImportRunItemBlob?
+
+  @@unique([organizationId, uuid, direction], map: "import_run_items_org_uuid_direction_key")
+  @@unique([organizationId, xmlSha256, direction], map: "import_run_items_org_sha_direction_key")
+  @@index([importRunId, status], map: "import_run_items_run_status_idx")
+  @@index([organizationId, receiverCompanyId, status], map: "import_run_items_org_company_status_idx")
+  @@index([status, nextExternalRetryAt], map: "import_run_items_status_retry_idx")
+  @@index([receivedProviderUploadedCfdiId], map: "import_run_items_received_cfdi_idx")
+  @@index([emittedInvoiceId], map: "import_run_items_emitted_invoice_idx")
+  @@map("import_run_items")
+}
+
+model ImportRunItemBlob {
+  importRunItemId  String        @id @map("import_run_item_id")
+  xmlCiphertext    String        @map("xml_ciphertext")
+  xmlIv            String        @map("xml_iv")
+  xmlAuthTag       String        @map("xml_auth_tag")
+  xmlEncryptionAlg String        @default("aes-256-gcm") @map("xml_encryption_alg")
+  xmlKeyVersion    String        @default("v1") @map("xml_key_version")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  importRunItem    ImportRunItem @relation(fields: [importRunItemId], references: [id], onDelete: Cascade)
+
+  @@map("import_run_item_blobs")
+}
+
 model Sat69BBlacklistEntry {
-  rfc             String   @id
-  taxpayerName    String?  @map("taxpayer_name")
-  statusLabel     String   @map("status_label")
-  statusBucket    String   @map("status_bucket")
-  isActiveRisk    Boolean  @default(false) @map("is_active_risk")
+  rfc             String    @id
+  taxpayerName    String?   @map("taxpayer_name")
+  statusLabel     String    @map("status_label")
+  statusBucket    String    @map("status_bucket")
+  isActiveRisk    Boolean   @default(false) @map("is_active_risk")
   publicationDate DateTime? @map("publication_date") @db.Date
   removalDate     DateTime? @map("removal_date") @db.Date
-  sourceType      String   @default("SAT_69B") @map("source_type")
-  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  sourceType      String    @default("SAT_69B") @map("source_type")
+  lastSeenAt      DateTime  @default(now()) @map("last_seen_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@index([statusBucket], map: "sat_69b_blacklist_entries_status_bucket_idx")
   @@index([isActiveRisk, rfc], map: "sat_69b_blacklist_entries_active_rfc_idx")
@@ -932,16 +1040,16 @@ enum SatStatus {
 }
 
 model SatCredential {
-  id                  String       @id @default(cuid())
-  organizationId      String       @map("organization_id")
+  id                  String   @id @default(cuid())
+  organizationId      String   @map("organization_id")
   rfc                 String
-  encryptedPrivateKey String       @map("encrypted_private_key")
-  encryptedPassword   String       @map("encrypted_password")
-  certificate         String       @map("certificate") // Base64 content of .cer
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
-  
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  encryptedPrivateKey String   @map("encrypted_private_key")
+  encryptedPassword   String   @map("encrypted_password")
+  certificate         String   @map("certificate") // Base64 content of .cer
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, rfc])
   @@map("sat_credentials")
@@ -950,11 +1058,11 @@ model SatCredential {
 enum RequestStatus {
   SOLICITADO
   EN_PROCESO
-  TERMINADO    // Equivalent to COMPLETADO but user requested terminology
+  TERMINADO // Equivalent to COMPLETADO but user requested terminology
   ERROR
-  RECHAZADO    // New
-  VENCIDO      // New
-  COMPLETADO   // Keep for backward compatibility if needed, or migrate
+  RECHAZADO // New
+  VENCIDO // New
+  COMPLETADO // Keep for backward compatibility if needed, or migrate
 }
 
 enum StatusCancelacion {
@@ -964,6 +1072,55 @@ enum StatusCancelacion {
   NO_CANCELABLE
   RECHAZADO
   EN_PROCESO
+}
+
+enum ImportRunSource {
+  JAVA_M2M
+  PROVIDER_PORTAL
+  MANUAL_ADMIN
+}
+
+enum ImportRunStatus {
+  QUEUED
+  DISPATCHING
+  PROCESSING
+  PROCESSING_WITH_EXTERNAL_WAIT
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum ImportRunClassificationResult {
+  EMITTED
+  RECEIVED
+  BOTH
+  NONE
+}
+
+enum ImportRunItemDirection {
+  EMITTED
+  RECEIVED
+}
+
+enum ImportRunItemStatus {
+  QUEUED
+  PREPARING
+  PREPARED
+  VALIDATING_INTERNAL
+  WAITING_EXTERNAL_VALIDATION
+  VALIDATING_EXTERNAL
+  VALIDATED
+  PERSISTING
+  PERSISTED
+  SKIPPED
+  FAILED
+  CANCELLED
+}
+
+enum ValidationBucket {
+  VALIDO
+  INVALIDO
 }
 
 model Cfdi {
@@ -981,8 +1138,8 @@ model Cfdi {
   nombreReceptor    String?            @map("nombre_receptor")
   statusErp         String?            @default("Vigente") @map("status_erp")
 
-  sustitucion       Cfdi?              @relation("Sustitucion", fields: [uuidSustitucion], references: [uuid])
-  sustituidoPor     Cfdi[]             @relation("Sustitucion")
+  sustitucion   Cfdi?  @relation("Sustitucion", fields: [uuidSustitucion], references: [uuid])
+  sustituidoPor Cfdi[] @relation("Sustitucion")
 
   @@map("cfdis")
 }

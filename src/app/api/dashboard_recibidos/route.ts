@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/lib/auth'
 import {
   getObjetoImpTaxRuleSummary,
   getPaymentMethodVsPaymentFormRuleSummary,
@@ -11,6 +10,16 @@ import { getPostLoadCancellationSummary } from '@/lib/provider-post-load-cancell
 import { getPaymentBalancePeriodSummary } from '@/lib/provider-payment-balance-period-summary'
 import { getTaxPeriodSummary } from '@/lib/provider-tax-period-summary'
 import { getEfosRiskSummary } from '@/lib/sat-69b-blacklist'
+import {
+  buildDashboardScopedContext,
+  dashboardJsonErrorResponse
+} from '@/lib/dashboard-fiscal-route-utils'
+import {
+  DashboardRecibidosCommonQuerySchema,
+  type DashboardRecibidosCommonQueryParsed
+} from '@/schemas/dashboard-recibidos'
+import { createAuditEntry } from '@/lib/audit'
+import { getRealClientIp } from '@/lib/security'
 
 function formatMonthlyLabel(date: Date) {
   return `${date.toLocaleString('es-MX', { month: 'short' })} ${date.getFullYear()}`
@@ -48,16 +57,6 @@ type ProviderReceivedCfdiDailySummaryRow = {
 function toNumber(value: unknown) {
   const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-function parseDateFilter(value: string | null, bound: 'start' | 'end') {
-  if (!value) return null
-
-  const normalized = bound === 'start'
-    ? new Date(`${value}T00:00:00.000Z`)
-    : new Date(`${value}T23:59:59.999Z`)
-
-  return Number.isNaN(normalized.getTime()) ? null : normalized
 }
 
 function canAccessReceptionFiscalAudit(access: {
@@ -170,62 +169,67 @@ function canAccessReceptionBusinessRuleObjetoImpVsIva(access: {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    // RECIBIDOS-003 rate limit · RECIBIDOS-002 multi-org deterministic resolver · RECIBIDOS-010 permission check:
+    const scoped = await buildDashboardScopedContext(request, {
+      routeKey: 'mainHeavy',
+      requireCompanyId: true,
+    })
+
+    const rawQuery = Object.fromEntries(scoped.searchParams.entries())
+    const parsed = DashboardRecibidosCommonQuerySchema.safeParse(rawQuery)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Parámetros de consulta inválidos', issues: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      )
     }
-
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
-    const startDate = parseDateFilter(searchParams.get('startDate'), 'start')
-    const endDate = parseDateFilter(searchParams.get('endDate'), 'end')
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
+    const q: DashboardRecibidosCommonQueryParsed = parsed.data
+    const { ctx, enrichedUser, sessionUserId } = scoped
+    if (!ctx.companyId || !ctx.organizationId) {
+      return NextResponse.json({ error: 'Contexto empresa/organización faltante' }, { status: 400 })
     }
-
-    // const userId = session.user!.id
-
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' },
+    const companyId = ctx.companyId
+    const member = (await prisma.member.findFirst({
+      where: {
+        userId: sessionUserId,
+        status: 'APPROVED',
+        organizationId: ctx.organizationId
+      },
       include: { organization: true }
-    })
-    if (!member) {
-      return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } },
+    }))!
+    const access = (await prisma.companyAccess.findUnique({
+      where: { memberId_companyId: { memberId: ctx.memberId, companyId } },
       include: {
-        customRole: {
-          select: {
-            canViewReception: true,
-            granularPermissions: true
-          }
-        }
+        customRole: { select: { canViewReception: true, granularPermissions: true } }
       }
-    })
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    }))!
 
+    // RECIBIDOS-014 includeHeavyMetrics default FALSE (Regla AGENTS 17):
+    const includeHeavyMetrics = q.includeHeavyMetrics === 'true'
+    const startDate = q.startDate ? new Date(q.startDate + 'T00:00:00.000Z') : null
+    const endDate = q.endDate ? new Date(q.endDate + 'T23:59:59.999Z') : null
     const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { rfc: true, businessName: true }
+      where: { id: companyId }, select: { rfc: true, businessName: true }
     })
-    if (!company?.rfc) {
-      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
-    }
+    if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
 
-    if (searchParams.get('startDate') && !startDate) {
-      return NextResponse.json({ error: 'startDate inválida' }, { status: 400 })
-    }
-
-    if (searchParams.get('endDate') && !endDate) {
-      return NextResponse.json({ error: 'endDate inválida' }, { status: 400 })
-    }
-
-    if (startDate && endDate && startDate > endDate) {
-      return NextResponse.json({ error: 'La fecha inicial no puede ser mayor a la fecha final' }, { status: 400 })
+    // RECIBIDOS-015 Audit trail sampling 5% + todo heavy request:
+    if (includeHeavyMetrics || Math.random() < 0.05) {
+      try {
+        await createAuditEntry({
+          tableName: 'provider_received_cfdi_daily_summary',
+          companyId,
+          userId: sessionUserId,
+          userEmail: enrichedUser.email,
+          action: 'DASHBOARD_RECIBIDOS.view_kpis',
+          description: `KPIs recibidos ${q.startDate} a ${q.endDate}. Heavy=${includeHeavyMetrics}`,
+          recordId: companyId,
+          ipAddress: getRealClientIp(request.headers),
+          userAgent: request.headers.get('user-agent') || undefined,
+          oldValues: undefined,
+          newValues: { includeHeavyMetrics, dateRange: [q.startDate, q.endDate] }
+        })
+      } catch {}
     }
 
     const rows = await prisma.$queryRaw<ProviderReceivedCfdiDailySummaryRow[]>(
@@ -259,7 +263,7 @@ export async function GET(request: NextRequest) {
       `
     )
 
-    const efosRiskSummary = canAccessReceptionFiscalAudit(access)
+    const efosRiskSummary = includeHeavyMetrics && canAccessReceptionFiscalAudit(access)
       ? await getEfosRiskSummary({
         organizationId: member.organizationId,
         companyId,
@@ -273,7 +277,7 @@ export async function GET(request: NextRequest) {
         lastBlacklistSyncAt: null
       }
 
-    const postLoadCancellationSummary = canAccessReceptionCancellationAlerts(access)
+    const postLoadCancellationSummary = includeHeavyMetrics && canAccessReceptionCancellationAlerts(access)
       ? await getPostLoadCancellationSummary({
         organizationId: member.organizationId,
         companyId
@@ -284,7 +288,7 @@ export async function GET(request: NextRequest) {
         supplierCount: 0
       }
 
-    const paymentMethodVsPaymentFormSummary = canAccessReceptionBusinessRulePueForma99(access)
+    const paymentMethodVsPaymentFormSummary = includeHeavyMetrics && canAccessReceptionBusinessRulePueForma99(access)
       ? await getPaymentMethodVsPaymentFormRuleSummary({
         organizationId: member.organizationId,
         companyId,
@@ -297,7 +301,7 @@ export async function GET(request: NextRequest) {
         supplierCount: 0
       }
 
-    const resicoRetentionSummary = canAccessReceptionBusinessRuleResicoRetention(access)
+    const resicoRetentionSummary = includeHeavyMetrics && canAccessReceptionBusinessRuleResicoRetention(access)
       ? await getResicoRetentionRuleSummary({
         organizationId: member.organizationId,
         companyId,
@@ -310,7 +314,7 @@ export async function GET(request: NextRequest) {
         supplierCount: 0
       }
 
-    const objetoImpTaxSummary = canAccessReceptionBusinessRuleObjetoImpVsIva(access)
+    const objetoImpTaxSummary = includeHeavyMetrics && canAccessReceptionBusinessRuleObjetoImpVsIva(access)
       ? await getObjetoImpTaxRuleSummary({
         organizationId: member.organizationId,
         companyId,
@@ -369,18 +373,33 @@ export async function GET(request: NextRequest) {
     const grossCommercialExpense = Number(grossCommercialExpenseResult._sum.subtotal || 0)
     const creditNotesSubtotal = Number(creditNotesSubtotalResult._sum.subtotal || 0)
     const netExpensesTotal = grossCommercialExpense - creditNotesSubtotal
-    const taxPeriodSummary = await getTaxPeriodSummary({
-      organizationId: member.organizationId,
-      companyId,
-      startDate,
-      endDate
-    })
-    const paymentBalancePeriodSummary = await getPaymentBalancePeriodSummary({
-      organizationId: member.organizationId,
-      companyId,
-      startDate,
-      endDate
-    })
+    const taxPeriodSummary = includeHeavyMetrics
+      ? await getTaxPeriodSummary({
+        organizationId: member.organizationId,
+        companyId,
+        startDate,
+        endDate
+      })
+      : {
+        ivaAccreditableTotal: 0,
+        ivaAccreditableBreakdown: [],
+        retainedTaxesTotal: 0,
+        retainedIsrTotal: 0,
+        retainedIvaTotal: 0
+      }
+    const paymentBalancePeriodSummary = includeHeavyMetrics
+      ? await getPaymentBalancePeriodSummary({
+        organizationId: member.organizationId,
+        companyId,
+        startDate,
+        endDate
+      })
+      : {
+        totalPaidInPeriod: 0,
+        outstandingBalanceTotal: 0,
+        agingOutstandingTotal: 0,
+        agingBreakdown: []
+      }
 
     if (rows.length === 0) {
       return NextResponse.json({
@@ -438,7 +457,10 @@ export async function GET(request: NextRequest) {
         monthly: [],
         topSuppliers: [],
         topClients: [],
-        paymentMethods: []
+        paymentMethods: [],
+        meta: {
+          heavyMetricsIncluded: includeHeavyMetrics
+        }
       })
     }
 
@@ -604,9 +626,11 @@ export async function GET(request: NextRequest) {
         .slice(0, 10),
       topClients: [],
       paymentMethods: Array.from(paymentMethodsMap.values()).sort((left, right) => right.count - left.count),
+      meta: {
+        heavyMetricsIncluded: includeHeavyMetrics
+      }
     })
   } catch (error) {
-    console.error('Dashboard recibidos API error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

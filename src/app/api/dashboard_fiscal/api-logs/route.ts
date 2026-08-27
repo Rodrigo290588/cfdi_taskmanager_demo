@@ -1,17 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { Permission } from '@/lib/permissions'
 import { prisma } from '@/lib/prisma'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
 import type { Prisma } from '@prisma/client'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+const SAFE_AUDIT_VALUE_KEYS = new Set([
+  'httpStatusCode', 'step', 'requestDurationMs', 'errorCode', 'stepName', 'count', 'totalInvoices', 'batchSize',
+])
+
+function maskEmail(raw: string | null): string {
+  if (!raw) return '***@***'
+  const parts = raw.split('@')
+  if (parts.length !== 2) return '***@***'
+  const user = parts[0] || ''
+  const domain = parts[1] || '***'
+  const visible = Math.min(user.length, 2)
+  return `${user.slice(0, visible)}***@${domain}`
+}
+
+function maskAuditJsonValues(values: unknown): Record<string, unknown> | null {
+  if (!values || typeof values !== 'object') return null
+  const obj = values as Record<string, unknown>
+  const safe: Record<string, unknown> = {}
+  for (const k of Object.keys(obj)) {
+    if (SAFE_AUDIT_VALUE_KEYS.has(String(k))) {
+      safe[k] = obj[k]
+    }
+  }
+  return Object.keys(safe).length === 0 ? null : safe
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const orgId = searchParams.get('orgId') || undefined
+    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(request, { routeKey: 'apiLogs', requireCompanyId: false, permission: Permission.VIEW_AUDIT_LOGS })
+    void _sr
     const page = Number(searchParams.get('page') || 1)
     const limit = Math.min(Number(searchParams.get('limit') || 20), 100)
     const action = searchParams.get('action') || undefined
@@ -19,27 +46,15 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo') || undefined
     const query = searchParams.get('query') || ''
 
-    const member = await prisma.member.findFirst({
-      where: orgId ? { userId: session.user.id, organizationId: orgId, status: 'APPROVED' } : { userId: session.user.id, status: 'APPROVED' },
-      include: { organization: true }
-    })
-    if (!member?.organization) {
-      return NextResponse.json({ error: 'Sin acceso a la organización' }, { status: 403 })
-    }
-
-    // Obtener usuarios de la organización para filtrar los logs de API por tenant
     const orgMembers = await prisma.member.findMany({
-      where: { organizationId: member.organization.id, status: 'APPROVED' },
+      where: { organizationId: ctx.organizationId, status: 'APPROVED' },
       select: { userId: true }
     })
     const userIds = orgMembers.map(m => m.userId)
 
     const where: Prisma.AuditLogWhereInput = {
       tableName: 'cfdi_api',
-      OR: [
-        { userId: { in: userIds } },
-        { userId: '' } // incluir registros previos con userId vacío
-      ]
+      userId: { in: userIds }
     }
     if (action) (where as { action?: string }).action = action
     if (dateFrom || dateTo) {
@@ -77,7 +92,7 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           tableName: 'cfdi_api',
-          OR: [{ userId: { in: userIds } }, { userId: '' }],
+          userId: { in: userIds },
           timestamp: {
             gte: new Date(new Date().setHours(0, 0, 0, 0)),
             lte: new Date(new Date().setHours(23, 59, 59, 999))
@@ -87,7 +102,7 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           tableName: 'cfdi_api',
-          OR: [{ userId: { in: userIds } }, { userId: '' }],
+          userId: { in: userIds },
           action: 'CREATE',
           timestamp: {
             gte: new Date(new Date().setHours(0, 0, 0, 0)),
@@ -98,7 +113,7 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           tableName: 'cfdi_api',
-          OR: [{ userId: { in: userIds } }, { userId: '' }],
+          userId: { in: userIds },
           action: 'REJECT',
           timestamp: {
             gte: new Date(new Date().setHours(0, 0, 0, 0)),
@@ -115,7 +130,7 @@ export async function GET(request: NextRequest) {
           return prisma.auditLog.count({
             where: {
               tableName: 'cfdi_api',
-              OR: [{ userId: { in: userIds } }, { userId: '' }],
+              userId: { in: userIds },
               timestamp: { gte: start, lte: end }
             }
           })
@@ -126,9 +141,9 @@ export async function GET(request: NextRequest) {
     const startToday = new Date(new Date().setHours(0, 0, 0, 0))
     const endToday = new Date(new Date().setHours(23, 59, 59, 999))
     const [importToday, createToday, rejectToday] = await Promise.all([
-      prisma.auditLog.count({ where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], action: 'IMPORT', timestamp: { gte: startToday, lte: endToday } } }),
-      prisma.auditLog.count({ where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], action: 'CREATE', timestamp: { gte: startToday, lte: endToday } } }),
-      prisma.auditLog.count({ where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], action: 'REJECT', timestamp: { gte: startToday, lte: endToday } } }),
+      prisma.auditLog.count({ where: { tableName: 'cfdi_api', userId: { in: userIds }, action: 'IMPORT', timestamp: { gte: startToday, lte: endToday } } }),
+      prisma.auditLog.count({ where: { tableName: 'cfdi_api', userId: { in: userIds }, action: 'CREATE', timestamp: { gte: startToday, lte: endToday } } }),
+      prisma.auditLog.count({ where: { tableName: 'cfdi_api', userId: { in: userIds }, action: 'REJECT', timestamp: { gte: startToday, lte: endToday } } }),
     ])
 
     const hourlyTodayPromises = Array.from({ length: 24 }, (_, h) => {
@@ -139,7 +154,7 @@ export async function GET(request: NextRequest) {
       return prisma.auditLog.count({
         where: {
           tableName: 'cfdi_api',
-          OR: [{ userId: { in: userIds } }, { userId: '' }],
+          userId: { in: userIds },
           timestamp: { gte: hStart, lte: hEnd }
         }
       })
@@ -151,7 +166,7 @@ export async function GET(request: NextRequest) {
     const importLogsToday = await prisma.auditLog.findMany({
       where: {
         tableName: 'cfdi_api',
-        OR: [{ userId: { in: userIds } }, { userId: '' }],
+        userId: { in: userIds },
         action: 'IMPORT',
         timestamp: { gte: startToday, lte: endToday }
       },
@@ -173,7 +188,7 @@ export async function GET(request: NextRequest) {
       const createLogs = await prisma.auditLog.findMany({
         where: {
           tableName: 'cfdi_api',
-          OR: [{ userId: { in: userIds } }, { userId: '' }],
+          userId: { in: userIds },
           action: 'CREATE',
           timestamp: { gte: hStart, lte: hEnd }
         },
@@ -203,7 +218,7 @@ export async function GET(request: NextRequest) {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     const recentUsers = await prisma.auditLog.findMany({
-      where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], timestamp: { gte: sevenDaysAgo } },
+      where: { tableName: 'cfdi_api', userId: { in: userIds }, timestamp: { gte: sevenDaysAgo } },
       select: { userEmail: true }
     })
     const userCounts: Record<string, number> = {}
@@ -212,12 +227,12 @@ export async function GET(request: NextRequest) {
       userCounts[email] = (userCounts[email] || 0) + 1
     }
     const topUsers7d = Object.entries(userCounts)
-      .map(([userEmail, count]) => ({ userEmail, count }))
+      .map(([userEmail, count]) => ({ userEmail: maskEmail(userEmail || null), count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
 
     const rejectRowsToday = await prisma.auditLog.findMany({
-      where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], action: 'REJECT', timestamp: { gte: startToday, lte: endToday } },
+      where: { tableName: 'cfdi_api', userId: { in: userIds }, action: 'REJECT', timestamp: { gte: startToday, lte: endToday } },
       select: { oldValues: true, newValues: true, description: true }
     })
     const reasonCounts: Record<string, number> = {}
@@ -234,7 +249,7 @@ export async function GET(request: NextRequest) {
 
     // Top RFC emisores y receptores últimos 7 días (con acción CREATE)
     const createLast7d = await prisma.auditLog.findMany({
-      where: { tableName: 'cfdi_api', OR: [{ userId: { in: userIds } }, { userId: '' }], action: 'CREATE', timestamp: { gte: sevenDaysAgo } },
+      where: { tableName: 'cfdi_api', userId: { in: userIds }, action: 'CREATE', timestamp: { gte: sevenDaysAgo } },
       select: { newValues: true }
     })
     const issuerCounts: Record<string, number> = {}
@@ -264,11 +279,11 @@ export async function GET(request: NextRequest) {
         id: r.id,
         action: r.action,
         description: r.description,
-        userEmail: r.userEmail,
+        userEmail: maskEmail(r.userEmail || null),
         timestamp: r.timestamp,
         recordId: r.recordId,
-        oldValues: r.oldValues,
-        newValues: r.newValues,
+        oldValues: maskAuditJsonValues(r.oldValues),
+        newValues: maskAuditJsonValues(r.newValues),
       })),
       pagination: {
         total,
@@ -276,9 +291,8 @@ export async function GET(request: NextRequest) {
         limit,
         totalPages: Math.ceil(total / limit)
       }
-    })
+    }, { headers: SECURITY_HEADERS })
   } catch (error) {
-    console.error('Error fetching emission API logs:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

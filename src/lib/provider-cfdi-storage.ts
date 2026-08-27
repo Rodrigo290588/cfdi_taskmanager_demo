@@ -1,9 +1,10 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, type CipherGCM, type DecipherGCM } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, randomUUID, timingSafeEqual, type CipherGCM, type DecipherGCM } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { upsertProviderUploadedCfdiComplementProjection } from '@/lib/cfdi-complement-projection-storage'
 import { calculateProviderPaymentComplementDueDate } from '@/lib/provider-payment-compliance'
 import { syncProviderReceivedCfdiSummaryRecordChange } from '@/lib/provider-received-cfdi-summary'
+import { parseCfdiDateTime } from '@/lib/cfdi-date'
 
 export type ProviderPersistedPaymentDetail = {
   paymentUuid: string
@@ -170,9 +171,12 @@ type ProviderPaymentUpdateRecord = {
 }
 
 const PROVIDER_XML_ENCRYPTION_KEY_ENV = 'PROVIDER_CFDI_XML_ENCRYPTION_KEY'
-const PROVIDER_XML_KEY_VERSION = process.env.PROVIDER_CFDI_XML_KEY_VERSION || 'v1'
+const PROVIDER_XML_KEY_VERSION = process.env.PROVIDER_CFDI_XML_KEY_VERSION || 'v2'
+const PROVIDER_XML_KEY_MIN_SUPPORTED_VERSION: ReadonlySet<string> = new Set(['v2'])
 const PROVIDER_XML_ENCRYPTION_ALGORITHM = 'aes-256-gcm'
 const PROVIDER_XML_IV_LENGTH = 12
+const PROVIDER_XML_HKDF_INFO = 'platfi/provider-cfdi-xml/v2'
+const PROVIDER_CFDI_NUMBER_MAX_MAGNITUDE = 9_999_999_999_999
 
 function normalizeRfc(value: string | null | undefined) {
   return (value || '').trim().toUpperCase()
@@ -182,9 +186,26 @@ function normalizeText(value: string | null | undefined) {
   return (value || '').trim()
 }
 
-function toNumber(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
-  return Number.isFinite(parsed) ? parsed : 0
+function toNumber(value: unknown, fieldRef: string = 'storage_field') {
+  const raw = String(value ?? '').trim()
+  if (!raw) {
+    throw new Error(`[PROV-STORAGE-DECIMAL] Valor numérico vacío en campo ${fieldRef}`)
+  }
+  if (raw.length > 25) {
+    throw new Error(`[PROV-STORAGE-DECIMAL] Longitud excedida (${raw.length}/25) en ${fieldRef}`)
+  }
+  const normalized = raw.replace(/,/g, '')
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`[PROV-STORAGE-DECIMAL] Formato inválido en ${fieldRef}: ${raw}`)
+  }
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`[PROV-STORAGE-DECIMAL] NaN/Inf en ${fieldRef}: ${raw}`)
+  }
+  if (Math.abs(parsed) > PROVIDER_CFDI_NUMBER_MAX_MAGNITUDE) {
+    throw new Error(`[PROV-STORAGE-DECIMAL] Magnitud excedida en ${fieldRef}: ${raw}`)
+  }
+  return parsed
 }
 
 function toIsoString(value: Date | string | null | undefined) {
@@ -213,29 +234,71 @@ function resolveEncryptionKey() {
   }
 
   const normalizedValue = rawValue.trim()
+  let rawKeyMaterial: Buffer
 
   if (/^[0-9a-fA-F]{64}$/.test(normalizedValue)) {
-    return createHash('sha256').update(Buffer.from(normalizedValue, 'hex')).digest()
+    rawKeyMaterial = Buffer.from(normalizedValue, 'hex')
+  } else {
+    try {
+      const base64Buffer = Buffer.from(normalizedValue, 'base64')
+      if (base64Buffer.length >= 32) {
+        rawKeyMaterial = base64Buffer
+      } else {
+        rawKeyMaterial = Buffer.from(normalizedValue, 'utf8')
+      }
+    } catch {
+      rawKeyMaterial = Buffer.from(normalizedValue, 'utf8')
+    }
   }
 
   try {
-    const base64Buffer = Buffer.from(normalizedValue, 'base64')
-    if (base64Buffer.length >= 32) {
-      return createHash('sha256').update(base64Buffer).digest()
-    }
-  } catch {}
-
-  return createHash('sha256').update(normalizedValue, 'utf8').digest()
+    return Buffer.from(
+      hkdfSync(
+        'sha256',
+        rawKeyMaterial,
+        Buffer.alloc(0),
+        Buffer.from(PROVIDER_XML_HKDF_INFO, 'utf8'),
+        32
+      )
+    )
+  } catch {
+    const shaPadded = createHash('sha256').update(rawKeyMaterial).digest()
+    return Buffer.from(
+      hkdfSync(
+        'sha256',
+        shaPadded,
+        Buffer.alloc(0),
+        Buffer.from(PROVIDER_XML_HKDF_INFO, 'utf8'),
+        32
+      )
+    )
+  }
 }
 
 function sha256Hex(value: string) {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
-function encryptXmlContent(xmlContent: string) {
+type StorageAadBindParams = {
+  organizationId: string
+  providerRfc: string
+  storageId: string
+}
+
+function buildStorageAadBuffer(params: StorageAadBindParams): Buffer {
+  const payload = {
+    organizationId: params.organizationId,
+    providerRfc: normalizeRfc(params.providerRfc),
+    storageId: params.storageId
+  }
+  return Buffer.from(JSON.stringify(payload), 'utf8')
+}
+
+function encryptXmlContent(xmlContent: string, bindParams: StorageAadBindParams) {
   const key = resolveEncryptionKey()
   const iv = randomBytes(PROVIDER_XML_IV_LENGTH)
   const cipher = createCipheriv(PROVIDER_XML_ENCRYPTION_ALGORITHM, key, iv) as CipherGCM
+  cipher.setAAD(buildStorageAadBuffer(bindParams))
 
   const ciphertext = Buffer.concat([cipher.update(xmlContent, 'utf8'), cipher.final()])
   const authTag = cipher.getAuthTag()
@@ -255,7 +318,17 @@ export function decryptXmlContent(params: {
   iv: string
   authTag: string
   algorithm: string
+  keyVersion?: string
+  aadBindParams: StorageAadBindParams
 }) {
+  const declaredVersion = (params.keyVersion || 'v0').trim()
+  if (!PROVIDER_XML_KEY_MIN_SUPPORTED_VERSION.has(declaredVersion)) {
+    const candidates = Array.from(PROVIDER_XML_KEY_MIN_SUPPORTED_VERSION).join(',')
+    throw new Error(
+      `[PROV-STORAGE-AES] Versión de llave XML rechazada (${declaredVersion}). Soporte mínimo: ${candidates}`
+    )
+  }
+
   const key = resolveEncryptionKey()
   const decipher = createDecipheriv(
     params.algorithm || PROVIDER_XML_ENCRYPTION_ALGORITHM,
@@ -263,6 +336,13 @@ export function decryptXmlContent(params: {
     Buffer.from(params.iv, 'base64')
   ) as DecipherGCM
   decipher.setAuthTag(Buffer.from(params.authTag, 'base64'))
+  decipher.setAAD(buildStorageAadBuffer(params.aadBindParams))
+
+  const timingDummy = Buffer.alloc(32)
+  const tagA = Buffer.from(params.authTag, 'base64')
+  if (tagA.length === 32) {
+    timingSafeEqual(tagA, timingDummy)
+  }
 
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(params.ciphertext, 'base64')),
@@ -461,11 +541,15 @@ export async function persistProviderAcceptedCfdis(params: {
         }
       })
       const storageId = existingRecord?.id || randomUUID()
-      const encryptedXml = encryptXmlContent(record.xmlContent)
+      const encryptedXml = encryptXmlContent(record.xmlContent, {
+        organizationId: params.context.organizationId,
+        providerRfc: record.providerRfc,
+        storageId
+      })
       const receiverCompanyId = companyIdByRfc.get(normalizeRfc(record.receiverRfc)) || null
       const paymentLinksJson = typeof record.paymentLinksJson === 'undefined' ? null : JSON.stringify(record.paymentLinksJson)
-      const issuanceDate = record.issuanceDate ? new Date(record.issuanceDate) : null
-      const certificationDate = record.certificationDate ? new Date(record.certificationDate) : null
+      const issuanceDate = record.issuanceDate ? parseCfdiDateTime(record.issuanceDate) : null
+      const certificationDate = record.certificationDate ? parseCfdiDateTime(record.certificationDate, issuanceDate || undefined) : null
 
       await tx.$executeRaw(
         Prisma.sql`
@@ -732,22 +816,26 @@ export async function getStoredProviderXmlRecordById(params: {
     id: string
     uuid: string
     receiver_rfc: string
+    provider_rfc: string
     sat_estado: string | null
     xml_ciphertext: string
     xml_iv: string
     xml_auth_tag: string
     xml_encryption_alg: string
+    xml_key_version: string | null
   }>>(
     Prisma.sql`
       SELECT
         p.id,
         p.uuid,
         p.receiver_rfc,
+        p.provider_rfc,
         p.sat_estado,
         b.xml_ciphertext,
         b.xml_iv,
         b.xml_auth_tag,
-        b.xml_encryption_alg
+        b.xml_encryption_alg,
+        b.xml_key_version
       FROM provider_uploaded_cfdis p
       INNER JOIN provider_uploaded_cfdi_blobs b
         ON b.provider_uploaded_cfdi_id = p.id
@@ -777,7 +865,13 @@ export async function getStoredProviderXmlRecordById(params: {
       ciphertext: currentRecord.xml_ciphertext,
       iv: currentRecord.xml_iv,
       authTag: currentRecord.xml_auth_tag,
-      algorithm: currentRecord.xml_encryption_alg
+      algorithm: currentRecord.xml_encryption_alg,
+      keyVersion: currentRecord.xml_key_version || undefined,
+      aadBindParams: {
+        organizationId: params.context.organizationId,
+        providerRfc: currentRecord.provider_rfc,
+        storageId: currentRecord.id
+      }
     })
   }
 }
@@ -790,21 +884,25 @@ export async function getStoredProviderXmlRecordForCompany(params: {
   const record = await prisma.$queryRaw<Array<{
     id: string
     uuid: string
+    provider_rfc: string
     sat_estado: string | null
     xml_ciphertext: string
     xml_iv: string
     xml_auth_tag: string
     xml_encryption_alg: string
+    xml_key_version: string | null
   }>>(
     Prisma.sql`
       SELECT
         p.id,
         p.uuid,
+        p.provider_rfc,
         p.sat_estado,
         b.xml_ciphertext,
         b.xml_iv,
         b.xml_auth_tag,
-        b.xml_encryption_alg
+        b.xml_encryption_alg,
+        b.xml_key_version
       FROM provider_uploaded_cfdis p
       INNER JOIN provider_uploaded_cfdi_blobs b
         ON b.provider_uploaded_cfdi_id = p.id
@@ -829,7 +927,13 @@ export async function getStoredProviderXmlRecordForCompany(params: {
       ciphertext: currentRecord.xml_ciphertext,
       iv: currentRecord.xml_iv,
       authTag: currentRecord.xml_auth_tag,
-      algorithm: currentRecord.xml_encryption_alg
+      algorithm: currentRecord.xml_encryption_alg,
+      keyVersion: currentRecord.xml_key_version || undefined,
+      aadBindParams: {
+        organizationId: params.organizationId,
+        providerRfc: currentRecord.provider_rfc,
+        storageId: currentRecord.id
+      }
     })
   }
 }
@@ -843,6 +947,7 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
     file_name: string
     organization_id: string
     receiver_company_id: string | null
+    provider_rfc: string
     issuer_rfc: string
     issuer_name: string | null
     receiver_rfc: string
@@ -857,6 +962,7 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
     xml_iv: string
     xml_auth_tag: string
     xml_encryption_alg: string
+    xml_key_version: string | null
   }>>(
     Prisma.sql`
       SELECT
@@ -865,6 +971,7 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
         p.file_name,
         p.organization_id,
         p.receiver_company_id,
+        p.provider_rfc,
         p.issuer_rfc,
         p.issuer_name,
         p.receiver_rfc,
@@ -878,7 +985,8 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
         b.xml_ciphertext,
         b.xml_iv,
         b.xml_auth_tag,
-        b.xml_encryption_alg
+        b.xml_encryption_alg,
+        b.xml_key_version
       FROM provider_uploaded_cfdis p
       INNER JOIN provider_uploaded_cfdi_blobs b
         ON b.provider_uploaded_cfdi_id = p.id
@@ -904,7 +1012,7 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
     receiverRfc: normalizeRfc(currentRecord.receiver_rfc),
     cfdiType: normalizeText(currentRecord.cfdi_type),
     issuanceDate: currentRecord.issuance_date,
-    total: toNumber(currentRecord.total),
+    total: toNumber(currentRecord.total, 'sat_monitor_total'),
     satEstado: normalizeText(currentRecord.sat_estado),
     satInitialEstado: normalizeText(currentRecord.sat_initial_estado),
     satEsCancelable: normalizeText(currentRecord.sat_es_cancelable),
@@ -913,7 +1021,13 @@ export async function getStoredProviderXmlForSatMonitoring(params: {
       ciphertext: currentRecord.xml_ciphertext,
       iv: currentRecord.xml_iv,
       authTag: currentRecord.xml_auth_tag,
-      algorithm: currentRecord.xml_encryption_alg
+      algorithm: currentRecord.xml_encryption_alg,
+      keyVersion: currentRecord.xml_key_version || undefined,
+      aadBindParams: {
+        organizationId: currentRecord.organization_id,
+        providerRfc: currentRecord.provider_rfc,
+        storageId: currentRecord.id
+      }
     })
   }
 }

@@ -121,8 +121,8 @@ function getAllTagAttributeValues(xml: string, tagName: string, attributeName: s
   return Array.from(values)
 }
 
-function getNumericAttributeValue(xml: string, tagName: string, attributeName: string) {
-  const rawValue = getTagAttribute(xml, tagName, attributeName)
+function getAnyNumericTagAttributeValue(xml: string, tagName: string, attributeName: string) {
+  const rawValue = getAllTagAttributeValues(xml, tagName, attributeName)[0]
   if (!rawValue) return null
 
   const parsed = Number(rawValue.replace(/,/g, '').trim())
@@ -178,8 +178,9 @@ export function extractWorkpaperProjectionAttributes(xml: string): WorkpaperProj
     objectTaxComprobante: getTagAttribute(xml, 'Comprobante', 'ObjetoImp') || null,
     paymentConditions: getTagAttribute(xml, 'Comprobante', 'CondicionesDePago') || null,
     certificationPac: getTagAttribute(xml, 'TimbreFiscalDigital', 'RfcProvCertif') || null,
-    totalImpuestosTrasladados: getNumericAttributeValue(xml, 'Impuestos', 'TotalImpuestosTrasladados'),
-    totalImpuestosRetenidos: getNumericAttributeValue(xml, 'Impuestos', 'TotalImpuestosRetenidos')
+    // Scan every <Impuestos> tag because concept-level taxes can appear before the global totals tag.
+    totalImpuestosTrasladados: getAnyNumericTagAttributeValue(xml, 'Impuestos', 'TotalImpuestosTrasladados'),
+    totalImpuestosRetenidos: getAnyNumericTagAttributeValue(xml, 'Impuestos', 'TotalImpuestosRetenidos')
   }
 }
 

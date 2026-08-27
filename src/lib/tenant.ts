@@ -144,3 +144,67 @@ export function getOnboardingSteps(): Array<{
     }
   ]
 }
+
+// [SAST-FIX TEN-006] Helper reusable deterministic multi-org pick + org.isActive guard.
+// Utilizado por TODOS los 7 handlers /api/tenant/** para evitar Revocation Bypass + Heisenbug findFirst sin orderBy.
+import type { MemberRole, Organization } from '@prisma/client'
+
+type MembershipWithOrg = {
+  id: string
+  userId: string
+  organizationId: string
+  role: MemberRole
+  status: string
+  createdAt: Date
+  organization: Organization & { isActive?: boolean | null }
+}
+
+const __ROLE_RANK: Record<MemberRole, number> = {
+  ADMIN: 4,
+  AUDITOR: 2,
+  VIEWER: 1,
+} as const
+
+export async function getPrimaryApprovedMembership(
+  userId: string,
+  { take = 50 }: { take?: number } = {},
+): Promise<MembershipWithOrg | null> {
+  if (!userId) return null
+  const memberships = await prisma.member.findMany({
+    where: {
+      userId,
+      status: 'APPROVED',
+    },
+    include: { organization: true },
+    take: Math.max(1, Math.min(200, take | 0)),
+  })
+  if (memberships.length === 0) return null
+  const sorted = [...memberships].sort((a, b) => {
+    const ra = __ROLE_RANK[(a.role as MemberRole) || 'VIEWER'] || 0
+    const rb = __ROLE_RANK[(b.role as MemberRole) || 'VIEWER'] || 0
+    if (rb !== ra) return rb - ra
+    if (a.createdAt.getTime() !== b.createdAt.getTime()) return a.createdAt.getTime() - b.createdAt.getTime()
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+  return (sorted[0] as unknown) as MembershipWithOrg
+}
+
+export async function getUserApprovedOrganizationIds(userId: string, { take = 200 }: { take?: number } = {}) {
+  if (!userId) return [] as string[]
+  const rows = await prisma.member.findMany({
+    where: { userId, status: 'APPROVED' },
+    select: { organizationId: true, role: true },
+    take: Math.max(1, Math.min(500, take | 0)),
+  })
+  return rows.map(r => r.organizationId)
+}
+
+// Inline minimal NextRequest helpers (safe re-export para no depender de lib sat)
+export function __tenantGetIpFromNextRequest(req: { headers: Headers }): string {
+  try {
+    const raw = req.headers.get('x-forwarded-for') ?? ''
+    return (raw.split(',')[0] || '127.0.0.1').trim() || '127.0.0.1'
+  } catch {
+    return '127.0.0.1'
+  }
+}

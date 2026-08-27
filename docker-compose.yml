@@ -13,11 +13,38 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Servicio AISLADO para ejecución de tests de seguridad AUTH SAST.
+  # Puerto host 5434 → interno 5432. Volumen separado postgres_test_data.
+  # Borra y recrea data en cada `prisma migrate reset --force. Nunca contiene datos productivos.
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: test-itc-auth-sast
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 'postgres'
+      POSTGRES_DB: platfi_intelligence_TEST_AUTH
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d platfi_intelligence_TEST_AUTH"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
   redis:
     image: redis:alpine
     container_name: dev-itc-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres_data:
+  postgres_test_data:

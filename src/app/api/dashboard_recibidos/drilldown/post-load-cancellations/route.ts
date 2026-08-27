@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { listPostLoadCancellationAlerts } from '@/lib/provider-post-load-cancellation-alerts'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { z } from 'zod'
+import { CompanyIdSchema } from '@/schemas/dashboard-recibidos'
 
 function canAccessReceptionFiscalAudit(access: {
   customRole?: {
@@ -42,28 +44,22 @@ function canAccessReceptionCancellationAlerts(access: {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'drilldownAgg', requireCompanyId: true })
+    const { ctx, sessionUserId } = scoped
+    const companyId = ctx.companyId!
+
+    const rawQuery = Object.fromEntries(scoped.searchParams.entries())
+    const parsed = z.strictObject({ companyId: CompanyIdSchema }).safeParse({ ...rawQuery, companyId })
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
+    const member = (await prisma.member.findFirst({
+      where: { userId: sessionUserId, status: 'APPROVED', organizationId: ctx.organizationId }
+    }))!
 
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
-    }
-
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' }
-    })
-
-    if (!member) {
-      return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } },
+    const access = (await prisma.companyAccess.findUnique({
+      where: { memberId_companyId: { memberId: ctx.memberId, companyId } },
       include: {
         customRole: {
           select: {
@@ -72,11 +68,7 @@ export async function GET(request: NextRequest) {
           }
         }
       }
-    })
-
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    }))!
 
     if (!canAccessReceptionCancellationAlerts(access)) {
       return NextResponse.json({ error: 'Sin permiso para alertas de cancelación post-carga' }, { status: 403 })
@@ -120,7 +112,6 @@ export async function GET(request: NextRequest) {
       }))
     })
   } catch (error) {
-    console.error('Dashboard recibidos post-load cancellations drilldown API error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

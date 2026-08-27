@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
 import { prisma } from '@/lib/prisma'
 import { upsertInvoiceXmlBlob } from '@/lib/invoice-xml-storage'
 import { upsertInvoiceComplementProjection } from '@/lib/cfdi-complement-projection-storage'
 import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-complement-storage'
+import { parseCfdiDateTime } from '@/lib/cfdi-date'
 import { CfdiType, InvoiceStatus, SatStatus, Prisma } from '@prisma/client'
 import JSZip from 'jszip'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+import { safeErrSummary } from '@/lib/security'
+import { fp32 } from '@/lib/monitor-security-helpers'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+const MAX_UPLOAD_BYTES_TOTAL = 50 * 1024 * 1024
+const MAX_FILES = 50
+const MAX_ZIP_ENTRIES = 50
+const MAX_XML_BYTES_PER_DOC = 2 * 1024 * 1024
+const MAX_ZIP_DECOMPRESSED_TOTAL_BYTES = 100 * 1024 * 1024
+const SAFE_EXT = new Set(['.xml', '.zip'])
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
   const re = new RegExp(`<${tagNs}[^>]*\\b${attrName}="([^"]+)"`, 'i')
@@ -26,30 +41,11 @@ function parseCfdiType(v: string | null): CfdiType | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
-    }
-
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' },
-      include: { organization: true }
-    })
-    if (!member?.organization) {
-      return NextResponse.json({ error: 'Membresía u organización no encontrada' }, { status: 404 })
-    }
-
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } }
-    })
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'uploadXml', requireCompanyId: true })
+    const { ctx, enrichedUser, searchParams, systemRole: _sr } = scoped
+    void _sr
+    const userId = enrichedUser.id
+    const companyId = searchParams.get('companyId')!
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -61,12 +57,12 @@ export async function POST(request: NextRequest) {
     const companyRfc = company.rfc
 
     let fiscalEntity = await prisma.fiscalEntity.findFirst({
-      where: { organizationId: member.organization.id, rfc: companyRfc }
+      where: { organizationId: ctx.organizationId, rfc: companyRfc }
     })
     if (!fiscalEntity) {
       fiscalEntity = await prisma.fiscalEntity.create({
         data: {
-          organizationId: member.organization.id,
+          organizationId: ctx.organizationId,
           rfc: companyRfc,
           businessName: company.businessName,
           taxRegime: '601',
@@ -76,27 +72,45 @@ export async function POST(request: NextRequest) {
       })
     }
     const fe = fiscalEntity!
-    const userId = session.user!.id
 
     const form = await request.formData()
     const files = form.getAll('files').filter((f): f is File => f instanceof File)
     if (files.length === 0) {
-      return NextResponse.json({ error: 'No se recibieron archivos' }, { status: 400 })
+      return NextResponse.json({ error: 'No se recibieron archivos' }, { status: 400, headers: SECURITY_HEADERS })
+    }
+    if (files.length > MAX_FILES) {
+      return NextResponse.json({ error: `Demasiados archivos. Máximo permitido: ${MAX_FILES}` }, { status: 400, headers: SECURITY_HEADERS })
+    }
+    let totalBytes = 0
+    for (const f of files) {
+      totalBytes += f.size
+      const ext = `.${f.name.split('.').pop()?.toLowerCase() || ''}`
+      if (!SAFE_EXT.has(ext)) {
+        return NextResponse.json({ error: `Extensión no permitida: ${ext}. Sólamente .xml y .zip` }, { status: 400, headers: SECURITY_HEADERS })
+      }
+    }
+    if (totalBytes > MAX_UPLOAD_BYTES_TOTAL) {
+      return NextResponse.json({ error: `Tamaño total excede límite de ${MAX_UPLOAD_BYTES_TOTAL / (1024 * 1024)}MB` }, { status: 400, headers: SECURITY_HEADERS })
     }
 
     const results: Array<{ uuid: string | null; status: 'created' | 'skipped' | 'error'; message?: string; id?: string }> = []
 
-    async function processXml(xml: string) {
+    async function processXml(xml: string, byteSize: number) {
+      if (byteSize > MAX_XML_BYTES_PER_DOC) {
+        return results.push({ uuid: null, status: 'error', message: `XML excede límite de ${MAX_XML_BYTES_PER_DOC / (1024 * 1024)}MB` })
+      }
       const comprobanteTag = xml.includes('<cfdi:Comprobante') ? 'cfdi:Comprobante' : 'Comprobante'
       const emisorTag = xml.includes('<cfdi:Emisor') ? 'cfdi:Emisor' : 'Emisor'
       const receptorTag = xml.includes('<cfdi:Receptor') ? 'cfdi:Receptor' : 'Receptor'
       const timbreTag = xml.includes('<tfd:TimbreFiscalDigital') ? 'tfd:TimbreFiscalDigital' : 'TimbreFiscalDigital'
 
       const uuid = attrNs(xml, timbreTag, 'UUID')
-      if (!uuid) return results.push({ uuid: null, status: 'error', message: 'UUID no encontrado en XML' })
+      if (!uuid) return results.push({ uuid: null, status: 'error', message: 'Documento CFDI inválido o incompleto' })
 
-      const existing = await prisma.invoice.findUnique({ where: { uuid } })
-      if (existing) return results.push({ uuid, status: 'skipped', message: 'Invoice ya existe' })
+      const existingScoped = await prisma.invoice.findFirst({ where: { uuid, issuerFiscalEntityId: fe.id } })
+      if (existingScoped) return results.push({ uuid, status: 'skipped', message: 'Documento CFDI ya fue procesado previamente' })
+      const existingGlobal = await prisma.invoice.findUnique({ where: { uuid }, select: { id: true } })
+      if (existingGlobal) return results.push({ uuid, status: 'skipped', message: 'Documento CFDI ya fue procesado previamente' })
 
       const tipoComp = attrNs(xml, comprobanteTag, 'TipoDeComprobante')
       const cfdiType = parseCfdiType(tipoComp)
@@ -176,8 +190,8 @@ export async function POST(request: NextRequest) {
               iepsWithheld: new Prisma.Decimal(iepsWithheldTotal.toFixed(2)),
               xmlContent: xml,
               pdfUrl: null,
-              issuanceDate: new Date(fecha),
-              certificationDate: new Date(fechaTimbrado),
+              issuanceDate: parseCfdiDateTime(fecha),
+              certificationDate: parseCfdiDateTime(fechaTimbrado),
               certificationPac: pac,
               paymentMethod: metodoPago || '',
               paymentForm: formaPago || '',
@@ -202,7 +216,7 @@ export async function POST(request: NextRequest) {
             paymentInvoiceUuid: uuid,
             xmlContent: xml,
             satStatusSnapshot: SatStatus.VIGENTE,
-            fallbackPaymentDate: new Date(fecha),
+            fallbackPaymentDate: parseCfdiDateTime(fecha),
             fallbackCurrency: moneda,
             fallbackSeries: series || null,
             fallbackFolio: folio || null
@@ -225,16 +239,30 @@ export async function POST(request: NextRequest) {
             results.push({ uuid: null, status: 'error', message: 'ZIP sin XML válidos' })
             continue
           }
+          if (entries.length > MAX_ZIP_ENTRIES) {
+            results.push({ uuid: null, status: 'error', message: `ZIP excede máximo de ${MAX_ZIP_ENTRIES} archivos XML` })
+            continue
+          }
+          let decompressedSum = 0
           for (const entry of entries) {
             const xml = await entry.async('string')
-            await processXml(xml)
+            const byteLen = Buffer.byteLength(xml, 'utf8')
+            decompressedSum += byteLen
+            if (decompressedSum > MAX_ZIP_DECOMPRESSED_TOTAL_BYTES) {
+              results.push({ uuid: null, status: 'error', message: 'ZIP supera tamaño total descomprimido permitido' })
+              break
+            }
+            await processXml(xml, byteLen)
           }
         } else {
           const xml = await file.text()
-          await processXml(xml)
+          await processXml(xml, file.size)
         }
       } catch (err) {
-        results.push({ uuid: null, status: 'error', message: err instanceof Error ? err.message : 'Error desconocido' })
+        const s = safeErrSummary(err)
+        const fp = fp32(s.msgHash || s.name)
+        console.error(`[UploadCFDI fp=${fp}]`, s)
+        results.push({ uuid: null, status: 'error', message: `Error procesando archivo. Ref: ${fp}` })
       }
     }
 
@@ -245,9 +273,8 @@ export async function POST(request: NextRequest) {
       errors: results.filter(r => r.status === 'error').length
     }
 
-    return NextResponse.json({ results, summary })
+    return NextResponse.json({ results, summary }, { headers: SECURITY_HEADERS })
   } catch (error) {
-    console.error('Upload XML (emitidos) error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

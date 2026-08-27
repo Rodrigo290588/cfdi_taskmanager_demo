@@ -23,6 +23,23 @@ import { PermissionRequired } from '@/components/auth/permission-guard'
 import { Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 
+// DASH-SAST-005: Masking PII correos en UI (defensa en profundidad, aunque backend ya lo haga).
+function maskEmail(email: string | null | undefined, keepLeft = 2, keepRight = 5): string {
+  if (!email) return 'Usuario desconocido'
+  const raw = String(email).trim()
+  const at = raw.indexOf('@')
+  if (at <= 0) return raw.length <= 3 ? raw : raw.slice(0, 1) + '***'
+  const user = raw.slice(0, at)
+  const domain = raw.slice(at + 1)
+  const mUser = user.length <= keepLeft
+    ? user
+    : user.slice(0, keepLeft) + '*'.repeat(Math.max(3, Math.min(8, user.length - keepLeft)))
+  const mDomain = domain.length <= keepRight
+    ? domain
+    : '*'.repeat(Math.max(3, Math.min(8, domain.length - keepRight))) + domain.slice(-keepRight)
+  return `${mUser}@${mDomain}`
+}
+
 interface DashboardStats {
   totalCompanies: number
   pendingCompanies: number
@@ -342,7 +359,7 @@ export default function AdminDashboardPage() {
                             </p>
                           </div>
                           <p className="text-sm text-gray-600">
-                            Por: {log.userEmail}
+                            Por: <span className="font-mono">{maskEmail(log.userEmail)}</span>
                           </p>
                           {log.companyName && (
                             <p className="text-xs text-gray-500">

@@ -1,76 +1,116 @@
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
+import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
+import { enforceCompaniesRateLimit, RateLimitError } from '@/lib/rate-limit'
 
-export async function GET() {
+const REQ_ID_HEADER = 'X-Request-Id'
+
+export async function GET(_request: NextRequest) {
+  void _request
+  const reqId = crypto.randomUUID()
   try {
     const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'No autorizado', reqId },
+        { status: 401, headers: { [REQ_ID_HEADER]: reqId, ...SAT_SECURITY_HEADERS } }
+      )
     }
 
-    // Get user's organization through membership
-    const member = await prisma.member.findFirst({
-      where: { 
-        userId: session.user.id,
-        status: 'APPROVED'
-      },
-      include: {
-        organization: true
+    try {
+      enforceCompaniesRateLimit(session.user.id, 'search')
+    } catch (rlErr) {
+      if (rlErr instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: rlErr.message, reqId },
+          {
+            status: rlErr.statusCode,
+            headers: {
+              [REQ_ID_HEADER]: reqId,
+              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
+              ...SAT_SECURITY_HEADERS
+            }
+          }
+        )
       }
+      throw rlErr
+    }
+
+    // TSC FIX: incluir relation organization explícitamente; hard constraint org activa = onboardingCompleted=true
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: session.user.id,
+        status: 'APPROVED',
+        organization: { onboardingCompleted: true }
+      },
+      include: { organization: true }
     })
 
     if (!member?.organization) {
-      return NextResponse.json({ companies: [] }, { status: 200 })
+      return NextResponse.json(
+        { companies: [], reqId },
+        { status: 200, headers: { [REQ_ID_HEADER]: reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
+      )
     }
 
     const isOwner = member.organization.ownerId === session.user.id
     const isAdmin = member.role === 'ADMIN'
 
-    let companies
+    type Out = { id: string; rfc: string | null; businessName: string | null; status: string; name: string }
+    let companies: Out[]
 
     if (isOwner || isAdmin) {
-      const members = await prisma.member.findMany({
-        where: {
-          organizationId: member.organization.id,
-          status: 'APPROVED'
-        },
-        select: { userId: true }
-      })
-
-      const userIds = members.map(m => m.userId)
-
+      // COMP-003 FIX ALTO IDOR Tenant: memberId === member.id para scope al usuario actual
       companies = await prisma.company.findMany({
-        where: { createdBy: { in: userIds } },
+        where: {
+          companyAccesses: {
+            some: {
+              organizationId: member.organization.id,
+              memberId: member.id,
+              member: { status: 'APPROVED', organization: { onboardingCompleted: true } }
+            }
+          }
+        },
         select: { id: true, rfc: true, businessName: true, status: true, name: true },
         orderBy: { createdAt: 'desc' }
       })
     } else {
-      const access = await prisma.$queryRaw<Array<{ company_id: string }>>`
-        SELECT company_id FROM company_access WHERE member_id = ${member.id}
-      `
-      const companyIds = access.map(a => a.company_id)
       companies = await prisma.company.findMany({
-        where: { id: { in: companyIds } },
+        where: {
+          companyAccesses: {
+            some: {
+              memberId: member.id,
+              organizationId: member.organization.id,
+              member: { status: 'APPROVED', organization: { onboardingCompleted: true } }
+            }
+          }
+        },
         select: { id: true, rfc: true, businessName: true, status: true, name: true },
         orderBy: { createdAt: 'desc' }
       })
     }
 
-    return NextResponse.json({
-      companies: companies.map(company => ({
-        id: company.id,
-        rfc: company.rfc,
-        businessName: company.businessName || company.name,
-        isActive: company.status === 'APPROVED'
-      }))
-    })
-
+    return NextResponse.json(
+      {
+        companies: companies.map((c) => ({
+          id: c.id,
+          rfc: c.rfc,
+          businessName: c.businessName || c.name,
+          isActive: c.status === 'APPROVED'
+        })),
+        reqId
+      },
+      { headers: { [REQ_ID_HEADER]: reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
+    )
   } catch (error) {
-    console.error('Error fetching tenant companies:', error)
-    return NextResponse.json({ 
-      error: 'Error interno del servidor',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    }, { status: 500 })
+    const safe = safeErrSummarySat(error)
+    console.error('[companies-tenant 500]', { reqId, fp: safe.incidentFingerprint, name: safe.name })
+    return NextResponse.json(
+      { error: safe.message, reqId, incidentFingerprint: safe.incidentFingerprint },
+      { status: 500, headers: { [REQ_ID_HEADER]: reqId, ...SAT_SECURITY_HEADERS } }
+    )
   }
 }

@@ -36,12 +36,15 @@ async function main() {
       take: batchSize,
       select: {
         id: true,
+        organizationId: true,
+        providerRfc: true,
         xmlBlob: {
           select: {
             xmlCiphertext: true,
             xmlIv: true,
             xmlAuthTag: true,
-            xmlEncryptionAlg: true
+            xmlEncryptionAlg: true,
+            xmlKeyVersion: true
           }
         }
       }
@@ -64,7 +67,13 @@ async function main() {
         ciphertext: row.xmlBlob.xmlCiphertext,
         iv: row.xmlBlob.xmlIv,
         authTag: row.xmlBlob.xmlAuthTag,
-        algorithm: row.xmlBlob.xmlEncryptionAlg
+        algorithm: row.xmlBlob.xmlEncryptionAlg,
+        keyVersion: row.xmlBlob.xmlKeyVersion || undefined,
+        aadBindParams: {
+          organizationId: row.organizationId,
+          providerRfc: row.providerRfc,
+          storageId: row.id
+        }
       })
 
       if (!xmlContent) {

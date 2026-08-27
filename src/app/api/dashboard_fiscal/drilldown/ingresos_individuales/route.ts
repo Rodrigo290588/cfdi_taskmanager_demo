@@ -1,26 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { decryptInvoiceXmlContent } from '@/lib/invoice-xml-storage'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+const DRILLDOWN_BATCH_SIZE = 500
+
+function resolveInvoiceXmlFromBlob(blob: {
+  xmlCiphertext: string
+  xmlIv: string
+  xmlAuthTag: string
+  xmlEncryptionAlg: string
+} | null | undefined) {
+  if (!blob) {
+    return ''
+  }
+
+  try {
+    return decryptInvoiceXmlContent({
+      ciphertext: blob.xmlCiphertext,
+      iv: blob.xmlIv,
+      authTag: blob.xmlAuthTag,
+      algorithm: blob.xmlEncryptionAlg
+    })
+  } catch {
+    return ''
+  }
+}
+
+function isGlobalPublicInvoice(xmlContent: string) {
+  return /InformacionGlobal/i.test(xmlContent)
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
+    void _sr
 
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
+    const companyId = searchParams.get('companyId')!
     const startDateParam = searchParams.get('startDate')
     const endDateParam = searchParams.get('endDate')
     const originParam = searchParams.get('origin') || 'issued'
 
-    if (!companyId) return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
-
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { rfc: true } })
-    if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
+    if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404, headers: SECURITY_HEADERS })
 
     const rfc = company.rfc
-    const fiscalEntity = await prisma.fiscalEntity.findFirst({ where: { rfc } })
-    if (!fiscalEntity) return NextResponse.json({ data: [] })
+    const fiscalEntity = await prisma.fiscalEntity.findFirst({ where: { rfc, organizationId: ctx.organizationId } })
+    if (!fiscalEntity) return NextResponse.json({ data: [] }, { headers: SECURITY_HEADERS })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dateFilter: any = {}
@@ -40,59 +71,82 @@ export async function GET(request: NextRequest) {
       baseWhere = { issuerFiscalEntityId: fiscalEntity.id, issuerRfc: rfc, ...dateFilter }
     }
 
-    const invoices = await prisma.invoice.findMany({
-      where: {
-        ...baseWhere,
-        cfdiType: 'INGRESO',
-        satStatus: 'VIGENTE',
-        receiverRfc: 'XAXX010101000',
-        NOT: {
-          xmlContent: {
-            contains: 'InformacionGlobal'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const drilldownData: any[] = []
+    let cursor: string | undefined
+
+    do {
+      const invoices = await prisma.invoice.findMany({
+        where: {
+          ...baseWhere,
+          cfdiType: 'INGRESO',
+          satStatus: 'VIGENTE',
+          receiverRfc: 'XAXX010101000'
+        },
+        orderBy: { id: 'asc' },
+        take: DRILLDOWN_BATCH_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          uuid: true,
+          folio: true,
+          series: true,
+          issuanceDate: true,
+          issuerRfc: true,
+          receiverRfc: true,
+          issuerName: true,
+          receiverName: true,
+          currency: true,
+          exchangeRate: true,
+          subtotal: true,
+          blob: {
+            select: {
+              xmlCiphertext: true,
+              xmlIv: true,
+              xmlAuthTag: true,
+              xmlEncryptionAlg: true
+            }
           }
         }
-      },
-      select: {
-        uuid: true,
-        folio: true,
-        series: true,
-        issuanceDate: true,
-        issuerRfc: true,
-        receiverRfc: true,
-        issuerName: true,
-        receiverName: true,
-        currency: true,
-        exchangeRate: true,
-        subtotal: true,
-      },
-      orderBy: { issuanceDate: 'desc' }
-    })
+      })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const drilldownData: any[] = invoices.map(inv => {
-      const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
-      const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
-      const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
-
-      return {
-        uuid: inv.uuid,
-        uuidRelacionado: '',
-        tipo: 'Ingreso Individual',
-        fecha: inv.issuanceDate,
-        serie: inv.series || '',
-        folio: inv.folio || '',
-        rfc: rfcOponente,
-        razonSocial: nombreOponente || 'Desconocido',
-        moneda: inv.currency || 'MXN',
-        tipoCambio: Number(inv.exchangeRate) || 1,
-        importe: Number(inv.subtotal) || 0
+      if (invoices.length === 0) {
+        break
       }
-    })
 
-    return NextResponse.json({ data: drilldownData })
+      invoices.forEach(inv => {
+        const xmlContent = resolveInvoiceXmlFromBlob(inv.blob)
+        if (isGlobalPublicInvoice(xmlContent)) {
+          return
+        }
+
+        const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
+        const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
+        const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
+
+        drilldownData.push({
+          uuid: inv.uuid,
+          uuidRelacionado: '',
+          tipo: 'Ingreso Individual',
+          fecha: inv.issuanceDate,
+          serie: inv.series || '',
+          folio: inv.folio || '',
+          rfc: rfcOponente,
+          razonSocial: nombreOponente || 'Desconocido',
+          moneda: inv.currency || 'MXN',
+          tipoCambio: Number(inv.exchangeRate) || 1,
+          importe: Number(inv.subtotal) || 0
+        })
+      })
+
+      cursor = invoices[invoices.length - 1]?.id
+    } while (cursor)
+
+    drilldownData.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+
+    return NextResponse.json({ data: drilldownData }, { headers: SECURITY_HEADERS })
 
   } catch (error) {
-    console.error('Drilldown API Error:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return dashboardJsonErrorResponse(error)
   }
 }

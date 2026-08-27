@@ -1,0 +1,7 @@
+{
+  "testId": "API-10.3 / API-01.6 path traversal",
+  "dangerousUploadNameField": "logo..%c0%af..%c0%afwindows%c0%afwin.ini.pdf",
+  "safeLocalPath": "pt-logo..%c0%af..%c0%afwindows%c0%afwin.ini.pdf",
+  "consumeAs": "multipart/form-data; campo = file, filename=\"logo..%c0%af..%c0%afwindows%c0%afwin.ini.pdf\" y bytes=pt-logo..%c0%af..%c0%afwindows%c0%afwin.ini.pdf",
+  "expected": "servidor debe normalizar (path.basename, trim, strip nulls, remove reserved devices) y devolver 400 si no puede sanear. NUNCA guardar ../../ fuera de container."
+}

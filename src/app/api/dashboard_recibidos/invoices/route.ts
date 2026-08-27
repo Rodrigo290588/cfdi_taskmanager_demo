@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { decryptXmlContent } from '@/lib/provider-cfdi-storage'
+import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
 import {
   buildProjectionMap,
   normalizeProjectionUpperText,
@@ -11,6 +10,16 @@ import {
   workpaperComplementVersionKeySet,
   workpaperNumericAttributeKeySet
 } from '@/lib/cfdi-workpaper-projection'
+import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
+import {
+  InvoiceWorkpaperQuerySchema,
+  MAX_HAS_FILTERS,
+  MAX_NUMERIC_PROJECTION_FILTERS,
+  INVOICE_WORKPAPER_HARD_VISUAL_LIMIT,
+  RECEPTION_HAS_FLAGS,
+  type InvoiceWorkpaperQueryParsed
+} from '@/schemas/dashboard-recibidos'
+import { Permission, hasPermission, type User } from '@/lib/permissions'
 
 function normalizeText(value: string | null | undefined) {
   return (value || '').trim()
@@ -30,36 +39,6 @@ function toIsoString(value: Date | string | null | undefined) {
 
   const parsed = value instanceof Date ? value : new Date(value)
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString()
-}
-
-function getXmlAttribute(xml: string, attr: string) {
-  if (!xml) return ''
-
-  const comprobanteMatch = xml.match(/<[^:]+:Comprobante([^>]+)>/)
-  if (!comprobanteMatch) return ''
-
-  const match = comprobanteMatch[1].match(new RegExp(`${attr}="([^"]+)"`))
-  return match?.[1] || ''
-}
-
-function getReceptorAttribute(xml: string, attr: string) {
-  if (!xml) return ''
-
-  const receptorMatch = xml.match(/<[^:]+:Receptor([^>]+)>/)
-  if (!receptorMatch) return ''
-
-  const match = receptorMatch[1].match(new RegExp(`${attr}="([^"]+)"`))
-  return match?.[1] || ''
-}
-
-function getTimbreAttribute(xml: string, attr: string) {
-  if (!xml) return ''
-
-  const timbreMatch = xml.match(/<(?:[^:]+:)?TimbreFiscalDigital([^>]+)>/)
-  if (!timbreMatch) return ''
-
-  const match = timbreMatch[1].match(new RegExp(`${attr}="([^"]+)"`))
-  return match?.[1] || ''
 }
 
 function getCfdiTypesFilter(value: string | null) {
@@ -98,47 +77,81 @@ function parseBooleanFilter(value: string) {
   return true
 }
 
+type ProviderUploadedCfdiWorkpaperRow = Prisma.ProviderUploadedCfdiGetPayload<{
+  select: {
+    id: true
+    memberId: true
+    uploadedByUserId: true
+    receiverCompanyId: true
+    uuid: true
+    cfdiType: true
+    series: true
+    folio: true
+    currency: true
+    paymentMethod: true
+    paymentForm: true
+    validationStatus: true
+    satEstado: true
+    issuerRfc: true
+    issuerName: true
+    receiverRfc: true
+    receiverName: true
+    subtotal: true
+    discount: true
+    total: true
+    issuanceDate: true
+    certificationDate: true
+    createdAt: true
+    updatedAt: true
+  }
+  include: {
+    complementIndex: true
+    complementAttributes: true
+  }
+}>
+
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
+    const scoped = await buildDashboardScopedContext(request, { routeKey: 'drilldownInvoices', requireCompanyId: true })
+    const { ctx, sessionUserId } = scoped
+    const companyId = ctx.companyId!
 
-    const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get('companyId')
-    const page = Math.max(Number(searchParams.get('page') || 1), 1)
-    const limit = Math.min(Math.max(Number(searchParams.get('limit') || 20), 1), 100000)
-    const query = normalizeText(searchParams.get('query'))
-    const satStatus = normalizeUpperText(searchParams.get('satStatus'))
-    const status = normalizeUpperText(searchParams.get('status'))
-    const dateFrom = searchParams.get('dateFrom')
-    const dateTo = searchParams.get('dateTo')
-    const cfdiTypes = getCfdiTypesFilter(searchParams.get('cfdiType'))
-
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId requerido' }, { status: 400 })
+    const rawQuery = Object.fromEntries(scoped.searchParams.entries())
+    const parsed = InvoiceWorkpaperQuerySchema.safeParse(rawQuery)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400, headers: { ...SECURITY_HEADERS } })
     }
+    const q = parsed.data as InvoiceWorkpaperQueryParsed
 
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' }
-    })
-    if (!member) {
-      return NextResponse.json({ error: 'Membresía no encontrada' }, { status: 404 })
-    }
+    const member = (await prisma.member.findFirst({
+      where: { userId: sessionUserId, status: 'APPROVED', organizationId: ctx.organizationId },
+      include: { organization: true }
+    }))!
 
-    const access = await prisma.companyAccess.findUnique({
-      where: { memberId_companyId: { memberId: member.id, companyId } }
-    })
-    if (!access) {
-      return NextResponse.json({ error: 'Sin acceso a la empresa' }, { status: 403 })
-    }
+    // DR-010 · PII gate: hasPermission() sobre el User enriquecido del contexto
+    const userForPermission: User = ctx.enrichedUser
+    const canViewPII = hasPermission(
+      userForPermission,
+      Permission.RECEP_FISCAL_AUDIT_PII,
+      member.organizationId
+    )
 
-    const where: Prisma.ProviderUploadedCfdiWhereInput = {
-      organizationId: member.organizationId,
-      receiverCompanyId: companyId,
-      validationStatus: 'APPROVED'
-    }
+    const page = Math.max(Number(q.page || 1), 1)
+    const userLimit = Math.min(Math.max(Number(q.limit || 20), 1), Number(q.limit) || 20)
+    // DR-005 clamp hard limit
+    const limit = Math.min(userLimit, INVOICE_WORKPAPER_HARD_VISUAL_LIMIT)
+    const query = normalizeText(q.query)
+    const satStatus = normalizeUpperText(q.satStatus)
+    const status = normalizeUpperText(q.status)
+    const dateFrom = q.dateFrom
+    const dateTo = q.dateTo
+    const cfdiTypes = getCfdiTypesFilter(q.cfdiType ?? null)
+
+    // DR-004 anti Prototype-Pollution
+    const where: Prisma.ProviderUploadedCfdiWhereInput = Object.create(null)
+    where.organizationId = member.organizationId
+    where.receiverCompanyId = companyId
+    where.validationStatus = 'APPROVED'
 
     if (cfdiTypes.length > 0) {
       where.cfdiType = { in: cfdiTypes }
@@ -150,9 +163,9 @@ export async function GET(request: NextRequest) {
       where.validationStatus = { contains: status, mode: 'insensitive' }
     }
     if (dateFrom || dateTo) {
-      where.issuanceDate = {}
-      if (dateFrom) where.issuanceDate.gte = new Date(dateFrom)
-      if (dateTo) where.issuanceDate.lte = new Date(dateTo)
+      where.issuanceDate = Object.create(null) as Prisma.DateTimeFilter
+      if (dateFrom) (where.issuanceDate as Prisma.DateTimeFilter).gte = new Date(dateFrom as unknown as string)
+      if (dateTo) (where.issuanceDate as Prisma.DateTimeFilter).lte = new Date(dateTo as unknown as string)
     }
     if (query) {
       where.OR = [
@@ -167,11 +180,11 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    if (!where.AND) {
-      where.AND = []
-    }
+    const andFilters: Prisma.ProviderUploadedCfdiWhereInput[] = []
+    where.AND = andFilters
 
-    const directTextFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+    const directTextFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = Object.create(null)
+    Object.assign(directTextFilterMap, {
       id: 'id',
       uuid: 'uuid',
       series: 'series',
@@ -183,13 +196,14 @@ export async function GET(request: NextRequest) {
       receiverName: 'receiverName',
       paymentMethod: 'paymentMethod',
       paymentForm: 'paymentForm'
-    }
+    })
 
-    const directNumericFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+    const directNumericFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = Object.create(null)
+    Object.assign(directNumericFilterMap, {
       subtotal: 'subtotal',
       discount: 'discount',
       total: 'total'
-    }
+    })
 
     const reservedParams = new Set([
       'companyId',
@@ -202,16 +216,20 @@ export async function GET(request: NextRequest) {
       'dateFrom',
       'dateTo',
       'export',
-      'origin'
+      'origin',
+      'orgId'
     ])
 
-    for (const [rawKey, rawValue] of searchParams.entries()) {
+    let hasFilterCount = 0
+    let numericProjectionCount = 0
+
+    for (const [rawKey, rawValue] of scoped.searchParams.entries()) {
       if (reservedParams.has(rawKey) || !rawValue) {
         continue
       }
 
       if (rawKey in directTextFilterMap) {
-        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+        andFilters.push({
           [directTextFilterMap[rawKey]]: {
             contains: rawValue,
             mode: 'insensitive'
@@ -221,18 +239,30 @@ export async function GET(request: NextRequest) {
       }
 
       if (rawKey in directNumericFilterMap && !Number.isNaN(Number(rawValue))) {
-        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+        andFilters.push({
           [directNumericFilterMap[rawKey]]: new Prisma.Decimal(Number(rawValue).toFixed(6))
         })
         continue
       }
 
       const key = rawKey.startsWith('attr.') ? rawKey.slice(5) : rawKey
-      const hasKey = rawKey.startsWith('has.') ? `has${rawKey.slice(4).toLowerCase().replace(/(?:^|_)(\w)/g, (_, char: string) => char.toUpperCase())}` : rawKey
+      const hasKeyRaw = rawKey.startsWith('has.') ? rawKey.slice(4) : null
+      const hasKey = hasKeyRaw
+        ? 'has' + hasKeyRaw.toLowerCase().replace(/(?:^|_)(\w)/g, (_m: string, char: string) => char.toUpperCase())
+        : rawKey
       const normalizedValue = normalizeProjectionUpperText(rawValue)
 
+      // DR-004 whitelist has.* flags
+      if (rawKey.startsWith('has.') && !RECEPTION_HAS_FLAGS.has(hasKey as unknown as typeof RECEPTION_HAS_FLAGS extends Set<infer T> ? T : never)) {
+        continue
+      }
+      if (rawKey.startsWith('has.')) {
+        if (hasFilterCount >= MAX_HAS_FILTERS) continue
+        hasFilterCount++
+      }
+
       if (workpaperComplementFlagKeySet.has(hasKey)) {
-        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+        andFilters.push({
           complementIndex: {
             is: {
               [hasKey]: parseBooleanFilter(rawValue)
@@ -243,7 +273,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (workpaperComplementVersionKeySet.has(key)) {
-        ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+        andFilters.push({
           complementIndex: {
             is: {
               [key]: {
@@ -258,7 +288,10 @@ export async function GET(request: NextRequest) {
 
       if (workpaperAttributeKeySet.has(key)) {
         if (workpaperNumericAttributeKeySet.has(key) && !Number.isNaN(Number(rawValue))) {
-          ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          // DR-004 MAX_NUMERIC_PROJECTION_FILTERS anti-exhaustion
+          if (numericProjectionCount >= MAX_NUMERIC_PROJECTION_FILTERS) continue
+          numericProjectionCount++
+          andFilters.push({
             complementAttributes: {
               some: {
                 attributeKey: key,
@@ -267,7 +300,7 @@ export async function GET(request: NextRequest) {
             }
           })
         } else {
-          ;(where.AND as Prisma.ProviderUploadedCfdiWhereInput[]).push({
+          andFilters.push({
             complementAttributes: {
               some: {
                 attributeKey: key,
@@ -283,6 +316,7 @@ export async function GET(request: NextRequest) {
     }
 
     const skip = (page - 1) * limit
+    // DR-006 · NO incluir xmlBlob (nunca descifrar en listado) y NO incluir xmlContent directo
     const [rows, total] = await Promise.all([
       prisma.providerUploadedCfdi.findMany({
         where,
@@ -318,14 +352,6 @@ export async function GET(request: NextRequest) {
           certificationDate: true,
           createdAt: true,
           updatedAt: true,
-          xmlBlob: {
-            select: {
-              xmlCiphertext: true,
-              xmlIv: true,
-              xmlAuthTag: true,
-              xmlEncryptionAlg: true
-            }
-          },
           complementIndex: {
             select: {
               hasPagos: true,
@@ -335,7 +361,7 @@ export async function GET(request: NextRequest) {
               hasCartaPorte: true,
               cartaPorteVersion: true,
               hasComercioExterior: true,
-              comercioExteriorVersion: true
+              comercioExteriorVersion: true,
             }
           },
           complementAttributes: {
@@ -346,37 +372,27 @@ export async function GET(request: NextRequest) {
               valueBoolean: true
             }
           }
-        }
-      }),
+        },
+      }) as unknown as Promise<ProviderUploadedCfdiWorkpaperRow[]>,
       prisma.providerUploadedCfdi.count({ where })
     ])
 
     const pagedInvoices = rows.map(row => {
-      const xmlContent = row.xmlBlob
-        ? decryptXmlContent({
-            ciphertext: row.xmlBlob.xmlCiphertext,
-            iv: row.xmlBlob.xmlIv,
-            authTag: row.xmlBlob.xmlAuthTag,
-            algorithm: row.xmlBlob.xmlEncryptionAlg
-          })
-        : ''
-
       const projection = buildProjectionMap({
         attributes: row.complementAttributes,
         complementIndex: row.complementIndex
       })
-      const exchangeRateRaw = getXmlAttribute(xmlContent, 'TipoCambio')
 
-      return {
+      // DR-006 · xmlContent: undefined evita que se serialice. No volcamos nunca el hash ni el ciphertext al listado.
+      const base: Record<string, unknown> & { xmlContent?: undefined } = {
         id: row.id,
-        userId: row.uploadedByUserId || '',
         issuerFiscalEntityId: row.receiverCompanyId || '',
         uuid: normalizeUpperText(row.uuid),
         cfdiType: normalizeUpperText(row.cfdiType),
         series: normalizeText(row.series) || null,
         folio: normalizeText(row.folio) || null,
         currency: normalizeUpperText(row.currency) || 'MXN',
-        exchangeRate: exchangeRateRaw ? toNumber(exchangeRateRaw) : null,
+        exchangeRate: null as number | null,
         status: normalizeUpperText(row.validationStatus),
         satStatus: normalizeUpperText(row.satEstado),
         issuerRfc: normalizeUpperText(row.issuerRfc),
@@ -390,22 +406,32 @@ export async function GET(request: NextRequest) {
         ivaWithheld: 0,
         isrWithheld: 0,
         iepsWithheld: 0,
-        xmlContent,
-        pdfUrl: null,
+        // DR-006
+        xmlContent: undefined,
+        pdfUrl: null as string | null,
         issuanceDate: toIsoString(row.issuanceDate),
         certificationDate: toIsoString(row.certificationDate) || null,
-        certificationPac: String(projection.certificationPac ?? getTimbreAttribute(xmlContent, 'RfcProvCertif')),
+        certificationPac: String(projection.certificationPac ?? ''),
         paymentMethod: normalizeUpperText(row.paymentMethod),
         paymentForm: normalizeUpperText(row.paymentForm),
-        cfdiUsage: String(projection.cfdiUsage ?? getReceptorAttribute(xmlContent, 'UsoCFDI')),
-        placeOfExpedition: String(projection.placeOfExpedition ?? getXmlAttribute(xmlContent, 'LugarExpedicion')),
-        exportKey: String(projection.exportKey ?? getXmlAttribute(xmlContent, 'Exportacion')),
-        objectTaxComprobante: String(projection.objectTaxComprobante ?? getXmlAttribute(xmlContent, 'ObjetoImp')) || null,
-        paymentConditions: String(projection.paymentConditions ?? getXmlAttribute(xmlContent, 'CondicionesDePago')) || null,
+        cfdiUsage: String(projection.cfdiUsage ?? ''),
+        placeOfExpedition: String(projection.placeOfExpedition ?? ''),
+        exportKey: String(projection.exportKey ?? ''),
+        objectTaxComprobante: String(projection.objectTaxComprobante ?? '') || null,
+        paymentConditions: String(projection.paymentConditions ?? '') || null,
         createdAt: toIsoString(row.createdAt),
         updatedAt: toIsoString(row.updatedAt),
         projection
       }
+
+      // DR-010 · PII bind solo si tiene permiso
+      if (canViewPII) {
+        base.userId = row.uploadedByUserId || ''
+        base.memberId = row.memberId
+        base.uploadedByUserId = row.uploadedByUserId
+      }
+
+      return base
     })
 
     return NextResponse.json({
@@ -416,9 +442,9 @@ export async function GET(request: NextRequest) {
         limit,
         totalPages: Math.ceil(total / limit)
       }
-    })
+    }, { status: 200, headers: { ...SECURITY_HEADERS } })
   } catch (error) {
-    console.error('Error fetching provider workpaper invoices for dashboard_recibidos:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    // DR-008 safe catch
+    return dashboardJsonErrorResponse(error)
   }
 }

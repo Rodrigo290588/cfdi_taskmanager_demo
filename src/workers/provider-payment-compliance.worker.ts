@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq'
-import { providerPaymentComplianceQueue, PROVIDER_PAYMENT_COMPLIANCE_QUEUE_NAME } from '@/lib/queue'
+import { getProviderPaymentComplianceQueue, PROVIDER_PAYMENT_COMPLIANCE_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
 import { syncProviderPaymentComplianceBlocks } from '@/lib/provider-payment-compliance'
 
 const PROVIDER_PAYMENT_COMPLIANCE_JOB_NAME = 'provider-payment-compliance-scan'
@@ -8,7 +8,7 @@ const PROVIDER_PAYMENT_COMPLIANCE_CRON = '0 0 * * *'
 const PROVIDER_PAYMENT_COMPLIANCE_TIMEZONE = 'America/Mexico_City'
 
 export async function ensureProviderPaymentComplianceRoutineScheduled() {
-  await providerPaymentComplianceQueue.add(
+  await getProviderPaymentComplianceQueue().add(
     PROVIDER_PAYMENT_COMPLIANCE_JOB_NAME,
     {},
     {
@@ -31,10 +31,7 @@ export function setupProviderPaymentComplianceWorker() {
       `[ProviderPaymentCompliance] scan=${result.scannedCandidates} overdue=${result.overdueInvoices} blocked=${result.blockedMembers} unblocked=${result.unblockedMembers}`
     )
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    connection: resolveRedisConnection(),
     concurrency: 1
   })
 

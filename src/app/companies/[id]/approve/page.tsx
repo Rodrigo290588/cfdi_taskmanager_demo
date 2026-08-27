@@ -45,6 +45,24 @@ interface AuditLog {
   timestamp: string
 }
 
+// COMP-008 FIX + ESLint react-hooks/error-boundaries:
+// Extraer sanitización URL a helper module-level SIN JSX dentro de try/catch.
+// Retorna null si no es segura (javascript:/data:/vbscript:/file: schemes).
+const WEBSITE_ALLOWED_SCHEMES_CLIENT = new Set(['https:', 'http:'])
+function safeWebsiteMeta(website: string | null): { href: string; display: string } | null {
+  if (!website) return null
+  let u: URL
+  try {
+    u = new URL(website)
+  } catch {
+    return null
+  }
+  if (!WEBSITE_ALLOWED_SCHEMES_CLIENT.has(u.protocol)) return null
+  const href = u.toString()
+  const display = u.hostname + (u.pathname !== '/' && u.pathname.length > 1 ? u.pathname : '')
+  return { href, display: display.length > 80 ? display.slice(0, 77) + '...' : display }
+}
+
 export default function CompanyApprovalPage() {
   const params = useParams()
   const router = useRouter()
@@ -104,7 +122,8 @@ export default function CompanyApprovalPage() {
       router.push('/companies/search')
     } catch (error) {
       console.error('Error approving company:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al aprobar la empresa')
+      // COMP-011 FIX MEDIO: NO leak raw error.message al toast user-facing (PII / stack trace exposure)
+      toast.error('Ocurrió un error al aprobar la empresa')
     } finally {
       setIsProcessing(false)
     }
@@ -138,7 +157,8 @@ export default function CompanyApprovalPage() {
       router.push('/companies/search')
     } catch (error) {
       console.error('Error rejecting company:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al rechazar la empresa')
+      // COMP-011 FIX MEDIO: NO leak raw error.message al toast user-facing (PII / stack trace exposure)
+      toast.error('Ocurrió un error al rechazar la empresa')
     } finally {
       setIsProcessing(false)
     }
@@ -318,15 +338,24 @@ export default function CompanyApprovalPage() {
                           </div>
                         </div>
                       )}
-                      {company.website && (
-                        <div className="flex items-center space-x-2">
-                          <Globe className="h-4 w-4 text-gray-500" />
-                          <div>
-                            <p className="text-sm text-gray-500">Sitio Web</p>
-                            <p className="font-medium">{company.website}</p>
+                      {(() => {
+                        const web = safeWebsiteMeta(company.website)
+                        if (!web) return null
+                        return (
+                          <div className="flex items-center space-x-2">
+                            <Globe className="h-4 w-4 text-gray-500" />
+                            <div>
+                              <p className="text-sm text-gray-500">Sitio Web</p>
+                              <a
+                                href={web.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-blue-700 underline underline-offset-2 break-all hover:text-blue-900"
+                              >{web.display}</a>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )
+                      })()}
                     </div>
                   </div>
 

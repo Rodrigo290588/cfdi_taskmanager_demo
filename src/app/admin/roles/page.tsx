@@ -9,6 +9,9 @@ import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Plus, ShieldAlert, ShieldCheck, Trash2, Edit } from 'lucide-react'
 import { showSuccess, showError } from '@/lib/toast'
+import { ProtectedRoute } from '@/components/auth/protected-route'
+import { PermissionRequired } from '@/components/auth/permission-guard'
+import { Permission } from '@/lib/permissions'
 
 interface CustomRole {
   id: string
@@ -68,7 +71,17 @@ const DEFAULT_PERMISSIONS = {
   canManageOrg: false
 }
 
-export default function RolesManagementPage() {
+const SYSTEM_ROLE_LABELS: Record<string, { placeholderName: string; placeholderDesc: string }> = {
+  ADMIN: { placeholderName: 'Administrador', placeholderDesc: 'Acceso total a todas las funcionalidades del sistema.' },
+  AUDITOR: { placeholderName: 'Auditor', placeholderDesc: 'Acceso de solo lectura para auditoría y revisión.' },
+  VIEWER: { placeholderName: 'Visualizador', placeholderDesc: 'Acceso básico de solo lectura a los dashboards.' }
+}
+
+function isSystemRoleId(id?: string | null): id is 'ADMIN' | 'AUDITOR' | 'VIEWER' {
+  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SYSTEM_ROLE_LABELS, id)
+}
+
+function RolesManagementPage() {
   const [roles, setRoles] = useState<CustomRole[]>([])
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -134,7 +147,8 @@ export default function RolesManagementPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.name.trim()) {
+    const isSystemEditing = editingRole?.isSystemRole && isSystemRoleId(editingRole.id)
+    if (!formData.name.trim() && !isSystemEditing) {
       showError('Error', 'El nombre del rol es requerido')
       return
     }
@@ -143,16 +157,32 @@ export default function RolesManagementPage() {
       setSaving(true)
       const url = editingRole ? `/api/admin/roles/${editingRole.id}` : '/api/admin/roles'
       const method = editingRole ? 'PUT' : 'POST'
-      
+
+      const payloadBody = isSystemEditing
+        ? {
+            id: editingRole!.id,
+            name: formData.name || SYSTEM_ROLE_LABELS[editingRole!.id].placeholderName,
+            description: formData.description || SYSTEM_ROLE_LABELS[editingRole!.id].placeholderDesc,
+            permissions: formData.permissions,
+            granularPermissions: formData.granularPermissions
+          }
+        : {
+            ...(editingRole?.id ? { id: editingRole.id } : {}),
+            name: formData.name,
+            description: formData.description,
+            permissions: formData.permissions,
+            granularPermissions: formData.granularPermissions
+          }
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payloadBody)
       })
-      
+
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error al guardar el rol')
-      
+
       showSuccess('Éxito', editingRole ? 'Rol actualizado correctamente' : 'Rol creado correctamente')
       setIsDialogOpen(false)
       fetchRoles()
@@ -283,7 +313,12 @@ export default function RolesManagementPage() {
                   </>
                 )}
                 {role.isSystemRole && (
-                  <span className="text-xs text-muted-foreground italic px-2 py-1">Rol de sistema (Solo lectura)</span>
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => handleOpenDialog(role)}>
+                      <Edit className="h-4 w-4 mr-1" /> Configurar Permisos
+                    </Button>
+                    <span className="text-xs text-muted-foreground italic px-2 py-1 self-center">Rol de sistema (configurable)</span>
+                  </>
                 )}
               </CardFooter>
             </Card>
@@ -602,3 +637,17 @@ export default function RolesManagementPage() {
     </div>
   )
 }
+
+// [SAST-FIX #8] Guardia server-side early. Roles solo con permiso ADMIN_ROLES (si existiera)
+// o ADMIN_ORGANIZATIONS fallback (permisos de administración de organización).
+function WrappedRolesManagementPage() {
+  return (
+    <ProtectedRoute>
+      <PermissionRequired permission={Permission.ADMIN_ORGANIZATIONS}>
+        <RolesManagementPage />
+      </PermissionRequired>
+    </ProtectedRoute>
+  )
+}
+
+export default WrappedRolesManagementPage

@@ -1,19 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'node:crypto'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { CompanyStatus } from '@prisma/client'
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, realpath } from 'fs/promises'
 import path from 'path'
+import { enforceCompaniesRateLimit, RateLimitError } from '@/lib/rate-limit'
+import { getAccessibleCompanyIds } from '@/lib/permissions'
+import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
 
-const searchCompaniesSchema = z.object({
-  query: z.string().optional().or(z.literal('')),
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const bodySizeLimit = 1024 * 16
+
+const WEBSITE_ALLOWED_SCHEMES = new Set(['https:', 'http:'])
+function sanitizeWebsite(website: string | null): string | null {
+  if (!website) return null
+  try {
+    const u = new URL(website)
+    return WEBSITE_ALLOWED_SCHEMES.has(u.protocol) ? website : null
+  } catch {
+    return null
+  }
+}
+
+const LOGO_DIR = (): string => {
+  const base = /*turbopackIgnore: true*/ process.cwd()
+  return /*turbopackIgnore: true*/ path.join(base, 'public', 'uploads', 'company-logos')
+}
+const LOGO_ALLOWED_EXTS = new Set(['.webp', '.png', '.jpg', '.jpeg', '.gif'])
+const LOGO_FILE_PATTERN = /^[0-9a-zA-Z_-]+\-[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}\.(webp|png|jpg|jpeg|gif)$/
+
+const searchCompaniesSchema = z.strictObject({
+  query: z.string().max(255).optional().or(z.literal('')),
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().or(z.literal('')),
-  taxRegime: z.string().optional().or(z.literal('')),
-  industry: z.string().optional().or(z.literal('')),
-  state: z.string().optional().or(z.literal('')),
-  dateFrom: z.string().optional().or(z.literal('')),
-  dateTo: z.string().optional().or(z.literal('')),
+  taxRegime: z.string().max(120).optional().or(z.literal('')),
+  industry: z.string().max(200).optional().or(z.literal('')),
+  state: z.string().max(120).optional().or(z.literal('')),
+  dateFrom: z.string().max(40).optional().or(z.literal('')),
+  dateTo: z.string().max(40).optional().or(z.literal('')),
   employeesMin: z.coerce.number().optional().or(z.literal('')),
   employeesMax: z.coerce.number().optional().or(z.literal('')),
   page: z.coerce.number().min(1).default(1),
@@ -22,67 +48,118 @@ const searchCompaniesSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc')
 })
 
+const SAFE_ORDER_BY_KEYS = new Set(['name', 'createdAt', 'status', 'rfc'])
+function buildSafeOrderBy(sortBy: string, sortOrder: 'asc' | 'desc'): { [k: string]: 'asc' | 'desc' } {
+  const key = SAFE_ORDER_BY_KEYS.has(sortBy) ? sortBy : 'createdAt'
+  return { [key]: sortOrder }
+}
+
+function safeZodHumanFriendly(issues: Array<z.ZodIssue>): Array<{ field: string; message: string }> {
+  return issues.map((issue) => ({
+    field: issue.path.join('.'),
+    message: issue.message || 'Valor inválido'
+  }))
+}
+
+// COMP-006 FIX MEDIO: Logo finder safe ext whitelist + realpath anti-symlink
+async function findLatestLogosMapSafe(companyIds: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  try {
+    const dir = LOGO_DIR()
+    const safeDir = await realpath(dir)
+    const files = await readdir(safeDir)
+    const idSet = new Set(companyIds)
+    const tmp: Record<string, Array<{ f: string; t: number }>> = {}
+    for (const f of files) {
+      const ext = path.extname(f).toLowerCase()
+      if (!LOGO_ALLOWED_EXTS.has(ext)) continue
+      if (!LOGO_FILE_PATTERN.test(f)) continue
+      const dashIdx = f.indexOf('-')
+      if (dashIdx <= 0) continue
+      const companyId = f.slice(0, dashIdx)
+      if (!idSet.has(companyId)) continue
+      const candidate = path.join(safeDir, f)
+      const parent = await realpath(path.dirname(candidate))
+      if (parent !== safeDir) continue
+      try {
+        const s = await stat(candidate)
+        if (!s.isFile()) continue
+        if (!tmp[companyId]) tmp[companyId] = []
+        tmp[companyId].push({ f, t: s.mtime.getTime() })
+      } catch {
+        continue
+      }
+    }
+    for (const cid of Object.keys(tmp)) {
+      const arr = tmp[cid]
+      arr.sort((a, b) => b.t - a.t)
+      out[cid] = `/uploads/company-logos/${encodeURIComponent(arr[0].f)}`
+    }
+  } catch {
+    // fail closed: empty
+  }
+  return out
+}
+
 export async function GET(request: NextRequest) {
+  const reqId = crypto.randomUUID()
   try {
     const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'No autorizado', reqId },
+        { status: 401, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+
+    try {
+      enforceCompaniesRateLimit(session.user.id, 'search')
+    } catch (rlErr) {
+      if (rlErr instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: rlErr.message, reqId },
+          {
+            status: rlErr.statusCode,
+            headers: {
+              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
+              'X-Request-Id': reqId,
+              ...SAT_SECURITY_HEADERS
+            }
+          }
+        )
+      }
+      throw rlErr
     }
 
     const searchParams = request.nextUrl.searchParams
     const params = Object.fromEntries(searchParams.entries())
-    
-    const validatedParams = searchCompaniesSchema.parse(params)
-    const { 
+
+    const validatedResult = searchCompaniesSchema.safeParse(params)
+    if (!validatedResult.success) {
+      return NextResponse.json(
+        {
+          error: 'Parámetros de búsqueda inválidos',
+          reqId,
+          details: safeZodHumanFriendly(validatedResult.error.issues)
+        },
+        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+    const validatedParams = validatedResult.data
+    const {
       query, status, taxRegime, industry, state, dateFrom, dateTo,
-      employeesMin, employeesMax, page, limit, sortBy, sortOrder 
+      employeesMin, employeesMax, page, limit, sortBy, sortOrder
     } = validatedParams
 
-    // Get user's organization through membership
-    const member = await prisma.member.findFirst({
-      where: { 
-        userId: session.user.id,
-        status: 'APPROVED'
-      },
-      include: {
-        organization: true
-      }
-    })
-
-    if (!member?.organization) {
-      return NextResponse.json({
-        companies: [],
-        pagination: {
-          total: 0,
-          page,
-          limit,
-          totalPages: 0
-        },
-        filters: {
-          taxRegimes: [],
-          industries: [],
-          states: []
-        }
-      })
+    const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, systemRole: true } })
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Usuario no encontrado', reqId },
+        { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
     }
 
-    const isOwner = member.organization.ownerId === session.user.id
-    const isAdmin = member.role === 'ADMIN'
-    let userIds: string[] = []
-    let accessibleCompanyIds: string[] = []
-
-    if (isOwner || isAdmin) {
-      const members = await prisma.member.findMany({
-        where: { organizationId: member.organization.id, status: 'APPROVED' },
-        select: { userId: true }
-      })
-      userIds = members.map(m => m.userId)
-    } else {
-      const access = await prisma.$queryRaw<Array<{ company_id: string }>>`
-        SELECT company_id FROM company_access WHERE member_id = ${member.id}
-      `
-      accessibleCompanyIds = access.map(a => a.company_id)
-    }
+    const scopedCompanyIds = await getAccessibleCompanyIds(user.id, user.systemRole)
 
     interface WhereClause {
       OR?: Array<{
@@ -96,30 +173,28 @@ export async function GET(request: NextRequest) {
       taxRegime?: string
       industry?: string
       state?: string
-      createdAt?: {
-        gte?: Date
-        lte?: Date
-      }
-      employeesCount?: {
-        gte?: number
-        lte?: number
-      }
-      createdBy?: {
-        in: string[]
-      }
-      id?: {
-        in: string[]
-      }
-    }
-    
-    const where: WhereClause = {}
-    if (isOwner || isAdmin) {
-      where.createdBy = { in: userIds }
-    } else {
-      where.id = { in: accessibleCompanyIds }
+      createdAt?: { gte?: Date; lte?: Date }
+      employeesCount?: { gte?: number; lte?: number }
+      id?: { in: string[] }
     }
 
-    // Text search across multiple fields
+    const where: WhereClause = {}
+
+    if (scopedCompanyIds !== null) {
+      if (scopedCompanyIds.length === 0) {
+        return NextResponse.json(
+          {
+            reqId,
+            companies: [],
+            pagination: { total: 0, page, limit, totalPages: 0 },
+            filters: { taxRegimes: [], industries: [], states: [] }
+          },
+          { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
+        )
+      }
+      where.id = { in: scopedCompanyIds }
+    }
+
     if (query) {
       where.OR = [
         { name: { contains: query, mode: 'insensitive' } },
@@ -129,132 +204,71 @@ export async function GET(request: NextRequest) {
         { email: { contains: query, mode: 'insensitive' } }
       ]
     }
-
-    // Status filter
-    if (status) {
-      where.status = status
-    }
-
-    // Tax regime filter
-    if (taxRegime) {
-      where.taxRegime = taxRegime
-    }
-
-    // Industry filter
-    if (industry) {
-      where.industry = industry
-    }
-
-    // State filter
-    if (state) {
-      where.state = state
-    }
-
-    // Date range filter
+    if (status) where.status = status
+    if (taxRegime) where.taxRegime = taxRegime
+    if (industry) where.industry = industry
+    if (state) where.state = state
     if (dateFrom || dateTo) {
       where.createdAt = {}
-      if (dateFrom) {
-        where.createdAt.gte = new Date(dateFrom)
-      }
-      if (dateTo) {
-        where.createdAt.lte = new Date(dateTo + 'T23:59:59.999Z')
-      }
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom)
+      if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59.999Z')
+    }
+    if (employeesMin !== undefined && employeesMin !== '' && typeof employeesMin === 'number' && !Number.isNaN(employeesMin)) {
+      where.employeesCount = { ...(where.employeesCount || {}), gte: employeesMin }
+    }
+    if (employeesMax !== undefined && employeesMax !== '' && typeof employeesMax === 'number' && !Number.isNaN(employeesMax)) {
+      where.employeesCount = { ...(where.employeesCount || {}), lte: employeesMax }
     }
 
-    // Employee count filter
-    if (employeesMin !== undefined && employeesMin !== '') {
-      where.employeesCount = {}
-      where.employeesCount.gte = Number(employeesMin)
-    }
-    if (employeesMax !== undefined && employeesMax !== '') {
-      if (!where.employeesCount) where.employeesCount = {}
-      where.employeesCount.lte = Number(employeesMax)
-    }
-
-    // Calculate pagination
     const skip = (page - 1) * limit
+    const safeOrderBy = buildSafeOrderBy(sortBy, sortOrder)
 
-    // Get companies with related data
     const [companies, total] = await Promise.all([
-      prisma.company.findMany({ where, skip, take: limit, orderBy: { [sortBy]: sortOrder } }),
+      prisma.company.findMany({ where, skip, take: limit, orderBy: safeOrderBy }),
       prisma.company.count({ where })
     ])
 
-    // Get unique values for filters
+    const scopedWhereForFilters = scopedCompanyIds === null
+      ? undefined
+      : { id: { in: scopedCompanyIds } }
+
     const [taxRegimesRaw, industriesRaw, statesRaw] = await Promise.all([
-      prisma.company.findMany({
-        select: { taxRegime: true },
-        distinct: ['taxRegime']
-      }),
-      prisma.company.findMany({
-        select: { industry: true },
-        distinct: ['industry']
-      }),
-      prisma.company.findMany({
-        select: { state: true },
-        distinct: ['state']
-      })
+      prisma.company.findMany({ where: scopedWhereForFilters, select: { taxRegime: true }, distinct: ['taxRegime'] }),
+      prisma.company.findMany({ where: scopedWhereForFilters, select: { industry: true }, distinct: ['industry'] }),
+      prisma.company.findMany({ where: scopedWhereForFilters, select: { state: true }, distinct: ['state'] })
     ])
 
-    // Filter out null values
-    const taxRegimes = taxRegimesRaw.map(r => r.taxRegime).filter(Boolean)
-    const industries = industriesRaw.map(i => i.industry).filter(Boolean)
-    const states = statesRaw.map(s => s.state).filter(Boolean)
+    const taxRegimes = taxRegimesRaw.map(r => r.taxRegime).filter(Boolean) as string[]
+    const industries = industriesRaw.map(i => i.industry).filter(Boolean) as string[]
+    const states = statesRaw.map(s => s.state).filter(Boolean) as string[]
 
-    // Compute latest logo per company from uploads directory (if any)
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'company-logos')
-    let latestLogosByCompany: Record<string, string> = {}
-    try {
-      const files = await readdir(uploadsDir)
-      // Build a map of latest file per company id
-      const byCompany: Record<string, { f: string; t: number }> = {}
-      for (const f of files) {
-        const dashIdx = f.indexOf('-')
-        if (dashIdx <= 0) continue
-        const companyId = f.slice(0, dashIdx)
-        const filePath = path.join(uploadsDir, f)
-        try {
-          const mtime = (await stat(filePath)).mtime.getTime()
-          const existing = byCompany[companyId]
-          if (!existing || mtime > existing.t) {
-            byCompany[companyId] = { f, t: mtime }
-          }
-        } catch {}
-      }
-      latestLogosByCompany = Object.fromEntries(
-        Object.entries(byCompany).map(([id, { f }]) => [id, `/uploads/company-logos/${f}`])
-      )
-    } catch {}
+    const logos = await findLatestLogosMapSafe(companies.map(c => c.id))
 
-    return NextResponse.json({
-      companies: companies.map((c) => ({
-        ...c,
-        logo: latestLogosByCompany[c.id] ?? null,
-      })),
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
+    return NextResponse.json(
+      {
+        reqId,
+        companies: companies.map((c) => ({
+          ...c,
+          website: sanitizeWebsite(c.website),
+          logo: logos[c.id] ?? null
+        })),
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        filters: { taxRegimes, industries, states }
       },
-      filters: {
-        taxRegimes,
-        industries,
-        states
-      }
-    })
-
+      { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
+    )
   } catch (error) {
-    console.error('Error searching companies:', error)
+    const safe = safeErrSummarySat(error)
+    console.error('[companies search] 500:', { reqId, fp: safe.incidentFingerprint, name: safe.name })
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ 
-        error: 'Parámetros de búsqueda inválidos',
-        details: error.issues
-      }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Parámetros de búsqueda inválidos', reqId, details: safeZodHumanFriendly(error.issues) },
+        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
     }
-    return NextResponse.json({ 
-      error: 'Error interno del servidor',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    }, { status: 500 })
+    return NextResponse.json(
+      { error: safe.message, reqId, incidentFingerprint: safe.incidentFingerprint },
+      { status: 500, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )
   }
 }

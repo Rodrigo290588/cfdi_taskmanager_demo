@@ -8,10 +8,17 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
+const TOKEN_RE = /^[A-Za-z0-9\-_]{8,128}$/
+
+function sanitizeHtmlString(raw: string): string {
+  return String(raw || '').replace(/[<>`]/g, '')
+}
+
 function AcceptInviteContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const token = searchParams.get('token')
+  const tokenRaw = searchParams.get('token')
+  const tokenValid = typeof tokenRaw === 'string' && TOKEN_RE.test(tokenRaw) ? tokenRaw : null
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -25,7 +32,7 @@ function AcceptInviteContent() {
   } | null>(null)
 
   useEffect(() => {
-    if (!token) {
+    if (!tokenValid) {
       const timeoutId = setTimeout(() => {
         setError('Enlace de invitación no válido o incompleto.')
         setLoading(false)
@@ -37,7 +44,8 @@ function AcceptInviteContent() {
     const timeoutId = setTimeout(() => {
       void (async () => {
         try {
-          const res = await fetch(`/api/auth/invite/verify?token=${token}`)
+          const encoded = encodeURIComponent(tokenValid)
+          const res = await fetch(`/api/auth/invite/verify?token=${encoded}`)
           const data = await res.json()
 
           if (!res.ok) {
@@ -46,7 +54,7 @@ function AcceptInviteContent() {
 
           setInviteData(data.data)
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Error desconocido')
+          setError(sanitizeHtmlString(err instanceof Error ? err.message : 'Error desconocido'))
         } finally {
           setLoading(false)
         }
@@ -54,17 +62,20 @@ function AcceptInviteContent() {
     }, 0)
 
     return () => clearTimeout(timeoutId)
-  }, [token])
+  }, [tokenValid])
 
   const handleAccept = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
 
     try {
+      if (!tokenValid) {
+        throw new Error('Token inválido')
+      }
       const res = await fetch('/api/auth/invite/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token: tokenValid })
       })
 
       const data = await res.json()
@@ -75,7 +86,6 @@ function AcceptInviteContent() {
 
       setSuccess(true)
       
-      // Redireccionar según el flujo
       setTimeout(() => {
         if (data.redirect) {
           router.push(data.redirect)
@@ -83,7 +93,8 @@ function AcceptInviteContent() {
       }, 1500)
 
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ocurrió un error')
+      const msg = sanitizeHtmlString(err instanceof Error ? err.message : 'Ocurrió un error')
+      toast.error(msg)
     } finally {
       setSubmitting(false)
     }
@@ -172,7 +183,7 @@ function AcceptInviteContent() {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={submitting}
+            disabled={submitting || !tokenValid}
           >
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {inviteData?.needsPassword ? 'Comenzar Registro Seguro' : 'Aceptar Invitación'}

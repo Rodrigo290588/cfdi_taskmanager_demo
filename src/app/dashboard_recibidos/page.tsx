@@ -38,14 +38,15 @@ import {
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   PieChart,
   Pie,
   Cell,
   CartesianGrid,
   Legend
 } from 'recharts'
-import { AlertTriangle, ArrowDown, CheckCircle, Download, FileText, Search, ShieldCheck, ShoppingCart, SlidersHorizontal, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDown, CheckCircle, Download, FileText, HelpCircle, Search, ShieldCheck, ShoppingCart, SlidersHorizontal, XCircle } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 type MetricsResponse = {
   company: { id: string; rfc: string; name: string }
@@ -308,8 +309,71 @@ const formatObjetoImpReason = (value: string) => {
   }
 }
 
+const createDrilldownOpenChange = (
+  setOpen: (open: boolean) => void,
+  setLoading: (loading: boolean) => void,
+  setRows: (rows: any[]) => void,
+  setFilters: (filters: Record<string, string>) => void
+) => (open: boolean) => {
+  setOpen(open)
+
+  if (!open) {
+    setLoading(false)
+    setFilters({})
+    setRows([])
+  }
+}
+
+const KpiTooltip = ({ description }: { description: string }) => (
+  <Tooltip delayDuration={100}>
+    <TooltipTrigger asChild>
+      <span
+        role="img"
+        aria-label="Descripción del cálculo"
+        className="ml-1.5 inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-muted-foreground/30 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+        tabIndex={0}
+      >
+        <HelpCircle className="h-3 w-3" />
+      </span>
+    </TooltipTrigger>
+    <TooltipContent side="top" sideOffset={6} className="max-w-sm text-left leading-relaxed">
+      {description}
+    </TooltipContent>
+  </Tooltip>
+)
+
+// ============================================================
+// DASH-SAST-003: escapeCsvSafe protege contra CSV Formula Injection
+// Prefijos DANGER =  = + - @ | \t \r  → apostrofe invisible previene DDE/DDE.
+// ============================================================
+const CSV_DANGEROUS_PREFIX_DR = /^[=+\-@|\t\r]/;
+function escapeCsvSafe(value: unknown): string {
+  if (value === null || typeof value === 'undefined') return '""';
+  let str = String(value);
+  if (CSV_DANGEROUS_PREFIX_DR.test(str)) str = "'" + str;
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes('\t')) {
+    str = `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+// ============================================================
+// DASH-SAST-006: buildDashboardUrl segura via URLSearchParams.
+// Evita parameter injection/pollution al NO usar template literals ?x=${y}.
+// ============================================================
+function buildDashboardUrl(base: string, params: Record<string, string | number | boolean | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === null || v === undefined || v === '') continue;
+    sp.append(k, String(v));
+  }
+  const qs = sp.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 export default function DashboardRecibidosPage() {
   const [loading, setLoading] = useState(true)
+  const [hydratingMetrics, setHydratingMetrics] = useState(false)
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
@@ -496,6 +560,18 @@ export default function DashboardRecibidosPage() {
 
   const zeroMetrics = useMemo(() => buildZeroMetrics(selectedCompany), [buildZeroMetrics, selectedCompany])
 
+  const isInvalidDateRange = useMemo(() => {
+    return Boolean(startDate && endDate && startDate > endDate)
+  }, [endDate, startDate])
+
+  const hasCompleteDateRange = useMemo(() => {
+    return Boolean(startDate && endDate)
+  }, [endDate, startDate])
+
+  const hasAppliedDateRange = useMemo(() => {
+    return Boolean(appliedFilters.start && appliedFilters.end)
+  }, [appliedFilters.end, appliedFilters.start])
+
   const normalizeMetrics = useCallback((data: MetricsResponse): MetricsResponse => ({
     ...data,
     byType: data.byType?.length ? data.byType : zeroMetrics.byType,
@@ -511,36 +587,81 @@ export default function DashboardRecibidosPage() {
     businessRules: data.businessRules || zeroMetrics.businessRules
   }), [zeroMetrics])
 
-  const fetchMetrics = useCallback(async () => {
-    if (!selectedCompanyId) return
-
-    try {
-      setLoading(true)
-
-      let url = `/api/dashboard_recibidos?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
-
-      const response = await fetch(url, { cache: 'no-store' })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Error al cargar métricas')
-
-      setMetrics(normalizeMetrics(data as MetricsResponse))
-    } catch (error) {
-      showError('Error', error instanceof Error ? error.message : 'Error desconocido')
-      setMetrics(zeroMetrics)
-    } finally {
-      setLoading(false)
-    }
-  }, [appliedFilters.end, appliedFilters.start, normalizeMetrics, selectedCompanyId, zeroMetrics])
-
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      void fetchMetrics()
-    }, 0)
+    let cancelled = false
 
-    return () => clearTimeout(timeoutId)
-  }, [fetchMetrics])
+    const fetchMetrics = async () => {
+      if (!selectedCompanyId) {
+        if (!cancelled) {
+          setMetrics(null)
+          setLoading(false)
+          setHydratingMetrics(false)
+        }
+        return
+      }
+
+      if (!hasAppliedDateRange) {
+        if (!cancelled) {
+          setMetrics(zeroMetrics)
+          setLoading(false)
+          setHydratingMetrics(false)
+        }
+        return
+      }
+
+      const url = buildDashboardUrl('/api/dashboard_recibidos', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
+
+      try {
+        setLoading(true)
+        setHydratingMetrics(false)
+
+        const lightResponse = await fetch(`${url}&includeHeavyMetrics=false`, { cache: 'no-store' })
+        const lightData = await lightResponse.json()
+        if (!lightResponse.ok) throw new Error(lightData.error || 'Error al cargar métricas')
+
+        if (cancelled) return
+
+        setMetrics(normalizeMetrics(lightData as MetricsResponse))
+        setLoading(false)
+        setHydratingMetrics(true)
+
+        try {
+          const fullResponse = await fetch(url, { cache: 'no-store' })
+          const fullData = await fullResponse.json()
+          if (!fullResponse.ok) throw new Error(fullData.error || 'Error al actualizar métricas detalladas')
+
+          if (cancelled) return
+
+          setMetrics(normalizeMetrics(fullData as MetricsResponse))
+        } catch (error) {
+          if (!cancelled) {
+            console.error('No fue posible hidratar métricas detalladas del dashboard de recibidos', error)
+          }
+        } finally {
+          if (!cancelled) {
+            setHydratingMetrics(false)
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          showError('Error', error instanceof Error ? error.message : 'Error desconocido')
+          setMetrics(zeroMetrics)
+          setLoading(false)
+          setHydratingMetrics(false)
+        }
+      }
+    }
+
+    void fetchMetrics()
+
+    return () => {
+      cancelled = true
+    }
+  }, [appliedFilters.end, appliedFilters.start, hasAppliedDateRange, normalizeMetrics, selectedCompanyId, zeroMetrics])
 
   const topSuppliersData = useMemo(() => {
     return (metrics?.topSuppliers || []).slice(0, 10).map((supplier) => ({
@@ -942,20 +1063,44 @@ export default function DashboardRecibidosPage() {
   }, [appliedFilters.end, appliedFilters.start, filteredAgingBalanceRows])
 
   const handleFilter = () => {
+    if (!startDate || !endDate) {
+      showError('Periodo requerido', 'Selecciona Fecha Inicio y Fecha Fin antes de consultar')
+      return
+    }
+
+    if (isInvalidDateRange) {
+      showError('Rango de fechas inválido', 'La fecha de inicio no puede ser mayor que la fecha final')
+      return
+    }
+
     setAppliedFilters({ start: startDate, end: endDate })
   }
+
+  const handleIvaAccreditableDialogOpenChange = createDrilldownOpenChange(setIvaAccreditableDialogOpen, setIvaAccreditableDialogLoading, setIvaAccreditableRows, setIvaAccreditableFilters)
+  const handleRetainedTaxesDialogOpenChange = createDrilldownOpenChange(setRetainedTaxesDialogOpen, setRetainedTaxesDialogLoading, setRetainedTaxesRows, setRetainedTaxesFilters)
+  const handlePaidInPeriodDialogOpenChange = createDrilldownOpenChange(setPaidInPeriodDialogOpen, setPaidInPeriodDialogLoading, setPaidInPeriodRows, setPaidInPeriodFilters)
+  const handleOutstandingBalanceDialogOpenChange = createDrilldownOpenChange(setOutstandingBalanceDialogOpen, setOutstandingBalanceDialogLoading, setOutstandingBalanceRows, setOutstandingBalanceFilters)
+  const handleAgingBalanceDialogOpenChange = createDrilldownOpenChange(setAgingBalanceDialogOpen, setAgingBalanceDialogLoading, setAgingBalanceRows, setAgingBalanceFilters)
+  const handleEfosDialogOpenChange = createDrilldownOpenChange(setEfosDialogOpen, setEfosDialogLoading, setEfosRiskRows, setEfosRiskFilters)
+  const handlePostLoadCancellationDialogOpenChange = createDrilldownOpenChange(setPostLoadCancellationDialogOpen, setPostLoadCancellationDialogLoading, setPostLoadCancellationRows, setPostLoadCancellationFilters)
+  const handlePaymentMethodVsPaymentFormDialogOpenChange = createDrilldownOpenChange(setPaymentMethodVsPaymentFormDialogOpen, setPaymentMethodVsPaymentFormDialogLoading, setPaymentMethodVsPaymentFormRows, setPaymentMethodVsPaymentFormFilters)
+  const handleResicoRetentionDialogOpenChange = createDrilldownOpenChange(setResicoRetentionDialogOpen, setResicoRetentionDialogLoading, setResicoRetentionRows, setResicoRetentionFilters)
+  const handleObjetoImpTaxDialogOpenChange = createDrilldownOpenChange(setObjetoImpTaxDialogOpen, setObjetoImpTaxDialogLoading, setObjetoImpTaxRows, setObjetoImpTaxFilters)
 
   const handleOpenEfosRiskDrilldown = async () => {
     if (!selectedCompanyId) return
 
     setEfosDialogOpen(true)
     setEfosDialogLoading(true)
+    setEfosRiskRows([])
     setEfosRiskFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/efos-risk?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/efos-risk', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -974,29 +1119,25 @@ export default function DashboardRecibidosPage() {
     if (filteredEfosRiskRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'Tipo CFDI', 'Serie', 'Folio', 'Total', 'Estado SAT', 'Estatus 69-B', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredEfosRiskRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.total),
-      escapeCsv(row.satEstado),
-      escapeCsv(`${row.efosStatusLabel} (${row.efosStatusBucket})`),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.satEstado),
+      escapeCsvSafe(`${row.efosStatusLabel} (${row.efosStatusBucket})`),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', 'Total', escapeCsv(efosRiskStats.total), '', '', ''])
+    rows.push(['', '', '', '', '', '', 'Total', escapeCsvSafe(efosRiskStats.total), '', '', ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1015,6 +1156,7 @@ export default function DashboardRecibidosPage() {
 
     setPostLoadCancellationDialogOpen(true)
     setPostLoadCancellationDialogLoading(true)
+    setPostLoadCancellationRows([])
     setPostLoadCancellationFilters({})
 
     try {
@@ -1035,32 +1177,28 @@ export default function DashboardRecibidosPage() {
     if (filteredPostLoadCancellationRows.length === 0) return
 
     const headers = ['Fecha detección', 'Fecha CFDI', 'UUID', 'RFC Emisor', 'Proveedor', 'Tipo CFDI', 'Serie', 'Folio', 'Estado inicial', 'Estado actual', 'Estatus cancelación', 'Es cancelable', 'Total', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredPostLoadCancellationRows.map((row) => [
-      escapeCsv(row.detectedAt ? new Date(row.detectedAt).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.satInitialEstado),
-      escapeCsv(row.satEstado),
-      escapeCsv(row.satEstatusCancelacion),
-      escapeCsv(row.satEsCancelable),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.detectedAt ? new Date(row.detectedAt).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.satInitialEstado),
+      escapeCsvSafe(row.satEstado),
+      escapeCsvSafe(row.satEstatusCancelacion),
+      escapeCsvSafe(row.satEsCancelable),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', 'Total', escapeCsv(postLoadCancellationStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(postLoadCancellationStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1079,12 +1217,15 @@ export default function DashboardRecibidosPage() {
 
     setPaymentMethodVsPaymentFormDialogOpen(true)
     setPaymentMethodVsPaymentFormDialogLoading(true)
+    setPaymentMethodVsPaymentFormRows([])
     setPaymentMethodVsPaymentFormFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/business-rules/payment-method-vs-payment-form?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/business-rules/payment-method-vs-payment-form', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1103,29 +1244,25 @@ export default function DashboardRecibidosPage() {
     if (filteredPaymentMethodVsPaymentFormRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'Tipo CFDI', 'Serie', 'Folio', 'MetodoPago', 'FormaPago', 'Total', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredPaymentMethodVsPaymentFormRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.paymentMethod),
-      escapeCsv(row.paymentForm),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.paymentMethod),
+      escapeCsvSafe(row.paymentForm),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsv(paymentMethodVsPaymentFormStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(paymentMethodVsPaymentFormStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1144,12 +1281,15 @@ export default function DashboardRecibidosPage() {
 
     setResicoRetentionDialogOpen(true)
     setResicoRetentionDialogLoading(true)
+    setResicoRetentionRows([])
     setResicoRetentionFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/business-rules/resico-retention?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/business-rules/resico-retention', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1168,30 +1308,26 @@ export default function DashboardRecibidosPage() {
     if (filteredResicoRetentionRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'RegimenFiscalEmisor', 'Tipo CFDI', 'Serie', 'Folio', 'Retencion ISR 0.012500', 'Total', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredResicoRetentionRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.issuerFiscalRegime),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.hasResicoIsrRetention ? 'SI' : 'NO'),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.issuerFiscalRegime),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.hasResicoIsrRetention ? 'SI' : 'NO'),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', '', 'Total', escapeCsv(resicoRetentionStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(resicoRetentionStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1210,12 +1346,15 @@ export default function DashboardRecibidosPage() {
 
     setObjetoImpTaxDialogOpen(true)
     setObjetoImpTaxDialogLoading(true)
+    setObjetoImpTaxRows([])
     setObjetoImpTaxFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/business-rules/objetoimp-vs-iva?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/business-rules/objetoimp-vs-iva', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1234,29 +1373,25 @@ export default function DashboardRecibidosPage() {
     if (filteredObjetoImpTaxRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Tipo CFDI', 'Serie', 'Folio', 'Inconsistencia', 'Total', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredObjetoImpTaxRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(formatObjetoImpReason(row.inconsistencyReason)),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(formatObjetoImpReason(row.inconsistencyReason)),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsv(objetoImpTaxStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(objetoImpTaxStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1275,12 +1410,15 @@ export default function DashboardRecibidosPage() {
 
     setIvaAccreditableDialogOpen(true)
     setIvaAccreditableDialogLoading(true)
+    setIvaAccreditableRows([])
     setIvaAccreditableFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/tax-period/iva-acreditable?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/tax-period/iva-acreditable', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1299,30 +1437,26 @@ export default function DashboardRecibidosPage() {
     if (filteredIvaAccreditableRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Tipo CFDI', 'Serie', 'Folio', 'TasaOCuota', 'Importe IVA', 'Total CFDI', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredIvaAccreditableRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.rateLabel),
-      escapeCsv(row.taxAmount),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.rateLabel),
+      escapeCsvSafe(row.taxAmount),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsv(ivaAccreditableStats.total), '', ''])
+    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(ivaAccreditableStats.total), '', ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1341,12 +1475,15 @@ export default function DashboardRecibidosPage() {
 
     setRetainedTaxesDialogOpen(true)
     setRetainedTaxesDialogLoading(true)
+    setRetainedTaxesRows([])
     setRetainedTaxesFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/tax-period/retentions?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/tax-period/retentions', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1365,31 +1502,27 @@ export default function DashboardRecibidosPage() {
     if (filteredRetainedTaxesRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Tipo CFDI', 'Serie', 'Folio', 'Impuesto', 'Clave', 'Importe retenido', 'Total CFDI', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredRetainedTaxesRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.cfdiType),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.taxLabel),
-      escapeCsv(row.taxCode),
-      escapeCsv(row.taxAmount),
-      escapeCsv(row.total),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.cfdiType),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.taxLabel),
+      escapeCsvSafe(row.taxCode),
+      escapeCsvSafe(row.taxAmount),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', 'Total', '', escapeCsv(retainedTaxesStats.total), '', ''])
+    rows.push(['', '', '', '', '', '', '', '', 'Total', '', escapeCsvSafe(retainedTaxesStats.total), '', ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1408,12 +1541,15 @@ export default function DashboardRecibidosPage() {
 
     setPaidInPeriodDialogOpen(true)
     setPaidInPeriodDialogLoading(true)
+    setPaidInPeriodRows([])
     setPaidInPeriodFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/payment-balance-period/paid?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/payment-balance-period/paid', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1432,33 +1568,29 @@ export default function DashboardRecibidosPage() {
     if (filteredPaidInPeriodRows.length === 0) return
 
     const headers = ['Fecha de pago', 'UUID factura', 'UUID pago', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Metodo', 'Origen', 'Parcialidad', 'Serie', 'Folio', 'Monto pagado', 'Saldo anterior', 'Saldo insoluto', 'Moneda']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredPaidInPeriodRows.map((row) => [
-      escapeCsv(row.paymentDate ? new Date(row.paymentDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.invoiceUuid),
-      escapeCsv(row.paymentUuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.paymentMethod),
-      escapeCsv(row.paymentSource),
-      escapeCsv(row.partialityNumber),
-      escapeCsv(row.series),
-      escapeCsv(row.folio),
-      escapeCsv(row.amountPaid),
-      escapeCsv(row.previousBalance),
-      escapeCsv(row.outstandingBalance),
-      escapeCsv(row.currency)
+      escapeCsvSafe(row.paymentDate ? new Date(row.paymentDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.invoiceUuid),
+      escapeCsvSafe(row.paymentUuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.paymentMethod),
+      escapeCsvSafe(row.paymentSource),
+      escapeCsvSafe(row.partialityNumber),
+      escapeCsvSafe(row.series),
+      escapeCsvSafe(row.folio),
+      escapeCsvSafe(row.amountPaid),
+      escapeCsvSafe(row.previousBalance),
+      escapeCsvSafe(row.outstandingBalance),
+      escapeCsvSafe(row.currency)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', '', 'Total', escapeCsv(paidInPeriodStats.total), '', '', '', ''])
+    rows.push(['', '', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(paidInPeriodStats.total), '', '', '', ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1477,12 +1609,15 @@ export default function DashboardRecibidosPage() {
 
     setOutstandingBalanceDialogOpen(true)
     setOutstandingBalanceDialogLoading(true)
+    setOutstandingBalanceRows([])
     setOutstandingBalanceFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/payment-balance-period/outstanding?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/payment-balance-period/outstanding', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1501,29 +1636,25 @@ export default function DashboardRecibidosPage() {
     if (filteredOutstandingBalanceRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Metodo', 'Moneda', 'Total original', 'Total pagado', 'Saldo pendiente', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredOutstandingBalanceRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.paymentMethod),
-      escapeCsv(row.currency),
-      escapeCsv(row.total),
-      escapeCsv(row.totalPaid),
-      escapeCsv(row.outstandingBalance),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.paymentMethod),
+      escapeCsvSafe(row.currency),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.totalPaid),
+      escapeCsvSafe(row.outstandingBalance),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsv(outstandingBalanceStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(outstandingBalanceStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1542,12 +1673,15 @@ export default function DashboardRecibidosPage() {
 
     setAgingBalanceDialogOpen(true)
     setAgingBalanceDialogLoading(true)
+    setAgingBalanceRows([])
     setAgingBalanceFilters({})
 
     try {
-      let url = `/api/dashboard_recibidos/drilldown/payment-balance-period/aging?companyId=${selectedCompanyId}`
-      if (appliedFilters.start) url += `&startDate=${appliedFilters.start}`
-      if (appliedFilters.end) url += `&endDate=${appliedFilters.end}`
+      const url = buildDashboardUrl('/api/dashboard_recibidos/drilldown/payment-balance-period/aging', {
+        companyId: selectedCompanyId,
+        startDate: appliedFilters.start || undefined,
+        endDate: appliedFilters.end || undefined
+      })
 
       const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
@@ -1566,31 +1700,27 @@ export default function DashboardRecibidosPage() {
     if (filteredAgingBalanceRows.length === 0) return
 
     const headers = ['Fecha', 'UUID', 'RFC Emisor', 'Proveedor', 'RFC Receptor', 'Metodo', 'Moneda', 'Dias', 'Bucket', 'Total original', 'Total pagado', 'Saldo pendiente', 'Archivo']
-    const escapeCsv = (value: unknown) => {
-      if (value === null || typeof value === 'undefined') return '""'
-      const stringValue = String(value)
-      return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
-        ? `"${stringValue.replace(/"/g, '""')}"`
-        : stringValue
-    }
+    // (Definición local escapeCsv ELIMINADA: ahora usamos escapeCsvSafe() global
+    // declarado arriba del componente, con protección contra CSV Formula Injection
+    // DASH-SAST-003 FIX.)
 
     const rows = filteredAgingBalanceRows.map((row) => [
-      escapeCsv(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
-      escapeCsv(row.uuid),
-      escapeCsv(row.issuerRfc),
-      escapeCsv(row.issuerName),
-      escapeCsv(row.receiverRfc),
-      escapeCsv(row.paymentMethod),
-      escapeCsv(row.currency),
-      escapeCsv(row.ageDays),
-      escapeCsv(row.ageBucket),
-      escapeCsv(row.total),
-      escapeCsv(row.totalPaid),
-      escapeCsv(row.outstandingBalance),
-      escapeCsv(row.fileName)
+      escapeCsvSafe(row.issuanceDate ? new Date(row.issuanceDate).toLocaleDateString('es-MX') : ''),
+      escapeCsvSafe(row.uuid),
+      escapeCsvSafe(row.issuerRfc),
+      escapeCsvSafe(row.issuerName),
+      escapeCsvSafe(row.receiverRfc),
+      escapeCsvSafe(row.paymentMethod),
+      escapeCsvSafe(row.currency),
+      escapeCsvSafe(row.ageDays),
+      escapeCsvSafe(row.ageBucket),
+      escapeCsvSafe(row.total),
+      escapeCsvSafe(row.totalPaid),
+      escapeCsvSafe(row.outstandingBalance),
+      escapeCsvSafe(row.fileName)
     ])
 
-    rows.push(['', '', '', '', '', '', '', '', '', '', 'Total', escapeCsv(agingBalanceStats.total), ''])
+    rows.push(['', '', '', '', '', '', '', '', '', '', 'Total', escapeCsvSafe(agingBalanceStats.total), ''])
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -1644,10 +1774,18 @@ export default function DashboardRecibidosPage() {
     : 'Sin sincronización aún'
 
   return (
+    <TooltipProvider delayDuration={100}>
     <ProtectedRoute>
       <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
         <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Tablero de egresos</h2>
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Tablero de egresos</h2>
+            {hydratingMetrics && (
+              <div className="mt-2 text-sm text-muted-foreground">
+                Actualizando metricas detalladas...
+              </div>
+            )}
+          </div>
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">
               {currentMetrics.company.rfc || selectedCompany?.rfc || 'N/A'} · {currentMetrics.company.name || selectedCompany?.businessName || selectedCompany?.name || 'Empresa'}
@@ -1663,6 +1801,7 @@ export default function DashboardRecibidosPage() {
               id="startDate"
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
+              max={endDate || undefined}
             />
           </div>
 
@@ -1673,13 +1812,26 @@ export default function DashboardRecibidosPage() {
               id="endDate"
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
+              min={startDate || undefined}
             />
           </div>
 
           <div className="flex gap-2 pb-0.5">
-            <Button onClick={handleFilter}>
+            <Button onClick={handleFilter} disabled={isInvalidDateRange || !hasCompleteDateRange}>
               <Search className="mr-2 h-4 w-4" />
               Filtrar
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStartDate('')
+                setEndDate('')
+                setAppliedFilters({ start: '', end: '' })
+              }}
+              disabled={!startDate && !endDate && !hasAppliedDateRange}
+            >
+              Limpiar
             </Button>
 
             <DropdownMenu>
@@ -1718,6 +1870,13 @@ export default function DashboardRecibidosPage() {
           </div>
         </div>
 
+        {isInvalidDateRange && (
+          <p className="text-sm text-destructive -mt-2">
+            La fecha de inicio no puede ser mayor que la fecha final.
+          </p>
+        )}
+
+        
         {visibleSections.includes('expense_period_summary') && (
           <div className="space-y-4">
             <div>
@@ -1727,7 +1886,7 @@ export default function DashboardRecibidosPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <Card className="overflow-hidden border border-sky-300 bg-card h-full">
                 <div className="flex min-h-[64px] items-center justify-center border-b border-sky-300/50 bg-sky-500/10 p-2 text-center">
-                  <h3 className="text-sm font-bold text-sky-600 md:text-base">Gasto Bruto Comercial</h3>
+                  <h3 className="text-sm font-bold text-sky-600 md:text-base">Gasto Bruto Comercial<KpiTooltip description="Suma del atributo `SubTotal` de CFDI de proveedores (compras/gastos) VIGENTES en el rango de fecha de emisión. Es el total bruto de compras antes de notas de crédito y descuentos posteriores." /></h3>
                 </div>
                 <CardContent className="flex h-full flex-col items-center justify-center space-y-3 p-6 text-center">
                   <ShoppingCart className="h-12 w-12 text-sky-600" />
@@ -1757,7 +1916,7 @@ export default function DashboardRecibidosPage() {
 
               <Card className="overflow-hidden border border-emerald-300 bg-card h-full">
                 <div className="flex min-h-[64px] items-center justify-center border-b border-emerald-300/50 bg-emerald-500/10 p-2 text-center">
-                  <h3 className="text-sm font-bold text-emerald-600 md:text-base">Total de Gastos Netos</h3>
+                  <h3 className="text-sm font-bold text-emerald-600 md:text-base">Total de Gastos Netos<KpiTooltip description="Fórmula: Gasto Bruto Comercial - Devoluciones/Notas de Crédito vigentes. Base aprox. de gastos deducibles antes de impuestos." /></h3>
                 </div>
                 <CardContent className="flex h-full flex-col items-center justify-center space-y-3 p-6 text-center">
                   <CheckCircle className="h-12 w-12 text-emerald-600" />
@@ -1865,7 +2024,7 @@ export default function DashboardRecibidosPage() {
                 onClick={handleOpenPaidInPeriodDrilldown}
               >
                 <div className="flex min-h-[64px] items-center justify-center border-b border-emerald-300/50 bg-emerald-500/10 p-2 text-center">
-                  <h3 className="text-sm font-bold text-emerald-600 md:text-base">Total Pagado en el Periodo</h3>
+                  <h3 className="text-sm font-bold text-emerald-600 md:text-base">Total Pagado en el Periodo<KpiTooltip description="Flujo de caja SALIENTE real: 1) Facturas proveedor PUE (pago contado) VIGENTES en rango + 2) Complementos de Pago aplicados a facturas de proveedor, con fecha de pago del nodo Pago." /></h3>
                 </div>
                 <CardContent className="flex h-full flex-col items-center justify-center space-y-4 p-6 text-center">
                   <CheckCircle className="h-12 w-12 text-emerald-600" />
@@ -1979,7 +2138,7 @@ export default function DashboardRecibidosPage() {
 
               <Card className="overflow-hidden border border-border bg-card">
                 <div className="border-b border-border bg-slate-600/10 p-2 text-center">
-                  <h3 className="text-sm font-bold text-slate-600 md:text-base">Última verificación 69-B</h3>
+                  <h3 className="text-sm font-bold text-slate-600 md:text-base">Última verificación 69-B<KpiTooltip description="Fecha y hora de la última sincronización con el SAT para comprobar Listas Negras. Si la fecha es antigua (+30 días), los resultados de EFOS y 69-B no son fiables y requieren resincronización." /></h3>
                 </div>
                 <CardContent className="flex flex-col items-center justify-center space-y-3 p-6 text-center">
                   <FileText className="h-12 w-12 text-slate-600" />
@@ -2055,7 +2214,7 @@ export default function DashboardRecibidosPage() {
                         onClick={handleOpenObjetoImpTaxDrilldown}
                       >
                         <div className="border-b border-indigo-300/50 bg-indigo-600/10 p-2 text-center">
-                          <h3 className="text-sm font-bold text-indigo-600 md:text-base">Objeto de Impuesto vs Traslados IVA</h3>
+                          <h3 className="text-sm font-bold text-indigo-600 md:text-base">Objeto de Impuesto vs Traslados IVA<KpiTooltip description="Regla SAT: ObjetoImpuesto='02' (Sí objeto) debe tener Traslados. ObjetoImpuesto='01' (No objeto) no debe tener Traslados de IVA. Detecta inconsistencias frecuentes." /></h3>
                         </div>
                         <CardContent className="flex flex-col items-center justify-center space-y-3 p-6 text-center">
                           <ShieldCheck className="h-12 w-12 text-indigo-600" />
@@ -2124,7 +2283,7 @@ export default function DashboardRecibidosPage() {
                         }
                       }}
                     />
-                    <Tooltip formatter={(value: any, name: any) => (name === 'Monto' || name === 'total') ? formatMXN(Number(value)) : value} />
+                    <RechartsTooltip formatter={(value: any, name: any) => (name === 'Monto' || name === 'total') ? formatMXN(Number(value)) : value} />
                     <Legend />
                     <Bar yAxisId="left" dataKey="count" name="CFDIs" fill="#2b6cb0" />
                     <Bar yAxisId="right" dataKey="total" name="Monto" fill="#68d391" />
@@ -2156,7 +2315,7 @@ export default function DashboardRecibidosPage() {
                         <Cell key={`payment-method-${index}`} fill={PAYMENT_METHOD_COLORS[index % PAYMENT_METHOD_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip
+                    <RechartsTooltip
                       content={(props: any) => {
                         const payload = props?.payload?.[0]
                         if (!payload) return null
@@ -2201,7 +2360,7 @@ export default function DashboardRecibidosPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 12 }} />
-                    <Tooltip
+                    <RechartsTooltip
                       formatter={(value: any) => [formatMXN(Number(value || 0)), 'Monto']}
                       labelFormatter={(label: any, payload: any) => payload?.[0]?.payload?.fullName || label}
                     />
@@ -2213,7 +2372,8 @@ export default function DashboardRecibidosPage() {
           </Card>
         )}
 
-        <Dialog open={ivaAccreditableDialogOpen} onOpenChange={setIvaAccreditableDialogOpen}>
+        <Dialog open={ivaAccreditableDialogOpen} onOpenChange={handleIvaAccreditableDialogOpenChange}>
+          {ivaAccreditableDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2312,9 +2472,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={retainedTaxesDialogOpen} onOpenChange={setRetainedTaxesDialogOpen}>
+        <Dialog open={retainedTaxesDialogOpen} onOpenChange={handleRetainedTaxesDialogOpenChange}>
+          {retainedTaxesDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2416,9 +2578,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={paidInPeriodDialogOpen} onOpenChange={setPaidInPeriodDialogOpen}>
+        <Dialog open={paidInPeriodDialogOpen} onOpenChange={handlePaidInPeriodDialogOpenChange}>
+          {paidInPeriodDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2529,9 +2693,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={outstandingBalanceDialogOpen} onOpenChange={setOutstandingBalanceDialogOpen}>
+        <Dialog open={outstandingBalanceDialogOpen} onOpenChange={handleOutstandingBalanceDialogOpenChange}>
+          {outstandingBalanceDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2626,9 +2792,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={agingBalanceDialogOpen} onOpenChange={setAgingBalanceDialogOpen}>
+        <Dialog open={agingBalanceDialogOpen} onOpenChange={handleAgingBalanceDialogOpenChange}>
+          {agingBalanceDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2729,9 +2897,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={efosDialogOpen} onOpenChange={setEfosDialogOpen}>
+        <Dialog open={efosDialogOpen} onOpenChange={handleEfosDialogOpenChange}>
+          {efosDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2826,9 +2996,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={postLoadCancellationDialogOpen} onOpenChange={setPostLoadCancellationDialogOpen}>
+        <Dialog open={postLoadCancellationDialogOpen} onOpenChange={handlePostLoadCancellationDialogOpenChange}>
+          {postLoadCancellationDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -2929,9 +3101,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={paymentMethodVsPaymentFormDialogOpen} onOpenChange={setPaymentMethodVsPaymentFormDialogOpen}>
+        <Dialog open={paymentMethodVsPaymentFormDialogOpen} onOpenChange={handlePaymentMethodVsPaymentFormDialogOpenChange}>
+          {paymentMethodVsPaymentFormDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -3026,9 +3200,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={resicoRetentionDialogOpen} onOpenChange={setResicoRetentionDialogOpen}>
+        <Dialog open={resicoRetentionDialogOpen} onOpenChange={handleResicoRetentionDialogOpenChange}>
+          {resicoRetentionDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -3126,9 +3302,11 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
 
-        <Dialog open={objetoImpTaxDialogOpen} onOpenChange={setObjetoImpTaxDialogOpen}>
+        <Dialog open={objetoImpTaxDialogOpen} onOpenChange={handleObjetoImpTaxDialogOpenChange}>
+          {objetoImpTaxDialogOpen && (
           <DialogContent className="!max-w-[100vw] !w-screen !max-h-screen !h-screen flex flex-col p-6 m-0 border-0 rounded-none sm:rounded-none inset-0 translate-x-0 translate-y-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0">
             <DialogHeader className="flex flex-row justify-between items-start pr-8 shrink-0">
               <div>
@@ -3223,8 +3401,10 @@ export default function DashboardRecibidosPage() {
               )}
             </div>
           </DialogContent>
+          )}
         </Dialog>
       </div>
     </ProtectedRoute>
+    </TooltipProvider>
   )
 }

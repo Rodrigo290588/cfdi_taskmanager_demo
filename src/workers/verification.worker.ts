@@ -1,7 +1,7 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
 import { RequestStatus } from '@prisma/client'
-import { MASS_VERIFICATION_QUEUE_NAME, massVerificationQueue, massDownloadQueue } from '@/lib/queue'
+import { MASS_VERIFICATION_QUEUE_NAME, getMassVerificationQueue, getMassDownloadQueue, resolveRedisConnection } from '@/lib/queue'
 import { verifyMassDownload } from '@/lib/sat-service'
 import { generateDummyInvoices } from '@/services/dummy-invoice.service'
 import { v4 as uuidv4 } from 'uuid'
@@ -143,7 +143,7 @@ export function setupVerificationWorker() {
         // Encolar trabajos en `massDownloadQueue` para descargar físicamente los ZIPs
         if (packageIds && packageIds.length > 0) {
           for (const packId of packageIds) {
-            await massDownloadQueue.add('download-package', {
+            await getMassDownloadQueue().add('download-package', {
               requestId: request.id,
               rfc: request.requestingRfc,
               idPaquete: packId
@@ -162,7 +162,7 @@ export function setupVerificationWorker() {
           const delay = Math.max(0, nextCheck.getTime() - Date.now())
           console.log(`[Verification] Request ${requestId} still processing. Rescheduling in ${delay}ms`)
           
-          await massVerificationQueue.add('verify-request', { requestId, rfc }, {
+          await getMassVerificationQueue().add('verify-request', { requestId, rfc }, {
             delay,
             jobId: `verify-${requestId}-${Date.now()}` 
           })
@@ -174,10 +174,7 @@ export function setupVerificationWorker() {
       throw error
     }
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    connection: resolveRedisConnection(),
     concurrency: 5 // Process up to 5 verification requests simultaneously to not hammer the SAT
   })
 

@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>SAST Report · Módulo Admin · OWASP Top 10</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0; padding: 0; background: #f8fafc; color: #0f172a; line-height: 1.55; font-size: 12px;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 44px; }
+
+  h1 { font-size: 28px; margin: 0 0 6px 0; color: #0f172a; letter-spacing: -0.02em; }
+  h2 { font-size: 18px; margin: 0 0 14px 0; color: #0f172a; }
+
+  .cover {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+    color: white; padding: 56px 48px; border-radius: 14px; margin-bottom: 32px;
+  }
+  .cover .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; opacity: 0.75; margin-bottom: 18px; }
+  .cover .project { font-size: 14px; opacity: 0.85; margin-top: 12px; }
+  .cover .meta { margin-top: 24px; display: flex; gap: 28px; flex-wrap: wrap; font-size: 12px; opacity: 0.9; }
+  .cover .meta span strong { display:block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.7; margin-bottom: 2px; }
+
+  .summary { margin-bottom: 36px; }
+  .summary-title { font-size: 14px; font-weight: 700; margin: 0 0 14px 0; color: #1e293b; text-transform: uppercase; letter-spacing: 0.05em; }
+  .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .summary-card { border-radius: 10px; padding: 14px 16px; }
+  .summary-card:nth-child(5) { background: #e2e8f0; border-left: 6px solid #64748b; }
+  .summary-risk { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .summary-count { font-size: 26px; font-weight: 800; line-height: 1; }
+
+  .toc {
+    background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 22px; margin-bottom: 36px;
+  }
+  .toc h3 { margin: 0 0 14px 0; font-size: 14px; color: #1e293b; text-transform: uppercase; letter-spacing: 0.05em; }
+  .toc-item { display: grid; grid-template-columns: 30px 1fr 70px; gap: 12px; align-items: center; padding: 7px 4px; border-bottom: 1px solid #f1f5f9; font-size: 11.5px; }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-id { font-weight: 700; color: #475569; }
+  .toc-risk { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-align: center; }
+
+  .finding {
+    background: white; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 24px 26px; margin-bottom: 24px; page-break-inside: avoid;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .finding-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 18px; border-bottom: 2px solid #f1f5f9; padding-bottom: 16px; }
+  .finding-owasp { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; margin-bottom: 6px; }
+  .finding-id { display: inline-block; font-weight: 800; background: #0f172a; color: white; padding: 2px 10px; border-radius: 999px; font-size: 11px; margin-right: 10px; vertical-align: middle; }
+  .risk-badge { color: white; font-weight: 800; padding: 6px 14px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
+  .risk-inline { font-weight: 800; font-size: 13px; }
+
+  .field { margin-bottom: 14px; }
+  .field-label { font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 12px; }
+  .field-value { color: #334155; font-size: 12px; }
+  .mono { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 11.5px; }
+
+  .code-block {
+    background: #0b1120; color: #e2e8f0; font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 11px; line-height: 1.55; padding: 14px 16px; border-radius: 8px; overflow-x: auto;
+    white-space: pre; margin: 0; border: 1px solid #1e293b;
+  }
+  .code-block.exploit { border-left: 4px solid #dc2626; }
+  .code-block.fixed { border-left: 4px solid #16a34a; background: #052e1b; border-color: #064e3b; color: #bbf7d0; }
+
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 10.5px; display: flex; justify-content: space-between; }
+
+  @media print { body { background: white; } .page { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="eyebrow">Static Application Security Testing · Pentest Report</div>
+    <h1 style="color:white;">Informe SAST · Módulo Admin</h1>
+    <div class="project"><strong>Scope:</strong> src/app/admin/** &nbsp;·&nbsp; src/app/api/admin/**</div>
+    <div class="project"><strong>Framework:</strong> Next.js 15 (App Router) · TypeScript · Prisma · shadcn/ui</div>
+    <div class="meta">
+      <span><strong>Estándar</strong>OWASP Top 10 2021</span>
+      <span><strong>Hallazgos Totales</strong>9 vulnerabilidades</span>
+      <span><strong>Fecha de emisión</strong>2026-08-12T00:56:49.695Z</span>
+      <span><strong>Engine</strong>puppeteer-core · Manual SAST</span>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="summary-title">📊 Resumen de severidad</div>
+    <div class="summary-grid">
+      
+    <div class="summary-card" style="background:#fee2e2; border-left:6px solid #dc2626">
+      <div class="summary-risk" style="color:#dc2626">Crítico</div>
+      <div class="summary-count">2</div>
+    </div>
+  
+    <div class="summary-card" style="background:#ffedd5; border-left:6px solid #ea580c">
+      <div class="summary-risk" style="color:#ea580c">Alto</div>
+      <div class="summary-count">3</div>
+    </div>
+  
+    <div class="summary-card" style="background:#fef9c3; border-left:6px solid #ca8a04">
+      <div class="summary-risk" style="color:#ca8a04">Medio</div>
+      <div class="summary-count">2</div>
+    </div>
+  
+    <div class="summary-card" style="background:#dcfce7; border-left:6px solid #16a34a">
+      <div class="summary-risk" style="color:#16a34a">Bajo</div>
+      <div class="summary-count">2</div>
+    </div>
+  
+      <div class="summary-card">
+        <div class="summary-risk" style="color:#475569">TOTAL</div>
+        <div class="summary-count" style="color:#0f172a">9</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3>📑 Índice de hallazgos</h3>
+    
+    <div class="toc-item">
+      <span class="toc-id">#1</span>
+      <span class="toc-title">IDOR + Mass Assignment en Actualización de Roles (Escalación Vertical)</span>
+      <span class="toc-risk" style="background:#fee2e2;color:#dc2626">Crítico</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#2</span>
+      <span class="toc-title">Escalación Horizontal: Admin Dashboard lee datos GLOBALES sin scoping (Cross-Tenant Leak)</span>
+      <span class="toc-risk" style="background:#fee2e2;color:#dc2626">Crítico</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#3</span>
+      <span class="toc-title">Mass Assignment vía Spread Operator de permissions sin allow-list estricta</span>
+      <span class="toc-risk" style="background:#ffedd5;color:#ea580c">Alto</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#4</span>
+      <span class="toc-title">Validación de roles inconsistente (Role Collision) entre rutas gemelas</span>
+      <span class="toc-risk" style="background:#ffedd5;color:#ea580c">Alto</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#5</span>
+      <span class="toc-title">Guardia de autorización sin filtro status: APPROVED</span>
+      <span class="toc-risk" style="background:#ffedd5;color:#ea580c">Alto</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#6</span>
+      <span class="toc-title">invitationToken de 32 bytes retornado en texto plano por JSON</span>
+      <span class="toc-risk" style="background:#fef9c3;color:#ca8a04">Medio</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#7</span>
+      <span class="toc-title">members/:id/access expone error.message crudo de Prisma al cliente</span>
+      <span class="toc-risk" style="background:#fef9c3;color:#ca8a04">Medio</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#8</span>
+      <span class="toc-title">Páginas admin &quot;use client&quot; sin proteger server-side ante usuarios no autorizados</span>
+      <span class="toc-risk" style="background:#dcfce7;color:#16a34a">Bajo</span>
+    </div>
+  
+    <div class="toc-item">
+      <span class="toc-id">#9</span>
+      <span class="toc-title">Rate limit ausente en mutaciones críticas (invitaciones, cambio de status)</span>
+      <span class="toc-risk" style="background:#dcfce7;color:#16a34a">Bajo</span>
+    </div>
+  
+  </div>
+
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A01:2021 · Broken Access Control</div>
+          <h2>
+            <span class="finding-id">#1</span>
+            IDOR + Mass Assignment en Actualización de Roles (Escalación Vertical)
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#dc2626">
+          Crítico
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/users/[id]/route.ts <span style="color:#64748b">[L51-L62, L100-L109]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#dc2626">Crítico</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">La ruta PATCH /api/admin/users/:id valida que el solicitante sea owner o ADMIN de la organización, pero no valida si el roleId enviado corresponde a un CustomRole existente dentro de la MISMA organización. Cualquier roleId de otra organización pasa la comprobación y su customRoleId se persiste sin pertenencia. Además, strings arbitrarios que no coinciden con [ADMIN, AUDITOR, VIEWER] caen por defecto en VIEWER con customRoleId arbitrario, permitiendo Privilege Escalation por desvío a roles de tenants vecinos.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">PATCH /api/admin/users/2c0c...9ab5
+{
+  &quot;roleId&quot;: &quot;custom-role-robado-de-OTRA-org&quot;,
+  &quot;companyIds&quot;: []
+}
+
+Si el CustomRole robado tiene orgRoles: true o providerBusinessRules: true, el atacante hereda permisos elevados sin autorización cruzando el boundary de multi-tenant. El endpoint no emite restricción de organizationId en la query de validación del role.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">const isSystemRole = [&#39;ADMIN&#39;, &#39;AUDITOR&#39;, &#39;VIEWER&#39;].includes(roleId)
+let systemRole: &#39;ADMIN&#39; | &#39;AUDITOR&#39; | &#39;VIEWER&#39; = &#39;VIEWER&#39;
+let customRoleId: string | null = null
+
+if (isSystemRole) {
+  systemRole = roleId as &#39;ADMIN&#39; | &#39;AUDITOR&#39; | &#39;VIEWER&#39;
+} else {
+  const validCustomRole = await prisma.customRole.findUnique({
+    where: { id: roleId },
+    select: { id: true, organizationId: true }
+  })
+  if (!validCustomRole || validCustomRole.organizationId !== adminMembership.organizationId) {
+    return NextResponse.json({ error: &#39;Rol personalizado inválido&#39; }, { status: 400 })
+  }
+  customRoleId = validCustomRole.id
+}</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A01:2021 · Broken Access Control</div>
+          <h2>
+            <span class="finding-id">#2</span>
+            Escalación Horizontal: Admin Dashboard lee datos GLOBALES sin scoping (Cross-Tenant Leak)
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#dc2626">
+          Crítico
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/dashboard/route.ts <span style="color:#64748b">[L38-L45, L48-L78]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#dc2626">Crítico</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">El handler valida Permission.ADMIN_DASHBOARD en el systemRole del usuario, pero las consultas a Prisma (count, findMany, groupBy) NO filtran por organizationId. Esto expone al admin de la Organización A el conteo total de usuarios del sistema, empresas de tenants vecinos, auditLogs con PII (emails, RFCs), agregados de industrias y estados globales. Violación severa de aislamiento multi-tenant.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">1. Iniciar sesión con cuenta normal SystemRole=ADMIN de Org-A.
+2. GET /api/admin/dashboard.
+3. Response incluye:
+   - totalUsers (de TODAS las orgs + platform owners)
+   - totalCompanies / recentCompanies (con createdBy userIds)
+   - recentAuditLogs con userEmail, companyName, description y RFCs
+   - topIndustries / topStates agregados de todo el SaaS.
+PII expuesto sin necesidad de estar autorizado en esos tenants.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">// Obtener membresía autorizada con su organizationId
+const member = await prisma.member.findFirst({
+  where: { userId: user.id, status: &#39;APPROVED&#39; },
+  select: { organizationId: true }
+})
+if (!member) return NextResponse.json({ error: &#39;Sin membresía&#39; }, { status: 403 })
+const orgId = member.organizationId
+
+// Scopear TODAS las consultas
+prisma.company.count({ where: { organizationId: orgId } }),
+prisma.company.findMany({ where: { organizationId: orgId }, ... }),
+prisma.auditLog.findMany({
+  where: {
+    timestamp: { gte: ... },
+    OR: [
+      { organizationId: orgId },
+      { company: { organizationId: orgId } }
+    ]
+  }
+})</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A03:2021 · Injection</div>
+          <h2>
+            <span class="finding-id">#3</span>
+            Mass Assignment vía Spread Operator de permissions sin allow-list estricta
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#ea580c">
+          Alto
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/roles/route.ts, src/app/api/admin/roles/[id]/route.ts <span style="color:#64748b">[L192-L217 (POST), L24-L42 (PUT)]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#ea580c">Alto</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">La creación/edición de CustomRole recibe body.permissions y lo inyecta directamente con ...permissions sin allow-list ni validación de schema. Si el modelo tiene campos que no debieran escribirse por API (id, organizationId, createdAt, flags internos), el spread permite sobrescribirlos u overpostear campos arbitrarios que coincidan con el schema de Prisma. El parser no rechaza llaves extra.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">POST /api/admin/roles
+{
+  &quot;name&quot;: &quot;Hacked Role&quot;,
+  &quot;permissions&quot;: {
+    &quot;organizationId&quot;: &quot;uuid-ORG-AJENA&quot;,
+    &quot;canManageOrg&quot;: true,
+    &quot;createdAt&quot;: &quot;1970-01-01T00:00:00.000Z&quot;
+  },
+  &quot;granularPermissions&quot;: { &quot;orgRoles&quot;: true }
+}
+
+Dependiendo de laxitud de Prisma, se pueden colgar roles de otras organizaciones o manipular metadata no editable.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">import { z } from &#39;zod&#39;
+
+const PERMISSION_KEYS = [
+  &#39;canViewEmission&#39;,&#39;canViewReception&#39;,&#39;canViewPayroll&#39;,
+  &#39;canViewSatPortal&#39;,&#39;canViewMassDownloads&#39;,&#39;canManageOrg&#39;
+] as const
+
+const createRoleSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  granularPermissions: z.record(z.string(), z.boolean()).default({}),
+  permissions: z.object({
+    canViewEmission: z.boolean().default(false),
+    canViewReception: z.boolean().default(false),
+    canViewPayroll: z.boolean().default(false),
+    canViewSatPortal: z.boolean().default(false),
+    canViewMassDownloads: z.boolean().default(false),
+    canManageOrg: z.boolean().default(false),
+  }).strict() // Rechaza llaves desconocidas
+})
+
+const body = createRoleSchema.parse(await req.json())
+const newRole = await prisma.customRole.create({
+  data: {
+    organizationId: member.organizationId,
+    name: body.name,
+    description: body.description,
+    ...body.permissions,
+    granularPermissions: body.granularPermissions
+  }
+})</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A04:2021 · Insecure Design</div>
+          <h2>
+            <span class="finding-id">#4</span>
+            Validación de roles inconsistente (Role Collision) entre rutas gemelas
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#ea580c">
+          Alto
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/members/[id]/route.ts, src/app/api/admin/members/[id]/access/route.ts <span style="color:#64748b">[L48-L56, L95-L103]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#ea580c">Alto</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">Existen 4 rutas que asignan roles (users/:id, members/:id, members/:id/access y bulk-invite). Sólo bulk-invite verifica que el CustomRole exista en la organización. Las otras 3 no centralizan validación, produciendo Role Collision: un mismo roleId se acepta por una ruta y es rechazado por otra. Rompe auditabilidad y crea surface de ataque desigual según qué endpoint use el atacante.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">1. Intentar asignar un CustomRole de org ajena vía bulk-invite → rechazado.
+2. Usar el mismo ID vía PATCH /api/admin/members/:id → aceptado.
+
+El layout protegido no sirve si existe un endpoint &quot;rápido&quot; desprotegido con la misma funcionalidad.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">// src/lib/admin-roles.ts (helper centralizado)
+export async function resolveRoleForOrg(
+  roleId: string,
+  organizationId: string
+): Promise&lt;{ systemRole: &#39;ADMIN&#39;|&#39;AUDITOR&#39;|&#39;VIEWER&#39;; customRoleId: string | null }&gt; {
+  if ([&#39;ADMIN&#39;,&#39;AUDITOR&#39;,&#39;VIEWER&#39;].includes(roleId)) {
+    return { systemRole: roleId as any, customRoleId: null }
+  }
+  const cr = await prisma.customRole.findUnique({
+    where: { id: roleId },
+    select: { id: true, organizationId: true }
+  })
+  if (!cr || cr.organizationId !== organizationId) {
+    throw new Error(&#39;Rol inválido para la organización&#39;)
+  }
+  return { systemRole: &#39;VIEWER&#39;, customRoleId: cr.id }
+}
+
+// Invocar en las 4 rutas (users, members, members/access, bulk-invite)</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A07:2021 · Identification &amp; Authentication Failures</div>
+          <h2>
+            <span class="finding-id">#5</span>
+            Guardia de autorización sin filtro status: APPROVED
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#ea580c">
+          Alto
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/roles/route.ts, src/app/api/admin/roles/[id]/route.ts <span style="color:#64748b">[L184-L190, L59-L65]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#ea580c">Alto</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">En roles/route.ts y roles/[id]/route.ts, la guardia findFirst(where: {userId}) no filtra status == &quot;APPROVED&quot;. Si un admin es dado de baja (status INACTIVE/PENDING/ONBOARDING) pero su member.role sigue siendo ADMIN, las credenciales siguen pasando la guardia. Las otras rutas admin (users, invite, sat-69b/sync) sí filtran APPROVED, creando bypass selectivo.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">1. Admin legítimo suspendido: status = INACTIVE, role = ADMIN.
+2. Cookie de sesión / refresh token sigue vigente.
+3. GET /api/admin/roles → PASA.
+4. PUT /api/admin/roles/&lt;id&gt; → PUEDE editar roles y escalar privilegios mientras no se limpie el rol.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">const member = await prisma.member.findFirst({
+  where: {
+    userId: session.user.id,
+    status: &#39;APPROVED&#39; // Filtro OBLIGATORIO
+  },
+  include: { organization: true }
+})
+if (!member || member.role !== &quot;ADMIN&quot;) {
+  return NextResponse.json({ error: &quot;Acceso denegado&quot; }, { status: 403 })
+}</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A02:2021 · Cryptographic Failures / Sensitive Data Exposure</div>
+          <h2>
+            <span class="finding-id">#6</span>
+            invitationToken de 32 bytes retornado en texto plano por JSON
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#ca8a04">
+          Medio
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/users/invite/route.ts <span style="color:#64748b">[L70-L73]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#ca8a04">Medio</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">El endpoint POST /api/admin/users/invite retorna invitationToken en el body del response. El comentario &quot;Returned ONLY once so the admin can copy it immediately&quot; es falso: los reverse proxies (nginx, Cloudflare), APMs (Datadog, Sentry) y herramientas SIEM loguean bodies HTTP automáticamente. Además, el historial de DevTools del navegador lo cachea indefinidamente. Token se transmite por HTTP en dev sin seguridad de capa de transporte.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">Admin compartiendo pantalla en Zoom/Meet → tercero ve token en Network tab.
+MITM en LAN insegura sin HSTS STS → captura body del response.
+Operador de infraestructura con acceso a logs de balanceador puede extraer tokens de invitación y crear cuentas en nombre de otras organizaciones.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">return NextResponse.json({
+  success: true,
+  message: &#39;Usuario invitado exitosamente&#39;,
+  existingUser: invitation.existingUser,
+  // invitationToken: ELIMINADO. Se transmite UNICAMENTE por correo.
+})
+
+// Si se requiere copiado manual para admins con problemas de email:
+// generar JWT firmado de 5 minutos de vida con payload hasheado
+// y obligar a un flujo de confirmación 2FA o doble-click antes de emitirlo.</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A02:2021 · Cryptographic Failures / Information Disclosure</div>
+          <h2>
+            <span class="finding-id">#7</span>
+            members/:id/access expone error.message crudo de Prisma al cliente
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#ca8a04">
+          Medio
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/members/[id]/access/route.ts <span style="color:#64748b">[L140-L144]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#ca8a04">Medio</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">El handler PATCH hace const message = error instanceof Error ? error.message : &quot;...&quot; y devuelve NextResponse.json({ error: message }, 500). Prisma emite errores como &quot;Unique constraint failed on the fields: (memberId, companyId)&quot;, &quot;Foreign key constraint failed on the field: companyAccess_memberId_fkey&quot; o &quot;column ... does not exist&quot;. El atacante mapea nombres de tablas, columnas y restricciones, reduciendo drásticamente el esfuerzo de fingerprint y orientando IDOR/SQLi</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">PATCH /api/admin/members/&lt;id&gt;/access
+{ &quot;companyId&quot;: &quot;...&quot;, &quot;role&quot;: &quot;BAD_PAYLOAD_TO_FINGERPRINT&quot; }
+
+Response 500:
+{&quot;error&quot;:&quot;Unique constraint failed on the fields: (memberId_companyId): The required connection Company on the CompanyAccess model is missing...&quot;}
+
+Nombre de tablas y columnas extraídos sin esfuerzo.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">} catch (error) {
+  console.error(&#39;[admin/members/access] Error interno:&#39;, error) // SOLO logs internos
+  return NextResponse.json(
+    { error: &#39;Error interno del servidor&#39; },
+    { status: 500 }
+  )
+}</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A05:2021 · Security Misconfiguration</div>
+          <h2>
+            <span class="finding-id">#8</span>
+            Páginas admin &quot;use client&quot; sin proteger server-side ante usuarios no autorizados
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#16a34a">
+          Bajo
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/admin/users/page.tsx, roles/page.tsx, profiles/page.tsx, users-bulk/page.tsx <span style="color:#64748b">[L1-L33, L1-L70, L1-L46, L1-L15]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#16a34a">Bajo</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">Sólo admin/dashboard/page.tsx usa &lt;ProtectedRoute&gt; + &lt;PermissionRequired&gt;. Las otras 4 páginas son puras &quot;use client&quot; sin wrapper ni redirect server-side. Usuario sin permiso que conozca URL /admin/users carga shell completo de UI, botones, nombres de módulos y endpoints subyacentes. Expone superficie de ataque y metadata del sistema sin necesidad de 403 temprano.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">1. Usuario con role USER simple navega a /admin/roles (ruta conocida por leak de fuente o enum común).
+2. Recibe UI completa del gestor de roles (Nombres de permisos ~60 switches organizados por módulo).
+3. Fingerprint de features y enumeración de granularPermissions de otras orgs a través del layout visual.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">// Envolver cada página al igual que admin/dashboard
+import { PermissionRequired } from &#39;@/components/auth/PermissionRequired&#39;
+import { ProtectedRoute } from &#39;@/components/auth/ProtectedRoute&#39;
+import { Permission } from &#39;@/lib/permissions&#39;
+
+return (
+  &lt;ProtectedRoute&gt;
+    &lt;PermissionRequired permission={Permission.ADMIN_USERS}&gt;
+      {/* ... page JSX original ... */}
+    &lt;/PermissionRequired&gt;
+  &lt;/ProtectedRoute&gt;
+)</pre>
+      </div>
+    </section>
+  
+    <section class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-owasp">OWASP A05:2021 · Security Misconfiguration</div>
+          <h2>
+            <span class="finding-id">#9</span>
+            Rate limit ausente en mutaciones críticas (invitaciones, cambio de status)
+          </h2>
+        </div>
+        <div class="risk-badge" style="background:#16a34a">
+          Bajo
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">📄 Archivo y Línea exacta:</div>
+        <div class="field-value mono">src/app/api/admin/users/invite/[id]/route.ts, src/app/api/admin/users/[id]/status/route.ts <span style="color:#64748b">[DELETE y PATCH handlers completos]</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">⚠️ Nivel de Riesgo:</div>
+        <div class="field-value"><span class="risk-inline" style="color:#16a34a">Bajo</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">🔍 Descripción del Riesgo:</div>
+        <div class="field-value">DELETE /api/admin/users/invite/:id y PATCH /api/admin/users/:id/status no tienen rate limit por usuario autenticado. Aunque requieren autorización, un admin comprometido o XSS en el panel podrían iterar IDs visibles en listados (fuera del rango UUID inviable) para activar/inactivar usuarios en bucle sin backoff, causando denegación de servicio operativa.</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">💥 Ejemplo de Exploit:</div>
+        <pre class="code-block exploit">1. Atacante roba sesión de admin y obtiene listado de userIds/memberIds por GET /api/admin/users.
+2. Script en loop: 1000 llamadas por minuto al PATCH status=INACTIVE.
+3. Ningún rate limiter frena: usuarios se inactivan en masa, denegando acceso a la organización completa.</pre>
+      </div>
+
+      <div class="field">
+        <div class="field-label">✅ Código Corregido:</div>
+        <pre class="code-block fixed">// src/lib/rate-limit.ts (importar y aplicar en cada handler)
+import { rateLimitByUserId } from &#39;@/lib/rate-limit&#39;
+
+await rateLimitByUserId({
+  userId: session.user.id,
+  key: &#39;admin-status-patch&#39;,
+  limit: 30,
+  windowMs: 60_000 // 30 cambios por minuto por admin
+})</pre>
+      </div>
+    </section>
+  
+
+  <div class="footer">
+    <div>SAST Report · Módulo Admin · 2026-08-12T00:56:49.695Z</div>
+    <div>Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>
+  </div>
+
+</div>
+</body>
+</html>

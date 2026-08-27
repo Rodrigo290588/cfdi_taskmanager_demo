@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq'
-import { sat69BBlacklistQueue, SAT_69B_BLACKLIST_QUEUE_NAME } from '@/lib/queue'
+import { getSat69BBlacklistQueue, SAT_69B_BLACKLIST_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
 import { syncSat69BBlacklist } from '@/lib/sat-69b-blacklist'
 
 const SAT_69B_BLACKLIST_JOB_NAME = 'sat-69b-blacklist-sync'
@@ -8,7 +8,7 @@ const SAT_69B_BLACKLIST_CRON = '30 0 * * 1'
 const SAT_69B_BLACKLIST_TIMEZONE = 'America/Mexico_City'
 
 export async function ensureSat69BBlacklistRoutineScheduled() {
-  await sat69BBlacklistQueue.add(
+  await getSat69BBlacklistQueue().add(
     SAT_69B_BLACKLIST_JOB_NAME,
     {},
     {
@@ -31,10 +31,7 @@ export function setupSat69BBlacklistWorker() {
       `[Sat69BBlacklist] skipped=${result.skipped} processed=${result.processedLines} parsed=${result.parsedEntries} activeRisk=${result.activeRiskEntries} removed=${result.removedStaleEntries}`
     )
   }, {
-    connection: {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    connection: resolveRedisConnection(),
     concurrency: 1
   })
 

@@ -1,11 +1,11 @@
 import { z } from "zod"
 
-export const signInSchema = z.object({
+export const signInSchema = z.strictObject({
   email: z.string().email("Formato de email inválido").trim().toLowerCase(),
   password: z.string().min(1, "La contraseña es requerida"),
 })
 
-export const signUpSchema = z.object({
+export const signUpSchema = z.strictObject({
   name: z.string()
     .min(2, 'El nombre debe tener al menos 2 caracteres')
     .max(50, 'El nombre es demasiado largo')
@@ -16,7 +16,8 @@ export const signUpSchema = z.object({
     .trim()
     .toLowerCase(),
   password: z.string()
-    .min(8, 'La contraseña debe tener al menos 8 caracteres')
+    .min(12, 'La contraseña debe tener al menos 12 caracteres')
+    .max(128, 'La contraseña no puede exceder 128 caracteres')
     .regex(/[A-Z]/, 'Debe contener al menos una letra mayúscula')
     .regex(/[a-z]/, 'Debe contener al menos una letra minúscula')
     .regex(/[0-9]/, 'Debe contener al menos un número')
@@ -25,4 +26,11 @@ export const signUpSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Las contraseñas no coinciden",
   path: ["confirmPassword"],
-});
+})
+
+export const inviteMemberSchema = z.strictObject({
+  email: z.string().email('Correo electrónico inválido').trim().toLowerCase(),
+  role: z.enum(['ADMIN', 'AUDITOR', 'VIEWER', 'BILLING', 'COMPLIANCE', 'TAX_ANALYST']),
+  companyIds: z.array(z.string()).default([]),
+  message: z.string().max(500).optional()
+})

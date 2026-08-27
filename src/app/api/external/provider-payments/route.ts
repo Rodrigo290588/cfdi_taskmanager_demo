@@ -6,9 +6,16 @@ import { syncProviderPaymentComplianceBlocks } from '@/lib/provider-payment-comp
 import { rateLimit } from '@/lib/rate-limit'
 import { getM2MRateLimitConfig, getM2MRateLimitHeaders } from '@/lib/m2m-rate-limit'
 import { withMachineScope } from '@/lib/m2m-route'
-import { providerPaymentUpdateSchema, PAYMENTS_UPDATE_SCOPE } from '@/lib/provider-payment-update'
+import { PAYMENTS_UPDATE_SCOPE } from '@/lib/provider-payment-update'
 import { prisma } from '@/lib/prisma'
 import { updateProviderPaymentStatus } from '@/lib/provider-cfdi-storage'
+import type { ProviderPaymentStatusValue } from '@/lib/provider-cfdi-storage'
+import { safeErrSummary } from '@/lib/security'
+import {
+  ExternalProviderPaymentUpdateSchema,
+  sanitizeZodIssues,
+  MAX_EXTERNAL_PAYLOAD_BYTES
+} from '@/schemas/external'
 
 export const runtime = 'nodejs'
 
@@ -17,6 +24,8 @@ function getRequestIp(request: NextRequest) {
     || request.headers.get('x-real-ip')
     || null
 }
+
+const MAX_PAYMENT_PREPARSE_BYTES = Math.ceil(MAX_EXTERNAL_PAYLOAD_BYTES * 1.35)
 
 async function getProviderPaymentReminderRecipient(recordId: string) {
   const record = await prisma.providerUploadedCfdi.findUnique({
@@ -76,8 +85,19 @@ async function getProviderPaymentReminderRecipient(recordId: string) {
   }
 }
 
+// EXT-002 · sanitizeZodIssues
+// EXT-008 · safeErrSummary NO PII logs
 export const PATCH = withMachineScope(PAYMENTS_UPDATE_SCOPE, async (request: NextRequest, authContext) => {
   try {
+    const contentLengthRaw = request.headers.get('content-length')
+    const contentLength = contentLengthRaw ? Number(contentLengthRaw) : NaN
+    if (Number.isFinite(contentLength) && contentLength > MAX_PAYMENT_PREPARSE_BYTES) {
+      return NextResponse.json(
+        { error: 'El payload excede el tamaño máximo permitido.' },
+        { status: 413 }
+      )
+    }
+
     const limiter = await rateLimit(
       `m2m:payments:update:${authContext.clientId}`,
       getM2MRateLimitConfig()
@@ -93,11 +113,13 @@ export const PATCH = withMachineScope(PAYMENTS_UPDATE_SCOPE, async (request: Nex
       )
     }
 
-    const payload = providerPaymentUpdateSchema.parse(await request.json())
+    const rawBody = await request.json()
+    const payload = ExternalProviderPaymentUpdateSchema.parse(rawBody)
+
     const result = await updateProviderPaymentStatus({
       organizationId: authContext.organizationId,
       uuid: payload.uuid,
-      paymentStatus: payload.estatus_pago,
+      paymentStatus: payload.estatus_pago as ProviderPaymentStatusValue,
       paymentDate: payload.fecha_pago ? new Date(payload.fecha_pago) : null,
       sourceClientId: authContext.clientId
     })
@@ -142,13 +164,14 @@ export const PATCH = withMachineScope(PAYMENTS_UPDATE_SCOPE, async (request: Nex
           })
 
           if (!emailResult.success) {
-            console.error('No fue posible enviar el recordatorio de CFDI de pago para UUID', result.uuid)
+            const sum = safeErrSummary(new Error(String(result.uuid)))
+            const hash = 'msgHash' in sum ? (sum as { msgHash?: string }).msgHash : undefined
+            console.warn('[EXT-PAYMENTS] Email reminder failed for UUID (hash):', hash || 'unknown')
           }
-        } else {
-          console.warn('No se encontró correo destinatario para recordatorio de CFDI de pago del UUID', result.uuid)
         }
       } catch (reminderError) {
-        console.error('Error preparando el recordatorio de CFDI de pago:', reminderError)
+        // EXT-008 · safeErrSummary NO UUID/RFC/email raw en logs
+        console.error('[EXT-PAYMENTS] Reminder preparation failed:', safeErrSummary(reminderError))
       }
     }
 
@@ -159,29 +182,26 @@ export const PATCH = withMachineScope(PAYMENTS_UPDATE_SCOPE, async (request: Nex
           providerRfc: reminderRecipient.providerRfc
         })
       } catch (complianceError) {
-        console.error('No fue posible sincronizar el bloqueo del proveedor tras actualizar el estatus de pago:', complianceError)
+        console.error('[EXT-PAYMENTS] Compliance sync failed:', safeErrSummary(complianceError))
       }
     }
 
     return NextResponse.json({
       success: true,
-      organizationId: authContext.organizationId,
       uuid: result.uuid,
       estatus_pago: result.currentStatus,
       fecha_pago: result.currentPaymentDate || null,
       automatic_status_snapshot: result.automaticStatus
     })
   } catch (error) {
-    console.error('Error en endpoint externo de actualización de pagos:', error)
+    console.error('[EXT-PAYMENTS] Handler failed:', safeErrSummary(error))
 
+    // EXT-002 · sanitizeZodIssues whitelist fields
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
           error: 'Datos inválidos',
-          details: error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
+          details: sanitizeZodIssues(error.issues)
         },
         { status: 400 }
       )
