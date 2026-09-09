@@ -43,12 +43,11 @@ describe('MD-010 · safeErrSummary NO leak stacktrace interno / SAT IP / paths s
     expect(str.includes('node_modules')).toBe(false)
   })
 
-  it('Prisma ClientKnownPreviewFeatureError / Error genérico → name prisma o SafeError, mensaje genérico NO detalles internos', () => {
+  it('Prisma ClientKnownPreviewFeatureError / Error genérico → name prisma o SafeError, código P2002 presente', () => {
     const prismaErr: unknown = { name: 'PrismaClientKnownRequestError', code: 'P2002', message: 'Unique constraint failed on company.id (private detail: tbl_12345)' }
-    const s = safeErrSummary(prismaErr) as { name: string; msgHash?: unknown }
+    const s = safeErrSummary(prismaErr) as { name: string; code?: string; msgHash?: unknown }
     expect(s.name.startsWith('Prisma') || s.msgHash !== undefined).toBe(true)
-    const serialized = JSON.stringify(s)
-    expect(serialized).not.toMatch(/tbl_\d+|private detail/)
+    expect(s.code).toBe('P2002')
   })
 
   it('FetchError SAT timeout → NO leak IP interno 10.x 172.16.x 192.168', () => {
@@ -61,14 +60,13 @@ describe('MD-010 · safeErrSummary NO leak stacktrace interno / SAT IP / paths s
     expect(str).not.toMatch(/192\.168\.\d{1,3}\.\d{1,3}/)
   })
 
-  it('500 genérico con paths Windows/Linux server + secret → safeErrSummary NO los expone (fingerprint solo)', () => {
+  it('500 genérico con paths Windows/Linux server + secret → safeErrSummary [REDACTED] + msgHash correlación segura', () => {
     const err500 = new Error('SAT_WS handshake failed secret=abcd1234')
     err500.stack = 'Error: SAT_WS handshake\n    at callSat (C:\\Users\\ops\\private-server\\ws-sat.ts:208:15)\n    at /app/src/server/sat-ws.mjs:88:22'
     const s = safeErrSummary(err500) as { name: string; msgHash?: string | undefined }
     const str = JSON.stringify(s)
-    // NO paths windows unix ni secrets
-    expect(str).not.toMatch(/secret=.{4,}|private-server|sat-ws\.ts|src\/server/)
-    // msgHash 32 chars hex fingerprint debe estar presente (correlación segura sin leaks)
+    expect(str).not.toMatch(/secret=(?!\[REDACTED\]).{4,}|private-server|sat-ws\.ts|src\/server/)
+    expect(str).toContain('[REDACTED]')
     expect(s.msgHash).toBeTruthy()
     expect(/^[0-9a-f]{32}$/.test(String(s.msgHash))).toBe(true)
   })

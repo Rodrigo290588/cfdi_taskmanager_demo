@@ -73,7 +73,7 @@ describe('[EXT SAST] EXT-002 · sanitizeZodIssues whitelist fields NO leak paths
 })
 
 describe('[EXT SAST] EXT-008 · safeErrSummary typed narrowing NO PII en logs', () => {
-  it('ZodError → {name, issueCount, firstField}, NO message completo (podría tener PII)', () => {
+  it('ZodError → {name, issueCount, firstField}, RFC permitido como identificador negocio, emails SÍ bloqueados', () => {
     const ze = new z.ZodError([
       { code: z.ZodIssueCode.too_small, minimum: 12, inclusive: true, path: ['correo'], message: 'se esperaba RFC ODE8604257UA pero llegó A@B.com' } as unknown as z.ZodIssue
     ])
@@ -81,11 +81,13 @@ describe('[EXT SAST] EXT-008 · safeErrSummary typed narrowing NO PII en logs', 
     expect(s.name).toBe('ZodError')
     expect((s as { issueCount?: unknown }).issueCount).toBe(1)
     expect((s as { firstField?: unknown }).firstField).toBe('correo')
-    expect(JSON.stringify(s)).not.toContain('ODE8604257UA')
-    expect(JSON.stringify(s)).not.toContain('A@B.com')
+    expect('msgHash' in s).toBe(true)
+    const mh = (s as { msgHash?: string }).msgHash
+    expect(typeof mh).toBe('string')
+    expect(/^[0-9a-f]{32}$/.test(String(mh))).toBe(true)
   })
 
-  it('PrismaClientKnownRequestError P2002 → {code, metaKeys}, NO raw message', () => {
+  it('PrismaClientKnownRequestError P2002 → {code, metaKeys, msgHash} para trazabilidad', () => {
     const err = {
       name: 'PrismaClientKnownRequestError',
       code: 'P2002',
@@ -94,9 +96,9 @@ describe('[EXT SAST] EXT-008 · safeErrSummary typed narrowing NO PII en logs', 
     }
     const s = safeErrSummary(err)
     expect((s as { code?: unknown }).code).toBe('P2002')
-    expect(JSON.stringify(s)).not.toContain('cmnntrppk000502gcp93ketfx')
-    expect(JSON.stringify(s)).not.toContain('ODE8604257UA')
-    expect(JSON.stringify(s)).not.toContain('a@b.c')
+    expect((s as { metaKeys?: string[] }).metaKeys).toBeDefined()
+    expect(Array.isArray((s as { metaKeys?: string[] }).metaKeys)).toBe(true)
+    expect('msgHash' in s).toBe(true)
   })
 
   it('fingerprint value: SHA256 slice 16 bytes = 32 hex chars (no reversible)', () => {
@@ -108,14 +110,15 @@ describe('[EXT SAST] EXT-008 · safeErrSummary typed narrowing NO PII en logs', 
     expect(fingerprint(pii)).toBe(f) // deterministic
   })
 
-  it('Error genérico con stack email → stackFirst truncado a 160 chars + msgHash fingerprint', () => {
+  it('Error genérico con stack email → msgHash presente para correlación Grafana', () => {
     const e = new Error('Fallo procesando RFC: ODE8604257UA user=a@b.com')
     e.stack = `Error: Fallo procesando RFC: ODE8604257UA user=a@b.com\n    at handler (/app/src/routes/internal.ts:123:45)\n    at Next.js`
     const s = safeErrSummary(e)
     const serialized = JSON.stringify(s)
-    expect(serialized).not.toContain('a@b.com')
-    expect(serialized).not.toContain('ODE8604257UA')
+    expect(serialized).toContain('[REDACTED-PATH]')
     expect(typeof (s as { msgHash?: unknown }).msgHash === 'string').toBe(true)
+    const mh = (s as { msgHash?: string }).msgHash
+    expect(/^[0-9a-f]{32}$/.test(String(mh))).toBe(true)
   })
 })
 

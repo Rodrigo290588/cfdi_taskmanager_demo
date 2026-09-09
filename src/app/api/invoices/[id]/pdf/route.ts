@@ -26,7 +26,13 @@ const INVOICE_ENABLE_FILE_PARAM_IN_DEV =
 const INVOICE_RATE_LIMIT_MAX_PER_HOUR = Number(
   process.env.INVOICE_PDF_RATE_LIMIT_MAX_PER_HOUR || '180'
 )
-const SAFE_DEV_BASE_DIR = path.resolve(process.cwd(), 'java-client', 'xml-data')
+let _SAFE_DEV_BASE_DIR_CACHED: string | undefined
+function getSafeDevBaseDir(): string {
+  if (!_SAFE_DEV_BASE_DIR_CACHED) {
+    _SAFE_DEV_BASE_DIR_CACHED = path.resolve(/*turbopackIgnore: true*/ process.cwd(), 'java-client', 'xml-data')
+  }
+  return _SAFE_DEV_BASE_DIR_CACHED
+}
 const DEFAULT_NOT_FOUND_MESSAGE = 'Factura no autorizada o no encontrada'
 const TIMING_PADDED_DELAY_MS_MIN = 14
 const TIMING_PADDED_DELAY_MS_MAX = 20
@@ -80,13 +86,14 @@ function resolveDevXmlFileSafe(raw: string): { safe: false; errorCode: number; e
   }
   // INV-010 · Chequeo extensión SOBRE `basename(final)` no raw.
   const raw2 = String(raw || '').trim()
-  const candidate = path.resolve(SAFE_DEV_BASE_DIR, raw2)
+  const safeDevBaseDir = getSafeDevBaseDir()
+  const candidate = path.resolve(safeDevBaseDir, raw2)
   const basenameFinal = path.basename(candidate).toLowerCase()
   if (!basenameFinal.endsWith('.xml')) {
     return { safe: false, errorCode: 400, errorMsg: 'INV-010: file extension not allowed (only .xml after final basename resolution).' }
   }
   const normalizedCandidate = candidate.replace(/\\/g, '/')
-  const normalizedBase = SAFE_DEV_BASE_DIR.replace(/\\/g, '/')
+  const normalizedBase = safeDevBaseDir.replace(/\\/g, '/')
   if (!normalizedCandidate.startsWith(normalizedBase + '/') && normalizedCandidate !== normalizedBase) {
     return { safe: false, errorCode: 400, errorMsg: 'INV-010: path traversal detected.' }
   }

@@ -41,6 +41,30 @@ const eslintConfig = defineConfig([
       "eslint-comments/no-unused-disable": "off",
     },
   },
+  // Tests unit / integration / performance / e2e: reglas relajadas
+  // ya que Jest mocks, fixtures y asserts requieren casts any/no-unused frecuentes.
+  {
+    files: ["tests/**/*.{ts,tsx,mts,cts,js,mjs,cjs}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "prefer-const": "warn",
+      "no-unused-expressions": "off",
+      "@typescript-eslint/no-unused-expressions": [
+        "warn",
+        { allowShortCircuit: true, allowTaggedTemplates: true, allowTernary: true },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -61,10 +61,12 @@ describe('[DASHBOARD FISCAL SAST] DF-009 al DF-012 · Rate limit enforcement por
         expect(cfg.limit).toBeGreaterThan(0)
         expect(typeof cfg.windowMs).toBe('number')
         expect(cfg.windowMs).toBeGreaterThan(0)
-        // Coverage de keyof typeof
+        // Coverage de keyof typeof (DF original 8 + 7 Dashboard Recibidos = 15)
         expect([
           'mainHeavy', 'drilldown', 'invoices', 'partialDownload',
-          'partialReport', 'apiLogs', 'uploadXml', 'cancelImport'
+          'partialReport', 'apiLogs', 'uploadXml', 'cancelImport',
+          'uploadMassive', 'drilldownAgg', 'drilldownInvoices',
+          'drilldownPdf', 'drilldownXml'
         ]).toContain(name)
       }
     })

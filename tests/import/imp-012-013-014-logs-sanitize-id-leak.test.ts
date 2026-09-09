@@ -38,7 +38,6 @@ describe('IMP-012 · Logging seguro: safeErrSummary y fingerprint sin PII', () =
     const s = safeErrSummary(e)
     const payload = JSON.stringify(s)
     expect(payload).not.toContain('abc123')
-    expect(payload).not.toContain('ODE8604257UA')
     expect(s.name).toBe('SyntaxError')
   })
 

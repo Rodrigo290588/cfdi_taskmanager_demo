@@ -77,7 +77,7 @@ jest.mock('@/lib/permissions', () => {
     hasPermission: (user: TestUserShape, _perm: unknown, orgId?: string) => {
       const m = (user.memberships ?? []).find((x) => x.organizationId === orgId && x.status === 'APPROVED')
       if (!m) return false
-      return ['COMPANY_ADMIN', 'ADMIN', 'USER', 'VIEWER'].includes(m.role)
+      return ['COMPANY_ADMIN', 'ADMIN', 'OWNER', 'USER', 'VIEWER'].includes(m.role)
     }
   }
 })
@@ -110,19 +110,22 @@ describe('MON-001 · BOLA Cross-Tenant Spoof Prevention (Gate Único requireMoni
     }
   })
 
-  it('MON-001: Usuario multi-org sin requestedOrgId → pick DETERMINÍSTICO = [0] (ORG_A). 100 llamadas idempotentes mismo resultado', async () => {
-    const results: string[] = []
-    for (let i = 0; i < 100; i++) {
-      const r = await requireMonitorAccess({
-        userId: 'usr_mon_multi_006',
-        systemRole: 'USER',
-        requestedOrgId: null
-      })
-      results.push(r.organizationId)
+  it('MON-001: Usuario multi-org sin requestedOrgId → 400 Fail-Closed (no adivina org, pide ?orgId= explícito)', async () => {
+    try {
+      for (let i = 0; i < 10; i++) {
+        await requireMonitorAccess({
+          userId: 'usr_mon_multi_006',
+          systemRole: 'USER',
+          requestedOrgId: null
+        })
+      }
+      expect(true).toBe(false)
+    } catch (e) {
+      expect(e).toBeInstanceOf(MonitorAccessError)
+      const err = e as MonitorAccessError
+      expect(err.statusCode).toBe(400)
+      expect(err.message.toLowerCase().includes('orgid')).toBe(true)
     }
-    const uniq = Array.from(new Set(results))
-    expect(uniq.length).toBe(1)
-    expect(uniq[0]).toBe(MON_FIXTURE_ORGS.ORG_A_ID)
   })
 
   it('MON-001: Usuario PENDING (no APPROVED) → memberships filtradas. Zero APPROVED → 404 Fail-Closed', async () => {

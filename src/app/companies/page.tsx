@@ -69,17 +69,24 @@ export default async function CompaniesPage() {
       >> = []
 
       if (isOwner || isAdmin) {
+        // NEW: owner/admin ve OR (creada por miembros de la org) ∪ (compartida por companyAccess)
         const members = await prisma.member.findMany({
           where: {
             organizationId: membership.organization.id,
             status: 'APPROVED',
             organization: { onboardingCompleted: true }
           },
-          select: { userId: true }
+          select: { userId: true, id: true }
         })
         const userIds = members.map(m => m.userId)
+        const memberIdsOrg = members.map(m => m.id)
         rows = await prisma.company.findMany({
-          where: { createdBy: { in: userIds } },
+          where: {
+            AND: [
+              { OR: [{ createdBy: { in: userIds } }, { companyAccesses: { some: { memberId: { in: memberIdsOrg } } } }] },
+              { status: 'APPROVED' }
+            ]
+          },
           select: {
             id: true, name: true, rfc: true, businessName: true, legalRepresentative: true,
             taxRegime: true, industry: true, state: true, city: true, email: true,
@@ -98,7 +105,7 @@ export default async function CompaniesPage() {
         const companyIds = accesses.map(a => a.companyId)
         if (companyIds.length > 0) {
           rows = await prisma.company.findMany({
-            where: { id: { in: companyIds } },
+            where: { id: { in: companyIds }, status: 'APPROVED' },
             select: {
               id: true, name: true, rfc: true, businessName: true, legalRepresentative: true,
               taxRegime: true, industry: true, state: true, city: true, email: true,

@@ -161,7 +161,7 @@ const authOptions: NextAuthConfig = {
 }
 
 // === Adicional: middleware valida el header ANTES de llegar a NextAuth ===
-// En src/middleware.ts o proxy.ts bloquear Host desconocidos con 400 / 403
+// En src/proxy.ts o proxy.ts bloquear Host desconocidos con 400 / 403
 // temprano, sin consumir runtime de NextAuth.`
   },
   {

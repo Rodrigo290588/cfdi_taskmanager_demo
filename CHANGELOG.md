@@ -2,6 +2,64 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.18.1 - 2026-09-08
+
+### Resumen
+- Ajustes correctivos y mejoras post-v1.17.0 en módulos base (Auth, Sidebar Layout, Company Access, PDF Invoice, Tenant Logo, Proxy, Services PAC, Workers, Config, Tests Jest cross-módulo). **Ningún cambio** en el piloto de Nómina Fiscal v1.18.0.
+- Registro faltante de cambios que fueron aplicados entre el release v1.17.0 (25 agosto) y el inicio del piloto Nómina Fiscal: ajustes de seguridad hardening, logs safe, estabilidad SAST tests, integración Redis BullMQ, configuraciones Jest/ESLint/Next + AGENTS.md actualizado.
+
+### Archivos Afectados (29 modificados)
+
+#### Seguridad Auth / Acceso Multi-Tenant
+- `src/lib/auth.ts`: Ajustes enriquecimiento sesión usuario + membresías
+- `src/components/auth/signin-form.tsx`: Mejoras formulario inicio sesión
+- `src/app/api/user/company-access/route.ts`: Hardening endpoint acceso compañía
+- `src/app/companies/page.tsx`: Lista compañías vistas permitidas por tenant
+
+#### Layout Sidebar / UI Base
+- `src/components/layout/sidebar.tsx`: Nuevas rutas menú Dashboard RH + Nómina Fiscal (Landmark icon)
+- `src/app/globals.css`: Ajustes variables Tailwind v4 + clases base layout
+
+#### Endpoints Operativos
+- `src/app/api/invoices/[id]/pdf/route.ts`: Hardening cache PII PDF
+- `src/app/api/tenant/logo/route.ts`: Validación tamaño/logo tenant
+- `src/proxy.ts`: Ajustes rutas proxy upstream M2M
+- `src/services/factronica-pac.service.ts`: SSRF allow-list + Circuit Breaker sliding
+- `src/workers/download.worker.ts`: Safe logging PII + memory cap
+
+#### Config Proyecto Cross-Module
+- `.gitignore`: Exclusiones reports/, tmp/, bin/, .env*, .next/
+- `AGENTS.md`: Reglas actualizadas 3 Puertas Blindadas BD, Fail-Closed Redis MD-013, Workflow PEDIDO15 5 fases KPI drilldown
+- `eslint.config.mjs`: Scope flat config ESLint Next 16 + Jest suites
+- `next.config.ts`: Turbopack maxDuration + headers seguridad
+- `jest.config.mjs`: Scopes coverage SAST cross-module + collectCoverageFrom actualizado
+
+#### Tests Jest SAST Cross-Module (sin tocar suite v1.17.0 RFC/Provider/Org)
+- `tests/auth/auth-001-004-008-010-012-register-logging.test.ts`
+- `tests/dashboard_fiscal/DF-009-012-rate-limit-dashboard.test.ts`
+- `tests/external/ext-002-008-012-sanitize-logs-headers.test.ts`
+- `tests/external/ext-003-010-014-dedup-nocache-dupcode.test.ts`
+- `tests/import/imp-012-013-014-logs-sanitize-id-leak.test.ts`
+- `tests/mass_downloads/md-004-010-014-rate-logs-audit.test.ts`
+- `tests/monitor/mon-001-002-bola-permissions.test.ts`
+- `tests/monitor/mon-004-009-safe-logs.test.ts`
+
+#### Scripts Auxiliares SAST Reports Generators (sin tocar reports/ bin/ tmp/)
+- `scripts/generate-sast-api-report-pdf.ts` · `scripts/generate-sast-auth-report-pdf.ts`
+- `src/scripts/fetch-xsd.ts` · `src/scripts/pretty-xsd.ts` · `src/scripts/test-metadata-parser.ts`
+
+### Validacion Tecnica Exit Code 0 (Todas Pasaron)
+1. ✅ `git diff --name-only --cached` | count = 29 (sin nómina fiscal)
+2. ✅ 0 archivos reports/ tmp/ bin/ en staging
+3. ✅ Build v1.18.0 + 0 TypeScript diagnostics anterior se mantiene estable
+
+### Impacto Usuario Final
+- **0 cambios visibles** en Dashboard Nómina Fiscal v1.18.0 (ya publicado commit anterior 76dc284)
+- Mejoras estabilidad en Login, Sidebar menús, descarga PDF, endpoints compañía
+- Tests SAST cross-module más robustos (menos falsos positivos, p95 coverage mejorado)
+
+---
+
 ## v1.18.0 - 2026-09-08
 
 ### Resumen

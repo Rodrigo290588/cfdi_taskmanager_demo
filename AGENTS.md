@@ -578,3 +578,255 @@ Antes de dar por cerrado el ciclo completo el agente debe validar **TODOS** los 
 | 21.7 SAT BullMQ Async 202 Accepted (MD-012) | Regla 7 (Tareas Asíncronas BullMQ + Backoff Exp) |
 | 21.8 safeErrSummary PII redact (MD-010/014) | Regla 3 (Errores Estructurados + fingerprint) |
 
+---
+
+## 🏗️ 22. PRODUCTION_DEPLOY_GA_AUTH · Reglas OBLIGATORIAS para salir a Producción (Auth Trust Host Safe)
+> **Origen RC**: Ciclo 2026-09-01 RC "Sin empresas en button sidebar" tras login exitoso → logs server confirmaron `[auth][error] UntrustedHost: Host must be trusted. URL was: http://localhost:3000/api/auth/session` → `auth()` retorna `null` → `/api/user/company-access 401` → sidebar `setFiscalEntities([])`.
+> **Resolución aplicada**: 2 puertas de cálculo separadas (DEV permisivo para localhost / IPs locales; PRODUCCIÓN estrictamente allowlist-only).
+> **Registro detallado**: Ver `project_memory.md` sección `Deploy GA · Checklist AUTH & Trusted Host`.
+
+### 22.1 Regla Obligatoria · NODE_ENV Gate en ambos configs Auth
+**NUNCA** hacer cálculo `trustHost = true || NODE_ENV !== 'production'` unificado. Siempre **puerta separada**:
+- [`auth.ts L251-L272`](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/lib/auth.ts#L251-L272) factory dinámico: `if (isProd) trustHost = strictlyTrusted else trustHost = strictlyTrusted || isLocalDevHost || AUTH_TRUST_HOST`.
+- [`.env.example`](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/.env.example) sección 2 `FEATURE_STRICT_AUTH_TRUST=1` (GA) O `=0` (DEV).
+
+### 22.2 Regla Obligatoria · auth-middleware.ts NO usar factory dinámico `NextAuth(request => {...})`
+**PROHIBICIÓN ABSOLUTA**: Declarar `export const authMiddleware = NextAuth(request => {...})` en [auth-middleware.ts](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/auth-middleware.ts) **ROMPE** [proxy.ts L83](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/proxy.ts#L83) `export const proxy = authMiddleware(onRequest)` con error runtime:
+```
+Error: The Proxy file "/proxy" must export a function named `proxy` or a default function.
+```
+**Formato correcto obligatorio**: [auth-middleware.ts L66-L70](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/auth-middleware.ts#L66-L70) `NextAuth({ ... trustHost: _trustHostValue ... })` objeto literal, donde `_trustHostValue = envTrustHost()` (cálculo top-level sincrónico basado en ENVs sin request).
+
+### 22.3 Regla Obligatoria · Cookies Secure flag en PROD
+**Paridad obligatoria** en ambos lugares auth:
+1. `src/lib/auth.ts L58 authOptionsBase.useSecureCookies = NODE_ENV === "production"`.
+2. `src/auth-middleware.ts L70 = useSecureCookies: _isProdRuntime`.
+
+Sesión en PROD se llama `__Secure-authjs.session-token` (con prefijo `__Secure-`). Si aparece sin prefijo en PROD → NODE_ENV no está seteado o está roto el build.
+
+### 22.4 Regla Obligatoria · Auth Secrets MATCH
+- `AUTH_SECRET === NEXTAUTH_SECRET` en todas las capas (dev/test/prod). Si difieren: cada request alterna secret de desencriptación de cookie → session = null intermitente → login roto 50% requests.
+- Longitud mínima: 32 chars (recomendado ≥ 64 chars hex).
+
+### 22.5 Regla Obligatoria · PUBLIC_HOSTS_ALLOWLIST en PROD
+Regla de oro: PROD nunca debe depender de AUTH_TRUST_HOST=true.
+- DEV: `PUBLIC_HOSTS_ALLOWLIST` localhost/127/10.x está OK.
+- PROD: Listado **SOLO** hosts públicos reales (app.tu-dominio.com, api.tu-dominio.com, túnel QA si aplica). SIN localhost, SIN 127.0.0.1, SIN RFC1918 privadas.
+- Si el deploy está detrás de ALB / Cloudflare / nginx: **asegurarse** que el header `X-Forwarded-Host` se propague y coincida con dominios reales del allowlist. Hosts tipo `internal.k8s.svc.cluster.local` NO deben estar.
+
+### 22.6 Kill-Switch Inmediato (Host Allowlist mal poblado)
+Si después del deploy GA aparece UntrustedHost (session = null para todos los usuarios, 401 en /api/user/company-access):
+1. Emergencia: setear `AUTH_TRUST_HOST=true` temporal, reiniciar pods `npm run start`.
+2. Fix: Levantar log request headers entrantes `req.headers.get('host')` y `x-forwarded-host`, agregar los hosts reales a PUBLIC_HOSTS_ALLOWLIST.
+3. Rollback kill-switch: a las 24h quitar `AUTH_TRUST_HOST` (borrar variable o set false).
+4. Refuerzo: set `FEATURE_STRICT_AUTH_TRUST=1` (impide que alguien en el futuro vuelva a activar bypasses sin tocar allowlist).
+
+### 22.7 Checklist mínimo pasos GA deploy
+1. Secret Manager set correctamente (AUTH/NEXTAUTH iguales, DB SSL, Redis TLS).
+2. `PUBLIC_HOSTS_ALLOWLIST` sin hosts locales; `FEATURE_STRICT_AUTH_TRUST=1`.
+3. `npm run build` exit 0; Proxy muestra `✔ Proxy (Middleware)`.
+4. Smoke post-deploy:
+   - Login Credentials Provider y Google.
+   - F12 Cookies: `__Secure-authjs.session-token` Secure=YES.
+   - Button sidebar empresas: `/api/user/company-access` status **200**, **no 401**, **no UntrustedHost**.
+   - `/companies` carga cards; `/dashboard/rh` autoselecciona tenant sin pantalla vacía.
+5. Burp/curl: forzar `Host: evil.com` → response no firma cookie nueva, no devuelve 200 /api/user/company-access.
+
+### 22.8 Archivos cruzados referencia obligatoria cierre deploy
+| # | Archivo · Líneas clave | Propósito |
+|---|---|---|
+| 1 | [auth.ts L34-L53](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/lib/auth.ts#L34-L53) | isHostTrustedStrict (cálculo strict central) |
+| 2 | [auth.ts L251-L272](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/lib/auth.ts#L251-L272) | NextAuth factory NODE_ENV gate strict=true solo PROD |
+| 3 | [auth-middleware.ts L31-L70](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/auth-middleware.ts#L31-L70) | envTrustHost() + NextAuth({...}) objeto literal (SIN factory dinámico para no romper proxy) |
+| 4 | [proxy.ts L1-L91](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/proxy.ts#L1-L91) | triple export proxy/middleware/default |
+| 5 | [security.ts L22-L28](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/src/lib/security.ts#L22-L28) | getPublicHostsAllowlist parse CSV |
+| 6 | [.gitignore L33-L36](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/.gitignore#L33-L36) | .env* protegidos; solo !.env.example / !.env.test commiteables |
+| 7 | [.env.example](file:///C:/ITC_IA/cfditaskmanager_demo/cfdi_taskmanager_demo/.env.example) | plantilla pública 8 secciones SIN secrets |
+
+---
+
+## 🛡️ 23. Confirmación EXPLÍCITA para Borrado / Limpieza de Datos en Cualquier Base de Datos (DEV / TEST / STAGING / PROD)
+
+> **Regla Obligatoria de Gobierno de Datos:** Todo cambio que implique **borrar, truncar, resetear, perder o sobrescribir datos** de una base de datos del proyecto requiere **confirmación EXPLÍCITA del usuario responsable** **ANTES** de ejecutar **cualquier** comando o script destructivo. No existen excepciones por "urgencias", "pruebas rápidas", "data loss aceptado implícito" o "todos los datos son de demo".
+>
+> Esta regla aplica a **todos los ambientes** (DEV, TEST, STAGING, PROD). Incluso si la base DEV solo tiene datos ficticios o de prueba, **aún así** se requiere la confirmación por escrito para generar hábito operativo y evitar que el comportamiento se normalice en entornos productivos.
+
+### 23.1 Ámbitos que DISPARAN la regla (lista NO exhaustiva)
+
+La confirmación explícita es obligatoria cuando el agente tenga que ejecutar, sugerir o preparar cualquiera de las siguientes operaciones:
+
+| Grupo | Operaciones Destructivas | Ejemplos Concretos |
+|---|---|---|
+| 🗑️ **Borrado total de datos de la BD** | `prisma migrate reset`, `prisma migrate reset --force`, `DROP SCHEMA`, `DROP DATABASE`, reinicio de volúmenes Postgres, `docker volume rm` de Postgres/Redis con datos persistentes. | `npx prisma migrate reset --force` |
+| 🔥 **Eliminación selectiva masiva** | SQL `TRUNCATE`, `DELETE FROM` sin `WHERE` o con `WHERE` que afecte toda la tabla, `prisma.model.deleteMany({})` vacío o de scope global. | `await prisma.user.deleteMany({})` · `TRUNCATE public.invoices, public.payroll_receipts RESTART IDENTITY;` |
+| ⚠️ **Operaciones con data loss potencial** | `prisma db push --accept-data-loss`, `ALTER TABLE ... DROP COLUMN` sin etapa backfill previa, `--force` en migraciones, `prisma migrate resolve --rolled-back` múltiples en cadena sin validación. | `npx prisma db push --accept-data-loss` |
+| 🔁 **Sobrescritura de datos existentes** | Cualquier `pg_restore --clean`, importe masivo CSV/XML que haga `INSERT ON CONFLICT DO UPDATE` sobre registros existentes, seed que usa `createMany` duplicado sin upsert. | `pg_restore --clean --dbname=platfi_intelligence_demo` |
+| 💾 **Acciones administrativas de reinicio de esquema** | `prisma migrate diff + db execute` destructivo, `pg_resetwal`, recreación de constraints PK/FK sin previa exportación, borrado de índices / vistas materializadas útiles sin reemplazo validado. | `DROP MATERIALIZED VIEW mv_fiscal_conciliacion_mensual;` sin CREATE posterior |
+
+### 23.2 Formato OBLIGATORIO de Confirmación (NO se aceptan respuestas cortas ambiguas)
+
+Antes de ejecutar **cualquier** operación destructiva, el agente **DEBE** presentar al usuario **en texto claro** los 5 acápites siguientes y esperar su **respuesta explícita por escrito** (una aseveración corta como "Sí, procede" **NO es suficiente**):
+
+```
+⚠️  SOLICITUD DE CONFIRMACIÓN EXPLÍCITA — OPERACIÓN DESTRUCTIVA SOBRE BASE DE DATOS
+
+  1. Ambiente afectado : (DEV / TEST / STAGING / PROD)
+  2. Base de datos     : (nombre DB, p. ej. platfi_intelligence_demo)
+  3. Operación a realizar : (nombre comando o acción exacta, 1 línea)
+  4. Qué datos SE PERDERÁN : (listado explícito tablas / scope · p. ej. users, companies,
+                                invoices, payroll_receipts, todas las filas)
+  5. Existe backup ANTES de ejecutar? : (SÍ / NO · ubicación backups/dev/...)
+
+  Para CONFIRMAR y proceder, responde EXACTAMENTE con 3 frases, cada una en su propia línea:
+
+     ACEPTO_EXPRESAMENTE_EL_BORRADO_DE_DATOS_EN_[NOMBRE_DB]
+     HE_LEIDO_QUE_ESTA_OPERACION_NO_ES_REVERSIBLE_SIN_BACKUP
+     AUTORIZO_AL_AGENTE_A_EJECUTAR_LA_OPERACION_[NOMBRE_OPERACION]
+```
+
+El agente **DEBE** bloquear la ejecución hasta que reciba las 3 frases completas. Si el usuario responde cualquier variante abreviada, debe volver a presentar la solicitud y explicar: *"Para proceder necesito las 3 frases de confirmación exactas; tu respuesta no cumple el formato AGENTS Regla 23.2"*.
+
+### 23.3 Las 3 Puertas OBLIGATORIAS (Protección Cumulativa · NO se salta ninguna)
+
+Incluso **después** de recibir la confirmación escrita, el agente **DEBE** ejecutar **forzosamente** los siguientes pasos en estricto orden. Si cualquiera falla, ABORTA:
+
+1. **⛨ Puerta 1 · Backup inmediato OBLIGATORIO:**
+   - Si el ambiente es DEV → ejecutar **antes de nada**: `npm run db:backup -- -Tag "ANTES_[OPERACION]_[FECHA_HORA]"`
+   - Si el ambiente es TEST / STAGING / PROD → validar que exista un snapshot/backup realizado en las últimas 24 horas y **nombrar el archivo exacto** o ID del snapshot al usuario. En caso de no existir, **ABORTAR**.
+   - Registro obligatorio: imprimir al usuario el nombre exacto del .dump / snapshot y su ruta absoluta antes de continuar.
+
+2. **⛨ Puerta 2 · Ejecutar el comando DESTRUCTIVO (Reset/TRUNCATE/DELETE/etc.):**
+   - Usar siempre el wrapper oficial `npm run reset:db:safe` para operaciones de tipo "reset completo" en DEV (no comandos `prisma migrate reset` a pelo).
+   - Si la operación es un SQL custom (TRUNCATE/DROP): envolver en `BEGIN; ...; COMMIT;` con `SAVEPOINT` de seguridad intermedio para poder `ROLLBACK` si algo sale mal en la misma sesión.
+   - Prohibido flags `--yes`, `-y`, o flags de "autoacepto" en comandos destructivos a menos que el usuario lo haya añadido en su confirmación explícita.
+
+3. **⛨ Puerta 3 · Repoblamiento / Cross-check post-operación:**
+   - Si la operación borró todo → ejecutar **automáticamente** el seed correspondiente:
+     - DEV con data demo → `npm run seed:dev` (onboarding + 500 CFDIs + refresh MVs).
+     - DEV sin data demo → `npm run onboarding:full` (solo estructura + usuario inicial).
+     - TEST → `npm run db:test:seed` fixtures.
+   - Cross-check obligatorio: imprimir al usuario **al menos 4 conteos** de tablas críticas para que confirme visualmente que quedó correcto:
+     ```
+     users = 2, companies = 7, members_approved = 2, mv_fiscal_conciliacion_mensual rows = NNN
+     ```
+   - Si los conteos difieren del esperado (p. ej. users = 0 cuando debería ser 2) → notificar y ofrecer rollback inmediato con `npm run db:restore`.
+
+### 23.4 Prevención de "Error de Músculo" (Muscle Memory)
+
+- **PROHIBICIÓN EXPLÍCITA:** El agente **NO DEBE** ejecutar operaciones destructivas en la misma respuesta que diagnostica un error o presenta un plan. La secuencia debe ser SIEMPRE: (1) Diagnóstico → (2) Plan de fix (incluye la confirmación 23.2) → (3) **ESPERAR** confirmación → (4) Puerta 1 Backup → (5) Puerta 2 Ejecución → (6) Puerta 3 Repoblamiento.
+- **Prohibido** concatenar en una sola sesión "backup + reset + seed" sin el artefacto de confirmación escrito, por mucha urgencia que exprese el usuario (si realmente hay urgencia, le tomará ≤ 30 segundos escribir las 3 frases).
+- **Aplicación a Pruebas/Tests:** Incluso si la operación se realiza sobre la base de datos de TEST (puerto 5434) o si los datos son fixtures descartables, se sigue la misma regla para generar el hábito y prevenir que un typo de puerto (`5434` → `5433`) borre DEV sin aviso.
+
+---
+
+## 🏗️ 24. Entrega Oficial de Base de Datos Vacía para Salida a Producción
+
+> **Regla Obligatoria:** Cuando el usuario exprese frases como *"voy a salir a producción"*, *"necesito la DB vacía para PRD"*, *"entregar base limpia"*, *"inicializar prod sin datos demo"* o equivalentes, el agente **DEBE** seguir estrictamente el siguiente procedimiento estandarizado y **NO** debe "vaciar tablas manualmente" ni hacer DELETE/TRUNCATE ad-hoc sin artefacto de entrega. El producto final de esta regla es **un script oficial y una documentación de firma** que el usuario puede archivar para auditaría / QA sign-off.
+
+### 24.1 Alcance y Definición: "Base de Datos Vacía de Producción"
+
+Se considera "base vacía lista para PROD" a una base de datos PostgreSQL que cumple TODAS estas condiciones:
+1. **Estructura 100% alineada al `prisma/schema.prisma`**: 35+ migraciones Prisma aplicadas, `_prisma_migrations` consistente, sin desvíos de schemas entre DEV y PRD.
+2. **Índices, Constraints, Vistas y Funciones Operativas**:
+   - MV `mv_fiscal_conciliacion_mensual` creada (sin datos), UNIQUE INDEX + índice compuesto INCLUDE(18).
+   - 4 Partial Indexes del hardening fiscal aplicados.
+   - 6 MVs RH + función `refresh_hr_materialized_views(boolean)` compilada.
+3. **Datos MÍNIMOS requeridos (≠ datos demo)**:
+   - ✅ 1 Super Administrador (contraseña que el usuario DEFINA en ese momento, NUNCA usar `Admin_Itcomplements_Demo_2026!`).
+   - ✅ 1 Organización (vacía, sin nombre "Demo", sin onboarding completado por defecto).
+   - ✅ Roles RBAC mínimos (`SUPER_ADMIN`, `ADMIN`, `MEMBER`, `VIEWER`) enums Prisma.
+   - ✅ Tabla `granularPermissions` con switches poblados por módulo (pero 0 empresas, 0 usuarios miembros, 0 CFDIs).
+4. **PROHIBICIÓN ESTRICTA (NO puede contener la base PRD inicial):**
+   - ❌ 0 filas de CFDIs / facturas / nóminas demo.
+   - ❌ 0 empresas seed de los 7 RFCs target.
+   - ❌ 0 usuarios adicionales (solo el Super Admin inicial de PROD).
+   - ❌ 0 registros `payroll_*`, `invoices`, `sat_invoices`, `import_runs` o `mass_downloads` demo.
+   - ❌ Contraseñas literales / tokens / secrets hardcodeados en migraciones o seed.
+
+### 24.2 Procedimiento de 7 Pasos (Cadena de Custodia / Firma por Ambiente)
+
+El agente **DEBE** ejecutar y documentar estos pasos en orden cuando llegue el momento:
+
+```
+Fase A · Preparación (1-4):
+ 1. Tomar snapshot FINAL del estado de DEV que se desea reflejar en PRD:
+     npm run db:backup -- -Tag "FINAL_DEV_PRE_PRD_DEPLOY_YYYYMMDD"
+
+ 2. Validar migraciones:
+     NODE_ENV=production npx prisma migrate deploy  contra una DB PRD vacía (template0),
+     asegurando: "All migrations applied successfully" + 0 warnings P3008/P3018.
+
+ 3. Aplicar scripts SQL NO-migraciones (MV fiscal + hardening):
+     scripts/sql/20260902203000_mv_fiscal_conciliacion_mensual.sql
+     scripts/sql/20260902203100_fiscal_hardening_scale.sql
+
+ 4. Cross-check Estructura (ANTES de insertar datos mínimos):
+     ✅ 12 tablas public.payroll_* existentes en information_schema.tables
+     ✅ MV mv_fiscal_conciliacion_mensual + 2 índices (to_regclass)
+     ✅ 6 MVs RH + función refresh_hr_materialized_views
+     ✅ Todas las constraints FK/PK definidas en schema.prisma
+
+Fase B · Inicialización Mínima (5):
+ 5. Ejecutar seed "PROD MÍNIMO" (NO ejecutar npm run seed:dev ni seed 500 CFDIs):
+       scripts/seed-production-minimal.mts  (véase 24.3)
+    Este seed DEBE pedirle al usuario en tiempo real:
+       - Nombre de la organización real de PROD
+       - Email real del Super Admin inicial
+       - Password TEMPORAL (que debe ser cambiada en el primer login)
+       - Opcionalmente: Nombre / RFC / CIF de la primera empresa a incorporar (se crea en status DRAFT)
+
+ 6. Cross-check Mínimos Seguridad:
+      users = 1 (el Super Admin PRD)
+      organizations = 1 (nombre real del cliente/grupo)
+      companies = 0 ó 1 DRAFT (si se agregó la primera empresa)
+      members_approved = 1
+      invoices + payroll_receipts + payroll_receptors = 0 C/U
+      accounts tipo credentials = 1 (solo admin PRD)
+      sessions = 0
+
+Fase C · Entregables y Firma (6-7):
+ 7. Generar en reports/ los 4 artefactos de firma obligatorios:
+       reports/prd-db-init-YYYYMMDD/
+         ├─ 01_Resumen_Entrega_BD_Vacia_PROD.html          (Resumen ejecutivo no técnico)
+         ├─ 02_Inventario_Estructura_Tablas_MV_PROD.csv    (1 fila por tabla/índice/MV)
+         ├─ 03_Matriz_Riesgos_Residuales_QA_Sign_Off.html  (Riesgos residuales post-entrega)
+         └─ 04_Checklist_QA_Sign_Off_PROD.csv              (Checklist de aprobación QA + Director)
+```
+
+### 24.3 Script Oficial: `scripts/seed-production-minimal.mts`
+
+Cuando se solicite la entrega de DB vacía, el agente **DEBE** crear (o actualizar, si ya existe) este script con las siguientes invariantes:
+
+- **No importa módulos de seeds DEV** (no puede reutilizar el arreglo de 7 RFCs demo ni las contraseñas literales del entorno DEV).
+- Solicita 3 inputs al usuario al ejecutar (ya sea por prompt o por flags): `--org-name`, `--admin-email`, `--admin-password-temp`.
+- Aplica validaciones rigurosas:
+  - Contraseña ≥ 16 chars, 4 clases (mayúscula, minúscula, dígito, símbolo).
+  - Email del admin **NO coincida** con `admin@itcomplements.com` o `rtorreh@itcomplements.com` (usuarios demo).
+  - Nombre organización **NO sea** `Grupo Demo ITComplements` o similares.
+- Usa **transacción atómica** (`prisma.$transaction`) para que si algo falla no queden organizaciones huérfanas.
+- Registra en `audit_logs` o tabla equivalente el evento con: `event = 'DB_PROD_INITIALIZED'`, actor, timestamp, hash SHA-256 del script ejecutado.
+
+### 24.4 Check de Seguridad Anti-Escapes de Datos
+
+Como parte del paso 6 de la regla, el agente **DEBE** ejecutar y reportar los resultados de estas 4 queries de auditoría sobre la base PRD:
+
+```sql
+-- A) Total de datos demo residuales DEV que se habrían colado
+SELECT 'DEMO_DATA_USERS'  AS esc, COUNT(*) AS c FROM public.users  WHERE email IN ('admin@itcomplements.com','rtorreh@itcomplements.com');
+SELECT 'DEMO_DATA_COMP'   AS esc, COUNT(*) AS c FROM public.companies WHERE rfc IN ('ODE8604257UA','NMP7502257ZA','QA2414521FJW','QA27383427M8','QA27301176NC','QB2983782QT1','QB26123630CU');
+SELECT 'DEMO_DATA_CFDIS'  AS esc, COUNT(*) AS c FROM public.payroll_receipts WHERE source = 'SEED_DEMO_500_CFDIS_V1';
+SELECT 'DEMO_DATA_INVOICES'  AS esc, COUNT(*) AS c FROM public.invoices WHERE source ILIKE '%demo%';
+```
+
+Cada query debe devolver **COUNT = 0**. De haber cualquier fila >0, se reporta como **NO APTO PARA PRODUCCIÓN** y se limpia (con la confirmación obligatoria de la Regla 23.2 por ser una operación borrado selectivo).
+
+### 24.5 Rollback del Paso de Entrega
+
+Si durante el cross-check final se detectan datos demo residuales o estructura inconsistente:
+1. **NO hay que borrar tablas individualmente con TRUNCATE.**
+2. Se recomienza la cadena desde el paso 2 (deploy migraciones) contra una DB PRD **nueva, recién creada desde `template0`** para asegurar pureza.
+3. Si el entorno PRD es gestionado (AWS RDS, GCP Cloud SQL, Azure PostgreSQL), se emite además una instrucción de revocar conexiones superuser/owner no autorizadas y activar `rds.restrict_password_profiles` o política equivalente.
+
+---
+
+

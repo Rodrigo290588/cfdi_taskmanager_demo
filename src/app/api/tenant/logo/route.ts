@@ -60,7 +60,7 @@ function validateMagicBytes(arrayBuffer: ArrayBuffer, ext: string): boolean {
 }
 
 async function ensureUploadsDirReal(): Promise<string> {
-  const rawDir = path.join(process.cwd(), 'public', 'uploads', 'logos')
+  const rawDir = path.join(/*turbopackIgnore: true*/ process.cwd(), 'public', 'uploads', 'logos')
   await mkdir(rawDir, { recursive: true })
   return await realpath(rawDir)
 }

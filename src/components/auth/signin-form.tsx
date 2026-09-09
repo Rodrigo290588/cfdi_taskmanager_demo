@@ -11,13 +11,70 @@ import { Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { signInSchema } from '@/schemas/auth'
 import { safeRedirectUrl } from '@/lib/security'
 
+type CredentialErrorCode =
+  | 'AuthCredentialError'
+  | 'CredentialsInvalid'
+  | 'CredentialsEmptyPassword'
+  | 'CredentialsAccessPending'
+  | 'CredentialsRateLimit'
+  | 'CredentialsConfiguration'
+
+const ERROR_CODE_TO_MESSAGE: Record<CredentialErrorCode | string, string> = {
+  AuthCredentialError: 'Credenciales inválidas. Verifica tu correo y contraseña.',
+  CredentialsInvalid: 'Credenciales inválidas. Verifica tu correo y contraseña.',
+  CredentialsEmptyPassword: 'La cuenta no tiene contraseña configurada. Usa "Olvidé mi contraseña" para crear una.',
+  CredentialsAccessPending: 'Tu cuenta está creada pero tu acceso a la organización aún no ha sido aprobado. Contacta al administrador.',
+  CredentialsRateLimit: 'Has excedido el número de intentos de inicio de sesión. Inténtalo de nuevo en unos minutos.',
+  CredentialsConfiguration: 'No se pudo conectar con el servicio de autenticación. Intenta de nuevo.',
+}
+
+function messageFromErrorCode(code: string | undefined | null, fallbackRaw: string): string {
+  if (!code) return fallbackRaw
+  const known = ERROR_CODE_TO_MESSAGE[code]
+  if (known) return known
+  return code && code.length > 0 && code.length < 180 ? code : fallbackRaw
+}
+
+function parseErrorFromUrlString(urlOrRaw: string | null | undefined): {
+  errorType: string | null
+  errorCode: string | null
+} {
+  if (!urlOrRaw) return { errorType: null, errorCode: null }
+  try {
+    if (urlOrRaw.startsWith('http') || urlOrRaw.includes('?')) {
+      const u = new URL(urlOrRaw, 'http://localhost')
+      return {
+        errorType: u.searchParams.get('error'),
+        errorCode: u.searchParams.get('code'),
+      }
+    }
+  } catch { /* ignore */ }
+  return { errorType: urlOrRaw || null, errorCode: null }
+}
+
 export function SignInForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
+  const derivedUrlError = (function parseInitialUrlError() {
+    const qError = searchParams?.get('error')
+    const qCode = searchParams?.get('code')
+    if (!qError) return null
+    if (qError === 'Configuration' || qError?.includes('Configuration')) {
+      return messageFromErrorCode('CredentialsConfiguration', '')
+    }
+    if (qError === 'CredentialsSignin' || qError.startsWith('CredentialsSignin')) {
+      return messageFromErrorCode(qCode, 'Credenciales inválidas. Verifica tu correo y contraseña.')
+    }
+    if (qError && qError.length > 0) {
+      return messageFromErrorCode(qCode, qError)
+    }
+    return null
+  })()
+
+  const [error, setError] = useState<string>(derivedUrlError || '')
   const [isLoading, setIsLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,12 +99,37 @@ export function SignInForm() {
         redirect: false,
       })
 
-      if (result?.error) {
-        const message = (result?.error || '').toString()
-        if (message?.includes('Configuration') || message === 'Configuration' || !message) {
-          setError('No se pudo conectar con el servicio de autenticación. Intenta de nuevo.')
+      if (result?.url && result.url.includes('error=')) {
+        const parsed = parseErrorFromUrlString(result.url)
+        if (parsed.errorType === 'Configuration' || parsed.errorType?.includes('Configuration')) {
+          setError(messageFromErrorCode('CredentialsConfiguration', ''))
+        } else if (parsed.errorType === 'CredentialsSignin' || parsed.errorType?.startsWith('CredentialsSignin')) {
+          setError(messageFromErrorCode(parsed.errorCode, 'Credenciales inválidas. Verifica tu correo y contraseña.'))
+        } else if (parsed.errorType && parsed.errorType.length > 0 && !result?.ok) {
+          setError(messageFromErrorCode(parsed.errorCode, parsed.errorType))
+        } else if (result?.error) {
+          const raw = (result.error || '').toString().trim()
+          setError(messageFromErrorCode(raw, raw || 'No se pudo iniciar sesión. Intenta de nuevo.'))
         } else {
-          setError(message)
+          const callback = safeRedirectUrl(searchParams?.get('callbackUrl'))
+          router.push(callback)
+          router.refresh()
+        }
+      } else if (result?.error) {
+        const raw = (result?.error ?? '').toString().trim()
+        if (!raw || raw === 'Configuration' || raw.includes('Configuration')) {
+          setError(messageFromErrorCode('CredentialsConfiguration', ''))
+        } else if (raw === 'CredentialsSignin' || raw.startsWith('CredentialsSignin:')) {
+          const rawMsg = raw.startsWith('CredentialsSignin:')
+            ? raw.slice('CredentialsSignin:'.length).trim()
+            : ''
+          setError(
+            rawMsg && rawMsg.length > 0
+              ? rawMsg
+              : 'Credenciales inválidas. Verifica tu correo y contraseña.'
+          )
+        } else {
+          setError(raw)
         }
       } else {
         const callback = safeRedirectUrl(searchParams?.get('callbackUrl'))

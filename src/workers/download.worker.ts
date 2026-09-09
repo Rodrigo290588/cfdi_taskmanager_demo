@@ -22,7 +22,7 @@ export function setupDownloadWorker() {
       const buffer = Buffer.from(paqueteB64, 'base64')
       
       // Asegurarnos que exista la carpeta
-      const downloadsDir = path.join(process.cwd(), 'downloads')
+      const downloadsDir = path.join(/*turbopackIgnore: true*/ process.cwd(), 'downloads')
       if (!fs.existsSync(downloadsDir)) {
         fs.mkdirSync(downloadsDir, { recursive: true })
       }

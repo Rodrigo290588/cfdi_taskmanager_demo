@@ -12,7 +12,13 @@ const FACTRONICA_REST_USER = process.env.FACTRONICA_REST_USER || 'SCM091023TW3'
 const FACTRONICA_REST_PASSWORD = process.env.FACTRONICA_REST_PASSWORD || 'FAC.scm@092013'
 const FACTRONICA_REST_VERSION = '2.5'
 const FACTRONICA_TIMEOUT_MS = 5_000
-const FACTRONICA_LOG_FILE_PATH = path.join(process.cwd(), 'logs', 'factronica-pac.log')
+let _FACTRONICA_LOG_FILE_PATH: string | undefined
+function getFactronicaLogFilePath(): string {
+  if (!_FACTRONICA_LOG_FILE_PATH) {
+    _FACTRONICA_LOG_FILE_PATH = path.join(/*turbopackIgnore: true*/ process.cwd(), 'logs', 'factronica-pac.log')
+  }
+  return _FACTRONICA_LOG_FILE_PATH
+}
 
 export const FACTRONICA_PAC_ALLOWED_HOSTS: ReadonlySet<string> = new Set([
   'pac.factronica.mx',
@@ -145,10 +151,11 @@ function formatLogValue(value: unknown) {
 }
 
 async function appendPacLogSection(title: string, value: unknown) {
-  await mkdir(path.dirname(FACTRONICA_LOG_FILE_PATH), { recursive: true })
+  const logFilePath = getFactronicaLogFilePath()
+  await mkdir(path.dirname(logFilePath), { recursive: true })
   const timestamp = new Date().toISOString()
   const content = `[${timestamp}] ${title}\n${formatLogValue(value)}\n\n`
-  await appendFile(FACTRONICA_LOG_FILE_PATH, content, 'utf8')
+  await appendFile(logFilePath, content, 'utf8')
 }
 
 function normalizeErrorMessages(value: unknown) {

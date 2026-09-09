@@ -84,9 +84,7 @@ describe('[EXT SAST] EXT-010 · withNoCacheHeaders wrapper private,no-store HSTS
     const dummyCtx: MachineRequestContext = { clientId: 'c1', organizationId: 'o1', scopes: [] }
 
     const handler = async (
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _req: NextReqType,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _ctx: MachineRequestContext
     ): Promise<NextResType> => {
       const resp: MockResponse = {

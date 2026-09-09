@@ -599,7 +599,7 @@ export async function POST() {
       'Actualmente cada endpoint /api/dev/X tiene que implementar su propia guardia NODE_ENV. Esto es propenso a olvidos cuando se agrega un dev/X nuevo. El fix correcto es middleware-level: bloquear todas las rutas /api/dev/* cuando NODE_ENV=production, sin depender de que el handler individual lo haga.',
     exploit:
       'Agregar una nueva ruta /api/dev/reset-smtp sin guardia y subir a producción. Atacante hace POST /api/dev/reset-smtp y borra configuración SMTP global sin credenciales.',
-    fixedCode: `// src/middleware.ts (agregar regla nueva)
+    fixedCode: `// src/proxy.ts (agregar regla nueva)
 const BLOCKED_PATHS_PROD: Array<RegExp> = [
   /^\\/api\\/dev(\\/.*)?$/   // Bloquea todo /api/dev/* en production
 ]

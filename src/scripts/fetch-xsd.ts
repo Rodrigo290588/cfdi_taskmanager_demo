@@ -3,7 +3,7 @@ import path from 'path';
 
 async function main() {
   const url = 'https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/SolicitaDescargaService.svc?xsd=xsd0';
-  const outputPath = path.resolve(process.cwd(), 'solicita_descarga.xsd');
+  const outputPath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), 'solicita_descarga.xsd');
 
   console.log(`Fetching XSD from ${url}...`);
 

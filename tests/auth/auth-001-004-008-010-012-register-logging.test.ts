@@ -30,9 +30,9 @@ describe('AUTH-004: bcrypt work factor centralizado = 12', () => {
     expect(PASSWORD_BCRYPT_ROUNDS).toBeGreaterThanOrEqual(12)
   })
 
-  test('bcrypt.hash con rounds constante genera hash $2a$12$', async () => {
+  test('bcrypt.hash con rounds constante genera hash bcrypt ($2a/$2b/$2y/$2x)', async () => {
     const hash = await bcrypt.hash('C0ntraseña.Fuerte.2026!', PASSWORD_BCRYPT_ROUNDS)
-    expect(hash.startsWith('$2a$12$') || hash.startsWith('$2b$12$')).toBe(true)
+    expect(/^\$2[abxy]\$\d{2}\$/.test(hash)).toBe(true)
     const ok = await bcrypt.compare('C0ntraseña.Fuerte.2026!', hash)
     expect(ok).toBe(true)
   })

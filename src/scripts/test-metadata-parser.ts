@@ -9,7 +9,7 @@ async function runTest() {
   await prisma.satMetadata.deleteMany()
   console.log('Registros previos de SatMetadata eliminados.')
 
-  const filePath = path.join(process.cwd(), 'Ejemplo_Archivo_metadatos_SAT.txt')
+  const filePath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'Ejemplo_Archivo_metadatos_SAT.txt')
   
   console.log(`Leyendo archivo: ${filePath}`)
   console.time('Tiempo de procesamiento')

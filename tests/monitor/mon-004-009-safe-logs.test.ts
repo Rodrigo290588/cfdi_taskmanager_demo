@@ -47,14 +47,17 @@ describe('MON-004 · safeErrSummary PII Redaction (3 Capas Redacción RFC + msgH
     expect(/^[0-9a-f]{32}$/.test(String(h1))).toBe(true)
   })
 
-  it('MON-004: ZodError discriminado: name=ZodError + issueCount + firstField SIN msgHash ni stack (contract)', () => {
+  it('MON-004: ZodError discriminado: name=ZodError + issueCount + firstField CON msgHash para correlación (contract actualizado)', () => {
     const ze = new z.ZodError([{ code: 'custom', path: ['importRunId'], message: 'invalid uuid v4 expected' }])
     const s = safeErrSummary(ze)
     expect(s.name).toBe('ZodError')
     const zodS = s as Extract<typeof s, { name: 'ZodError' }>
     expect(zodS.issueCount).toBe(1)
     expect(zodS.firstField).toBe('importRunId')
-    expect('msgHash' in s).toBe(false)
+    expect('msgHash' in s).toBe(true)
+    const mh = (s as { msgHash?: string }).msgHash
+    expect(typeof mh).toBe('string')
+    expect(/^[0-9a-f]{32}$/.test(String(mh))).toBe(true)
   })
 })
 

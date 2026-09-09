@@ -46,7 +46,8 @@ import {
   Users,
   Scale,
   Activity,
-  XCircle
+  XCircle,
+  Landmark
 } from "lucide-react"
 
 function isAbortError(error: unknown) {
@@ -159,6 +160,11 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
       // Check if saved company is still valid in the new list
       const isValidSaved = savedCompany && data.companies?.some((c: FiscalEntity) => c.id === savedCompany?.id)
+
+      // Hard-invalidate stale localStorage entry to avoid state corruption
+      if (savedCompany && !isValidSaved) {
+        try { localStorage.removeItem('selectedCompany') } catch {}
+      }
 
       if (isValidSaved && savedCompany) {
         // Find the full updated object from the list to ensure freshness
@@ -610,11 +616,24 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               </CollapsibleTrigger>
               <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
                 <Link
-                  href="/dashboard_nomina"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
+                  href="/dashboard/rh"
+                  className={cn(
+                    "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                    pathname === '/dashboard/rh' || pathname.startsWith('/dashboard/rh/') ? "bg-white/10 text-white" : ""
+                  )}
                 >
-                  <CloudDownload className="h-4 w-4" />
-                  <span>Dashboard</span>
+                  <BarChart3 className="h-4 w-4" />
+                  <span>Tablero Recursos Humanos</span>
+                </Link>
+                <Link
+                  href="/dashboard/nomina/fiscal"
+                  className={cn(
+                    "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
+                    pathname === '/dashboard/nomina/fiscal' || pathname.startsWith('/dashboard/nomina/fiscal/') ? "bg-white/10 text-white" : ""
+                  )}
+                >
+                  <Landmark className="h-4 w-4" />
+                  <span>Tablero Contabilidad y Fiscal</span>
                 </Link>
               </CollapsibleContent>
             </Collapsible>

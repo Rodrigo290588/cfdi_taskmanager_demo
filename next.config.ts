@@ -4,6 +4,21 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     'jalapeno-roping-theology.ngrok-free.dev'
   ],
+  outputFileTracingExcludes: {
+    '*': [
+      'backups/**',
+      'reports/**',
+      'scripts/**',
+      'src/scripts/**',
+      '.tmp/**',
+      'java-client/target/**',
+      'java-client/src/**/*.java',
+      '.next/cache/**',
+      '.next/turbo/**',
+      'node_modules/.cache/**',
+      'test-results/**'
+    ]
+  },
   async headers() {
     return [
       {

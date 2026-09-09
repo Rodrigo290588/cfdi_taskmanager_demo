@@ -174,6 +174,7 @@ export async function getPrimaryApprovedMembership(
     where: {
       userId,
       status: 'APPROVED',
+      organization: { onboardingCompleted: true },
     },
     include: { organization: true },
     take: Math.max(1, Math.min(200, take | 0)),

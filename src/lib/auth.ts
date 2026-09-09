@@ -1,4 +1,5 @@
 import NextAuth, { User, NextAuthConfig, Account } from "next-auth"
+import { CredentialsSignin } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
@@ -15,6 +16,22 @@ import { getPublicHostsAllowlist, safeRedirectUrl } from "@/lib/security"
 import { AUTH_RATE_LIMITS } from "@/lib/rate-limit"
 import { safeErrSummarySat } from "@/lib/sat-gate-helpers"
 import { PASSWORD_BCRYPT_ROUNDS, PASSWORD_REHASH_ON_LOGIN, MIN_BCRYPT_ROUNDS } from "@/lib/auth-config"
+
+class AuthCredentialError extends CredentialsSignin {
+  code: CredentialErrorCode = "CredentialsInvalid"
+  constructor(code: CredentialErrorCode, message?: string) {
+    super()
+    this.code = code
+    if (message) this.message = message
+  }
+}
+
+type CredentialErrorCode =
+  | "CredentialsInvalid"
+  | "CredentialsEmptyPassword"
+  | "CredentialsAccessPending"
+  | "CredentialsRateLimit"
+  | "CredentialsConfiguration"
 
 const DUMMY_CACHE_TTL_MS = 10 * 60 * 1000
 let DUMMY_LAST_ROTATE_TS = 0
@@ -53,6 +70,7 @@ function isHostTrustedStrict(hostHeader: string | null | undefined): boolean {
 }
 
 const authOptionsBase: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   adapter: PrismaAdapter(prisma) as Adapter,
   trustHost: false,
   useSecureCookies: process.env.NODE_ENV === "production",
@@ -86,23 +104,22 @@ const authOptionsBase: NextAuthConfig = {
         })
 
         if (!parsedCredentials.success) {
-          throw new Error("Credenciales inválidas. Verifica tu correo y contraseña.")
+          throw new AuthCredentialError("CredentialsInvalid")
         }
 
         const { email, password } = parsedCredentials.data
         const normalizedEmail = email.toLowerCase().trim()
 
         try {
-          const { success, retryAfterMs } = await rateLimit(
+          const { success } = await rateLimit(
             AUTH_RATE_LIMITS.signinEmail.key + ":" + normalizedEmail,
             { interval: AUTH_RATE_LIMITS.signinEmail.windowMs, limit: AUTH_RATE_LIMITS.signinEmail.limit }
           )
           if (!success) {
-            const waitMin = Math.ceil((retryAfterMs || 0) / 60000)
-            const human = waitMin > 0 ? ` Inténtalo de nuevo en ${Math.ceil(waitMin)} minutos.` : " Inténtalo de nuevo en unos minutos."
-            throw new Error("Has excedido el número de intentos de inicio de sesión." + human)
+            throw new AuthCredentialError("CredentialsRateLimit")
           }
         } catch (rateError) {
+          if (rateError instanceof AuthCredentialError) throw rateError
           const safe = safeErrSummarySat(rateError)
           console.warn("[auth:cred-rate] rate limit unavailable skip throttle:", safe.name, safe.incidentFingerprint)
         }
@@ -122,8 +139,8 @@ const authOptionsBase: NextAuthConfig = {
             const s2 = safeErrSummarySat(bcryptErr)
             console.error("[auth:bcrypt-dummy] timing protect INACTIVA:", s2.name, s2.incidentFingerprint)
           }
-          if (!user) throw new Error("Credenciales inválidas. Verifica tu correo y contraseña.")
-          throw new Error("La cuenta no tiene contraseña configurada. Usa 'Olvidé mi contraseña' para crear una.")
+          if (!user) throw new AuthCredentialError("CredentialsInvalid")
+          throw new AuthCredentialError("CredentialsEmptyPassword")
         }
 
         const isPasswordValid = await bcrypt.compare(password, user.password)
@@ -149,7 +166,7 @@ const authOptionsBase: NextAuthConfig = {
         }
 
         if (!isPasswordValid) {
-          throw new Error("Credenciales inválidas. Verifica tu correo y contraseña.")
+          throw new AuthCredentialError("CredentialsInvalid")
         }
 
         if (user.systemRole !== "SUPER_ADMIN") {
@@ -158,7 +175,7 @@ const authOptionsBase: NextAuthConfig = {
             select: { id: true, status: true }
           })
           if (!approvedMembership) {
-            throw new Error("Tu cuenta está creada pero tu acceso a la organización aún no ha sido aprobado o la invitación expiró. Contacta al administrador.")
+            throw new AuthCredentialError("CredentialsAccessPending")
           }
         }
 
@@ -184,6 +201,19 @@ const authOptionsBase: NextAuthConfig = {
         token.systemRole = (user as { systemRole?: unknown }).systemRole as JWT["systemRole"]
         token.onboardingStep = (user as { onboardingStep?: unknown }).onboardingStep as JWT["onboardingStep"]
         token.onboardingData = (user as { onboardingData?: unknown }).onboardingData as JWT["onboardingData"]
+        try {
+          const mems = await prisma.member.findMany({
+            where: {
+              userId: user.id!,
+              status: "APPROVED",
+              organization: { onboardingCompleted: true },
+            },
+            select: { organizationId: true, role: true },
+          })
+          token.memberships = mems as JWT["memberships"]
+        } catch {
+          // JWT mint no debe hard-fallar por DB transient errors.
+        }
       }
       return token
     },
@@ -195,6 +225,9 @@ const authOptionsBase: NextAuthConfig = {
         ;(session.user as { systemRole: unknown }).systemRole = token.systemRole
         ;(session.user as { onboardingStep: unknown }).onboardingStep = token.onboardingStep
         ;(session.user as { onboardingData: unknown }).onboardingData = token.onboardingData
+        if (token.memberships) {
+          ;(session.user as { memberships?: unknown }).memberships = token.memberships
+        }
       }
       return session
     },
@@ -234,6 +267,23 @@ const authOptionsBase: NextAuthConfig = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
   const host = request?.headers?.get?.("host")
-  const trusted = isHostTrustedStrict(host)
-  return { ...authOptionsBase, trustHost: trusted }
+  const normalizedHost = (host ?? "").trim().toLowerCase()
+  const hostnameOnly = normalizedHost.split(":")[0]
+  const isLocalDevHost =
+    normalizedHost === "localhost:3000" ||
+    normalizedHost === "localhost:3001" ||
+    normalizedHost === "127.0.0.1:3000" ||
+    normalizedHost === "127.0.0.1:3001" ||
+    hostnameOnly === "localhost" ||
+    hostnameOnly === "127.0.0.1" ||
+    hostnameOnly === "::1"
+  const strictlyTrusted = isHostTrustedStrict(host)
+  const isProd = process.env.NODE_ENV === "production"
+  let trustHost: boolean
+  if (isProd) {
+    trustHost = strictlyTrusted
+  } else {
+    trustHost = strictlyTrusted || isLocalDevHost || process.env.AUTH_TRUST_HOST === "true"
+  }
+  return { ...authOptionsBase, trustHost }
 })
