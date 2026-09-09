@@ -265,6 +265,7 @@ model Invoice {
   complementAttributes              InvoiceComplementAttribute[]
   paymentComplementDetailsAsPayment InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailPaymentInvoice")
   paymentComplementDetailsAsRelated InvoicePaymentComplementDetail[] @relation("InvoicePaymentComplementDetailRelatedInvoice")
+  payrollReceipt                     PayrollReceipt?
 
   @@index([issuerFiscalEntityId])
   @@index([issuerRfc])
@@ -451,6 +452,7 @@ model SatInvoice {
   updatedAt         DateTime      @updatedAt @map("updated_at")
   fiscalEntity      FiscalEntity  @relation(fields: [fiscalEntityId], references: [id], onDelete: Cascade)
   user              User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payrollReceipt    PayrollReceipt?
 
   @@index([fiscalEntityId])
   @@index([issuerRfc])
@@ -1142,4 +1144,244 @@ model Cfdi {
   sustituidoPor Cfdi[] @relation("Sustitucion")
 
   @@map("cfdis")
+}
+
+// ============================================================
+// COMPLEMENTO NÓMINA 1.2 SAT — Modelo Relacional Optimizado
+// Extraído por pipeline ETL asíncrono. NUNCA se parsea XML en
+// tiempo real durante el render del dashboard.
+// ============================================================
+
+model PayrollReceipt {
+  id                              String                           @id @default(cuid())
+  invoiceId                       String?                          @unique @map("invoice_id")
+  satInvoiceId                    String?                          @unique @map("sat_invoice_id")
+  organizationId                  String                           @map("organization_id")
+  companyId                       String                           @map("company_id")
+  fiscalEntityId                  String                           @map("fiscal_entity_id")
+  uuid                            String                           @unique
+  version                         String                           @default("1.2")
+  tipoNomina                      String                           @map("tipo_nomina")
+  fechaPago                       DateTime                         @map("fecha_pago") @db.Date
+  fechaInicialPago                DateTime                         @map("fecha_inicial_pago") @db.Date
+  fechaFinalPago                  DateTime                         @map("fecha_final_pago") @db.Date
+  numDiasPagados                  Decimal                          @map("num_dias_pagados") @db.Decimal(10, 2)
+  fechaEmision                    DateTime                         @map("fecha_emision")
+  departamento                    String?                          @map("departamento")
+  clabe                           String?                          @map("clabe")
+  banco                           String?                          @map("banco")
+  totalPercepciones               Decimal                          @map("total_percepciones") @db.Decimal(18, 6) @default(0)
+  totalDeducciones                Decimal                          @map("total_deducciones") @db.Decimal(18, 6) @default(0)
+  totalOtrosPagos                 Decimal?                         @map("total_otros_pagos") @db.Decimal(18, 6) @default(0)
+  createdAt                       DateTime                         @default(now()) @map("created_at")
+  updatedAt                       DateTime                         @updatedAt @map("updated_at")
+
+  invoice                         Invoice?                         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  satInvoice                      SatInvoice?                      @relation(fields: [satInvoiceId], references: [id], onDelete: Cascade)
+  receptor                        PayrollReceptor?
+  subContrataciones               PayrollSubContratacion[]
+  percepciones                    PayrollPercepcion[]
+  horasExtra                      PayrollHorasExtra[]
+  accionesOTitulos                PayrollAccionesOTitulos?
+  jubilacionPensionRetiro         PayrollJubilacionPensionRetiro?
+  separacionIndemnizacion         PayrollSeparacionIndemnizacion?
+  deducciones                     PayrollDeduccion[]
+  otrosPagos                      PayrollOtroPago[]
+  subsidioAlEmpleo                PayrollSubsidioAlEmpleo?
+  incapacidades                   PayrollIncapacidad[]
+
+  @@index([organizationId, companyId, fechaPago, departamento], map: "payroll_receipts_org_company_date_dept_idx")
+  @@index([organizationId, fiscalEntityId, tipoNomina, fechaPago], map: "payroll_receipts_org_entity_tipo_date_idx")
+  @@index([companyId, fechaEmision, fechaPago], map: "payroll_receipts_company_emision_pago_idx")
+  @@index([departamento, fechaPago], map: "payroll_receipts_dept_date_idx")
+  @@map("payroll_receipts")
+}
+
+model PayrollReceptor {
+  id                        String          @id @default(cuid())
+  payrollReceiptId          String          @unique @map("payroll_receipt_id")
+  rfc                       String          @map("rfc")
+  nombre                    String          @map("nombre")
+  curp                      String?         @map("curp")
+  nss                       String?         @map("nss")
+  fechaInicioRelLaboral     DateTime?       @map("fecha_inicio_rel_laboral") @db.Date
+  antiguedad                Int?            @map("antiguedad")
+  tipoContrato              String?         @map("tipo_contrato")
+  sindicalizado             String?         @map("sindicalizado")
+  tipoJornada               String?         @map("tipo_jornada")
+  tipoRegimen               String?         @map("tipo_regimen")
+  numEmpleado               String?         @map("num_empleado")
+  departamento              String?         @map("departamento")
+  puesto                    String?         @map("puesto")
+  riesgoPuesto              String?         @map("riesgo_puesto")
+  periodicidadPago          String?         @map("periodicidad_pago")
+  salarioBaseCotApor        Decimal?        @map("salario_base_cot_apor") @db.Decimal(18, 6)
+  salarioDiarioIntegrado    Decimal?        @map("salario_diario_integrado") @db.Decimal(18, 6)
+  claveEntFed               String?         @map("clave_ent_fed")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+
+  payrollReceipt            PayrollReceipt  @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([rfc, fechaInicioRelLaboral], map: "payroll_receptor_rfc_antiguedad_idx")
+  @@index([departamento, tipoContrato], map: "payroll_receptor_dept_contrato_idx")
+  @@index([tipoJornada, tipoRegimen], map: "payroll_receptor_jornada_regimen_idx")
+  @@index([curp], map: "payroll_receptor_curp_idx")
+  @@map("payroll_receptors")
+}
+
+model PayrollSubContratacion {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  rfcLabora              String         @map("rfc_labora")
+  porcentajeTiempo       Decimal        @map("porcentaje_tiempo") @db.Decimal(8, 4)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId], map: "payroll_subcontratacion_receipt_idx")
+  @@map("payroll_subcontrataciones")
+}
+
+model PayrollPercepcion {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  tipoPercepcion         String         @map("tipo_percepcion")
+  clave                  String?        @map("clave")
+  concepto               String         @map("concepto")
+  importeGravado         Decimal        @map("importe_gravado") @db.Decimal(18, 6) @default(0)
+  importeExento          Decimal        @map("importe_exento") @db.Decimal(18, 6) @default(0)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId, tipoPercepcion], map: "payroll_percepcion_receipt_tipo_idx")
+  @@index([tipoPercepcion, concepto], map: "payroll_percepcion_tipo_concepto_idx")
+  @@map("payroll_percepciones")
+}
+
+model PayrollHorasExtra {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  dias                   Int            @map("dias")
+  tipoHoras              String         @map("tipo_horas")
+  horasExtra             Decimal        @map("horas_extra") @db.Decimal(10, 2)
+  importePagado          Decimal        @map("importe_pagado") @db.Decimal(18, 6)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId, tipoHoras], map: "payroll_horasextra_receipt_tipo_idx")
+  @@index([tipoHoras], map: "payroll_horasextra_tipo_idx")
+  @@map("payroll_horas_extra")
+}
+
+model PayrollAccionesOTitulos {
+  id                       String          @id @default(cuid())
+  payrollReceiptId         String          @unique @map("payroll_receipt_id")
+  valorMercado             Decimal         @map("valor_mercado") @db.Decimal(18, 6) @default(0)
+  precioAlOtorgarse        Decimal         @map("precio_al_otorgarse") @db.Decimal(18, 6) @default(0)
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  payrollReceipt           PayrollReceipt  @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_acciones_o_titulos")
+}
+
+model PayrollJubilacionPensionRetiro {
+  id                             String          @id @default(cuid())
+  payrollReceiptId               String          @unique @map("payroll_receipt_id")
+  totalUnaParte                  Decimal?        @map("total_una_parte") @db.Decimal(18, 6) @default(0)
+  totalEnPartes                  Decimal?        @map("total_en_partes") @db.Decimal(18, 6) @default(0)
+  ingresoAcumulable              Decimal?        @map("ingreso_acumulable") @db.Decimal(18, 6) @default(0)
+  ingresoNoAcumulable            Decimal?        @map("ingreso_no_acumulable") @db.Decimal(18, 6) @default(0)
+  createdAt                      DateTime        @default(now()) @map("created_at")
+  updatedAt                      DateTime        @updatedAt @map("updated_at")
+
+  payrollReceipt                 PayrollReceipt  @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_jubilacion_pension_retiro")
+}
+
+model PayrollSeparacionIndemnizacion {
+  id                            String          @id @default(cuid())
+  payrollReceiptId              String          @unique @map("payroll_receipt_id")
+  totalPagado                   Decimal         @map("total_pagado") @db.Decimal(18, 6) @default(0)
+  numAniosServicio              Decimal?        @map("num_anios_servicio") @db.Decimal(8, 2)
+  ingresoAcumulable             Decimal?        @map("ingreso_acumulable") @db.Decimal(18, 6) @default(0)
+  ingresoNoAcumulable           Decimal?        @map("ingreso_no_acumulable") @db.Decimal(18, 6) @default(0)
+  createdAt                     DateTime        @default(now()) @map("created_at")
+  updatedAt                     DateTime        @updatedAt @map("updated_at")
+
+  payrollReceipt                PayrollReceipt  @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_separacion_indemnizacion")
+}
+
+model PayrollDeduccion {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  tipoDeduccion          String         @map("tipo_deduccion")
+  clave                  String?        @map("clave")
+  concepto               String         @map("concepto")
+  importe                Decimal        @map("importe") @db.Decimal(18, 6) @default(0)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId, tipoDeduccion], map: "payroll_deduccion_receipt_tipo_idx")
+  @@index([tipoDeduccion, concepto], map: "payroll_deduccion_tipo_concepto_idx")
+  @@map("payroll_deducciones")
+}
+
+model PayrollOtroPago {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  tipoOtroPago           String         @map("tipo_otro_pago")
+  clave                  String?        @map("clave")
+  concepto               String         @map("concepto")
+  importe                Decimal        @map("importe") @db.Decimal(18, 6) @default(0)
+  subsidioCausado        Decimal?       @map("subsidio_causado") @db.Decimal(18, 6) @default(0)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId, tipoOtroPago], map: "payroll_otro_pago_receipt_tipo_idx")
+  @@index([tipoOtroPago], map: "payroll_otro_pago_tipo_idx")
+  @@map("payroll_otros_pagos")
+}
+
+model PayrollSubsidioAlEmpleo {
+  id                     String          @id @default(cuid())
+  payrollReceiptId       String          @unique @map("payroll_receipt_id")
+  subsidioCausado        Decimal         @map("subsidio_causado") @db.Decimal(18, 6) @default(0)
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt  @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_subsidio_al_empleo")
+}
+
+model PayrollIncapacidad {
+  id                     String         @id @default(cuid())
+  payrollReceiptId       String         @map("payroll_receipt_id")
+  incapacidad            Int            @map("incapacidad")
+  tipoIncapacidad        String         @map("tipo_incapacidad")
+  numDias                Decimal        @map("num_dias") @db.Decimal(10, 2)
+  importeMonetario       Decimal?       @map("importe_monetario") @db.Decimal(18, 6) @default(0)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  payrollReceipt         PayrollReceipt @relation(fields: [payrollReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([payrollReceiptId, tipoIncapacidad], map: "payroll_incapacidad_receipt_tipo_idx")
+  @@index([tipoIncapacidad], map: "payroll_incapacidad_tipo_idx")
+  @@map("payroll_incapacidades")
 }

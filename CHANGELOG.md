@@ -2,6 +2,73 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.18.0 - 2026-09-08
+
+### Resumen
+- Piloto 100% completo del **Dashboard Nómina Fiscal** (Grid 6 KPIs Drilldown interactivos): KPI3 Cancelados · KPI4 UUID Duplicados · KPI5 Retrasos de Timbrado · KPI6 Alertas SBC/SDI · **KPI1 ISR Retenido** · Pendiente Fase A KPI2 Cuotas de Terceros.
+- Arquitectura segura **Next.js 16 RSC + 5 Context Shells** (sin Functions-as-Props serializados) + 5 Triggers overlay transparente + 5 Dialogs Drilldown fullscreen cliente con filtros sticky por columna.
+- **5 Endpoints Drilldown** con **7 capas de Hardening** por KPI: Triple Rate-Limit (IP 60/min · Usuario 40/min · Organización 180/min) → NextAuth Session → Zod Strict + DRILLDOWN_ID_REGEX 8-40 chars + refine rango ≤ 5 años → RBAC `MODULE_PAYROLL_VIEW` + requireApprovedDashboardAccess → `$queryRaw` Prisma 6 tipado → Keyset Pagination sin OFFSET `FETCH FIRST N+1` → Fail-Soft correlationId fp32 + SECURITY_HEADERS.
+- **Paquetes 1-40 SonarQube completados → 0 warnings** (Quality Gate GREEN) en todo el módulo de Nómina Fiscal: helpers DRY pattern `_core`, Readonly Props anidados, export-from re-exports, replaceAll regex, useMemo Providers, extracción handlers inline, 40 paquetes sin cambios funcionales.
+- Workers BullMQ/Redis Fail-Closed MD-013: configuración explícita REDIS_URL (sin localhost fallback desprotegido).
+
+### Cambios Tecnicos
+
+#### Nuevas Rutas API Drilldown (5) · 7 Capas Hardening
+**Directorio**: `src/app/api/dashboard/nomina/fiscal/drilldown/`
+| Endpoint | Descripcion | Tabla principal | SAT Filter |
+|---|---|---|---|
+| `cancelados/route.ts` | Comprobantes fiscales cancelados SAT | `invoices` | `sat_status = CANCELED` |
+| `uuid_duplicados/route.ts` | UUIDs repetidos por empresa/rango | `invoices` JOIN payroll | `COUNT(uuid)>1` |
+| `retrasos_timbrado/route.ts` | Demoras >24h emisión → timbrado | `invoices` timestamps diff | `DATEDIFF>1` |
+| `alertas_sbc_sdi/route.ts` | Anomalías Salario Base Cotización Aport / SDI | `payroll_receptors` | `SBC<>SDI` umbrales |
+| `isr_retenido/route.ts` | Retenciones ISR SAT tipo 002 | `payroll_deducciones` | `tipo_deduccion = '002'` |
+
+#### Modelos Prisma Payroll + Materializaciones (Nuevos)
+**Actualizado**: `prisma/schema.prisma` L1155-L1340
+- `PayrollReceipt` 1:1 Invoice (UUID, RFC, periodo nomina, fecha pago, total percepciones/deducciones/neto)
+- `PayrollReceptor` {rfc, nombre, curp, numEmpleado, departamento, salario_base_cot_apor, salario_diario_integrado} 1:1 PayrollReceipt
+- `PayrollPercepcion` / `PayrollDeduccion` (tipo CHAR3 SAT, clave, concepto, importe NUMERIC 18.6)
+- Índices compuestos en deducciones: (payroll_receipt_id, tipo_deduccion) + (tipo_deduccion, concepto)
+**Nuevas Migraciones**: `prisma/migrations/20260902_*` SQL puro + 20260905 payroll_recibos_refactor
+
+#### 5 Context Shells React Client · 5 Dialogs Drilldown UI
+**Archivo maestro**: `src/app/dashboard/nomina/fiscal/_components/fiscal-nomina-shared.tsx`
+- 5 `createContext` anidados (Cancelados → UUID Dup → Retrasos → Alertas SBC → **ISR**) → 0 regresiones nesting 4 KPIs originales al agregar 5to
+- 5 `<DrilldownDialogXxxNom>` fullscreen: 21-24 columnas sticky headers, 21 filtros inputs por columna, paginación cliente 200 filas, footer totales Σ importes useMemo, exportación CSV UTF-8 BOM Excel compatible (nombre: `{KPI}_Nomina_{RFC}_{timestamp}.csv`)
+- Componentes UI reutilizados: `KpiCardFiscal`, `ChartCard`, `TrendBadge`, `FiscalNomEmptyState`, helpers `_trendTone`, `_onKeyDownEnterSpace`, `_KpiDrilldownTriggerBase` DRY 5 triggers
+
+#### Helpers Centralizados Nómina (Zero-Any Strict)
+**Nuevos**: `src/lib/fiscal-nomina-formatters.ts`, `src/lib/fiscal-nomina-drilldown-helpers.ts`, `src/lib/fiscal-nomina-dashboard-url.ts`
+- Formatters puros: `fmtMxn`, `fmtNum`, `fmtPct`, `fmtDateEs`, `fmtDiasDiferencia`, paleta `FISCAL_NOM_PALETTE`
+- Safe Type Coercion Pattern `_core`: `safeNum`, `safeNumOrNull`, `safeStr`, `safeStrOrNull`, `safeIso` (S6551 anti Object typeof), `formatZodIssuesSafe`
+- URL Utils: `FISCAL_NOMINA_DASHBOARD_PATH` constante centralizada, regex departamentos, serialización filtros barra
+- Compartido UI: `src/lib/payroll-analytics-ui-helpers.ts` (Paquetes 29-36 refactor Sonar, helpers agregación plantilla, semáforos 3 niveles `_3TierToneHelper`, etiquetas beneficiarios `_beneficioLabelByCodigo`)
+
+#### Scripts Nuevos · Seeds + Workers
+**Nuevo Directorio**: `scripts/*` (seed demo, onboarding, backup scheduler, sync sat)
+- `seed-500-cfdi-nomina-demo.mts`: Generación datos demo nómina
+- `onboarding-full-demo.mts`: Setup inicial multi-tenant
+- `db-dev-install-scheduled-backup.ps1`: Tarea programada backups BD dev
+
+#### Tests Unitarios Dashboard RH (Nuevo Scope Jest)
+**Nuevo Directorio**: `tests/dashboard_rh/` + fixtures payloads payroll
+- `package.json` scripts alineados: `test:dashboard_rh` · `test:dashboard_rh:coverage`
+- Jest Scope actualizado en `jest.config.mjs` collectCoverageFrom + testPathPattern
+
+### Validacion Tecnica Exit Code 0 (Todas Pasaron)
+1. ✅ `GetDiagnostics` → **0 TypeScript warnings** en 27 archivos del módulo
+2. ✅ `npm run build` Next 16 Turbopack → **80/80 SSG OK exit code 0**
+3. ✅ 5 Endpoints HTTP 401 UNAUTHENTICATED sin cookie NextAuth (middleware bloqueo OK)
+4. ✅ Smoke Browser 5 KPIs: Dialogs abren Loading→EmptyState/Error→console 0 JS errores
+5. ✅ `npm run worker:verify` BullMQ Queue: "Workers started ✔" (REDIS_URL fix Dev)
+
+### Impacto Usuario Final (Piloto Operativo)
+- Grid Nómina Fiscal en `/dashboard/nomina/fiscal` listo para recibir datos demo (pendiente aprobación EXPLÍCITA Regla 23 para seed 500 CFDIs nómina + backup install task)
+- 1 click en tarjeta KPI → Drilldown 360° por empleado/departamento/periodo + exportar CSV Excel
+- Regresión 0 en módulos v1.17.0 (RFC Validate / Provider Portal / Org Dashboard): ninguno modificado en este commit
+
+---
+
 ## v1.17.0 - 2026-08-25
 
 ### Resumen
