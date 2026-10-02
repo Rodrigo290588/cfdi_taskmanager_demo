@@ -158,7 +158,45 @@ export function MassDownloadRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const form = useForm<MassDownloadRequestValues>({
-    resolver: zodResolver(massDownloadRequestSchema),
+    resolver: async (data, context, options) => {
+      try {
+        return await zodResolver(massDownloadRequestSchema)(data, context, options)
+      } catch (error) {
+        type ValidationIssue = {
+          path: (string | number)[]
+          message: string
+          code?: string
+        }
+
+        const knownError = error as { issues?: ValidationIssue[] } | ValidationIssue[]
+        
+        let issues: ValidationIssue[] | null = null
+        if ('issues' in knownError && Array.isArray(knownError.issues)) {
+          issues = knownError.issues
+        } else if (Array.isArray(knownError)) {
+          issues = knownError as ValidationIssue[]
+        }
+        
+        if (issues) {
+          const errors = issues.reduce<Record<string, { type: string; message: string }>>((acc, issue) => {
+            const path = issue.path[0]
+            if (path && !acc[path.toString()]) {
+              acc[path.toString()] = {
+                type: issue.code || 'validation',
+                message: issue.message
+              }
+            }
+            return acc
+          }, {})
+          
+          return {
+            values: {},
+            errors
+          }
+        }
+        throw error
+      }
+    },
     defaultValues: {
       startDate: '',
       endDate: '',

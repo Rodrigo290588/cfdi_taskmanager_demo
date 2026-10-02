@@ -152,22 +152,14 @@ async function main() {
         await tx.payrollReceipt.create({
           data: {
             id: rid, organizationId: org.id, companyId: co.id, fiscalEntityId: feId,
-            createdBy: approver, updatedBy: approver, approvedBy: approver,
-            approvedAt: new Date(fpago.getTime()),
-            uuid: u, serie: 'A', folio: String(1000+rand(8999)),
+            uuid: u,
             fechaEmision: feFinal, fechaPago: fpago,
-            fechaCertificacionSat: new Date(feFinal.getTime()+900000),
-            fechaCancelacion: cancelado ? new Date(feFinal.getTime()+1036800000) : null,
-            moneda: 'MXN', tipoCambio: 1, lugarExpedicion: entfed,
             tipoNomina: pick(['O','E']),
-            fechaPagoInicial: new Date(fpago.getFullYear(), fpago.getMonth(), 1),
-            fechaPagoFinal:   new Date(fpago.getFullYear(), fpago.getMonth(), diasP),
-            numDiasPagados: diasP, departamento: dept, periodicidadPago: ppago,
-            selloSat: sello(32), selloCfd: sello(32),
-            cadenaOriginalSat: `||1.2|${u}|SAT|CERT|`,
-            satStatus: cancelado ? 'CANCELED' : pick(['ACTIVE','ACTIVE','ACTIVE','ACTIVE','NOT_FOUND']),
+            fechaInicialPago: new Date(fpago.getFullYear(), fpago.getMonth(), 1),
+            fechaFinalPago:   new Date(fpago.getFullYear(), fpago.getMonth(), diasP),
+            numDiasPagados: diasP, departamento: dept,
             totalPercepciones: mxn(totPerc,6), totalDeducciones: mxn(totDed,6), totalOtrosPagos: mxn(otros,6),
-            version: '1.2', rawXml: `<CFDI><Nomina/></CFDI>`, source: 'SEED_DEMO_500_CFDIS_V1'
+            version: '1.2'
           }, select: { id: true }
         })
         // 2) Receptor
@@ -184,40 +176,7 @@ async function main() {
         for (const b of benefs) {
           await tx.payrollPercepcion.create({ data: { payrollReceiptId:rid, tipoPercepcion:b.t, clave:`CP${b.t}`, concepto:b.c, importeGravado:b.g, importeExento:b.e } })
         }
-        // 4) Deducciones (12)
-        const deducs = [
-          { t:'001', c:'ISR RETENIDO', i: isrR },
-          { t:'002', c:'IMSS OBRERO',  i: mxn(totPerc*0.0165,2) },
-          { t:'003', c:'INFONAVIT',    i: infR },
-          { t:'004', c:'FONACOT',      i: fonR },
-          { t:'005', c:'PENSIÓN ALIM', i: penR },
-          { t:'006', c:'SINDICATO',    i: sinR },
-          { t:'007', c:'IMSS PATRON',  i: mxn(totPerc*0.0185,2) },
-          { t:'008', c:'SAR PATRONAL', i: mxn(totPerc*0.02,2) },
-          { t:'009', c:'RETIRO PATR',  i: mxn(totPerc*0.011,2) },
-          { t:'010', c:'CUOTA SOCIAL', i: mxn(totPerc*0.004,2) },
-          { t:'011', c:'PRESTAMO CFE', i: mxn(totPerc*0.010,2) },
-          { t:'012', c:'OTRAS DEDUC',  i: mxn(totPerc*0.006,2) },
-        ]
-        for (const d of deducs) {
-          await tx.payrollDeduccion.create({ data: { payrollReceiptId: rid, tipoDeduccion: d.t, clave:`CD${d.t}`, concepto: d.c, importe: d.i } })
-        }
-        // 5) Incapacidad
-        if (inc) {
-          await tx.payrollIncapacidad.create({
-            data: { payrollReceiptId: rid, tipoIncapacidad: inc.t, numeroDias: inc.d, importe: inc.imp, fechaInicio: inc.ini, fechaFin: inc.fin }
-          })
-        }
-        // 6) Horas extra
-        if (hex) {
-          await tx.payrollHorasExtra.create({
-            data: { payrollReceiptId: rid, tipoHoras: hex.t, numDias: hex.d, numHoras: hex.h, importePagadoExtra: hex.imp, importeExento: 0 }
-          })
-        }
-        // 7) Otros pagos (siempre un subsidio al empleo chico)
-        await tx.payrollOtroPago.create({
-          data: { payrollReceiptId: rid, tipoOtroPago: '002', clave: 'OP002', concepto:'SUBSIDIO EMPLEO', importe: mxn(RAND()*80,2) }
-        })
+        // (Modelos secundarios omitidos para stress test k6)
         // 8) Beneficios: las percepciones SAT 029/005/010/049 YA están insertadas como PayrollPercepcion; la MV `mv_hr_beneficios_prestaciones`
         //    las lee de ahí (no existe modelo Prisma PayrollBeneficiosPrestaciones).
         inserts++

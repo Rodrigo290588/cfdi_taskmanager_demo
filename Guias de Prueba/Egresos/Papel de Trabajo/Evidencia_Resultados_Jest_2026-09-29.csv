@@ -1,0 +1,6 @@
+Módulo,Archivo de Prueba,Prueba Evaluada,Resultado,Fecha de Ejecución,Notas
+Papel de Trabajo de Egresos,workpaper_recibidos.test.tsx,1. Carga Inicial y Selección de Empresa,PASS,2026-09-29,Valida carga de la página y listado de empresas
+Papel de Trabajo de Egresos,workpaper_recibidos.test.tsx,2. Filtros y Buscador,PASS,2026-09-29,Valida interacción con el campo de texto y botón Filtrar
+Papel de Trabajo de Egresos,workpaper_recibidos.test.tsx,3. Visualización de CFDI en el Data Grid,PASS,2026-09-29,Valida que la tabla muestre UUID, RFC y Montos
+Papel de Trabajo de Egresos,workpaper_recibidos.test.tsx,4. Visores de CFDI (Acción XML),PASS,2026-09-29,Verifica la existencia del botón de acción para XML
+Papel de Trabajo de Egresos,workpaper_recibidos.test.tsx,5. Exportaciones Masivas,PASS,2026-09-29,Verifica la existencia de botones Exportar CSV y ZIP

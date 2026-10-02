@@ -2,6 +2,89 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.20.0 - 2026-09-30
+
+### Resumen
+- **Automatización Integral de QA y Pruebas**: Creación de Guías de Prueba en lenguaje no técnico, Checklists detallados y Scripts de Jest automatizados para más de 10 módulos críticos (Dashboard Admin, Gestión de Usuarios, Carga Masiva, Roles y Perfiles, Empresas, Monitor de Importación, Preferencias, Descargas Masivas, Tableros de Ingresos y Egresos, Cancelaciones y Papel de Trabajo).
+- **Gestor Interactivo de Pruebas**: Se agregó el script `ejecutar_pruebas.js` (accesible vía `npm run test:menu`) que permite ejecutar suites de prueba de manera individual o completa desde una interfaz CLI, autogenerando reportes de evidencia en formato CSV.
+- **Resolución de Deuda Técnica (ESLint / SonarQube)**: Refactorización masiva en scripts de prueba y componentes para resolver advertencias de análisis estático (remoción de tipos `any`, corrección de ternarios anidados, optimización de expresiones regulares, eliminación de side-effects en `waitFor` y reemplazo de importaciones nativas por el estándar `node:`).
+- **Mocks Avanzados para Entornos Virtuales**: Implementación de mocks estructurales para componentes complejos de Radix UI, simulación de navegación (Next.js App Router), y objetos `File` nativos para validación de cargas masivas.
+
+### Archivos Afectados Relevantes
+- `ejecutar_pruebas.js` (Nuevo gestor de pruebas)
+- `package.json` (Nuevo script `test:menu`)
+- Múltiples scripts de prueba integrados en el directorio `Guias de Prueba/`
+- Archivos de componentes y configuración sanitizados según reglas de SonarQube.
+
+---
+
+## v1.19.0 - 2026-09-09
+
+### Resumen
+- Lanzamiento **Tablero RH Directivo · Dirección General (C-Level / Estratégico)**: Vista CFO con 4 KPIs financieros ejecutivos de nómina SAT 1.2 + 3 visualizaciones analíticas conectadas a Vista Materializada precalculada `mv_direccion_costo_ejecutivo_mensual`.
+- **5 KPIs obligatorios**: (1) Costo Total Nómina = Percepciones Brutas + Carga Patronal IMSS 30.4% paramétrica (SBC×Días) + ISN Estatal CASE 32 ClaveEntFed default 2.5%; (2) Costo Promedio por Empleado = costo total / empleados únicos (CURP/NumEmpleado/RFC); (3) % Gasto Fijo (TipoPercepcion 001 Sueldos) vs Variable ({002,003,019,021,028,038}); (4) Desviación Presupuestal por Departamento vs Presupuesto Autorizado entidad (MVP placeholder badge "Sin presupuesto"); (5) Tendencia Histórica YoY mes a mes / trimestral / anual.
+- **Arquitectura de rendimiento 5 años / 10M CFDIs**: Vista Materializada PostgreSQL 16 `mv_direccion_costo_ejecutivo_mensual` con **3 índices UNIQUE + INCLUDE** (Index Only Scan covering 18 cols) + `REFRESH CONCURRENTLY` vía función `refresh_hr_materialized_views()`; queries con `SET LOCAL max_parallel_workers_per_gather = 4` + `ROW(anio,mes)` range prune + **Sin OFFSET / Keyset**; endpoint headers `Cache-Control: public, s-maxage=300, stale-while-revalidate=600` y `Vary: Cookie, Accept-Encoding`.
+- **3 Secciones UI Responsivas**: KPI Cards 4 tonos (slate/blue/amber/emerald/rose) con barra de progreso + Trend YoY Badge; AreaChart Tendencia Actual+YoY (fill gradient azul/dashed slate) + Tabs Toggle Vista Mensual/Trimestral/Anual preservando filtros URL; Donut Fijo/Variable outer120/inner80 + centro %Variable bold + Mobile <768px fallback BarChart horizontal stacked; Tabla 7 Rubros SAT (Sueldos/Aguinaldo/PTU/HorasExtra/PrimaVacacional/Comisiones/Bonos) y Tabla Desviación Presupuestal max-h-420 sticky thead + filas FUERA_DE_PRESUPUESTO bg-rose-50 + StatusBadges 4 estados (DENTRO/ATENCION/FUERA/SIN_PRESUPUESTO).
+- **Hardening 7-capas endpoint `/api/stats/direccion`**: Triple RateLimit (IP 60/min · Usuario 30/min · Organización 180/min) → NextAuth v5 auth() → Zod Strict safeParse + DRILLDOWN_ID_REGEX + superRefine rango ≤5 años + end≥start → RBAC enrichUserWithMemberships + requireApprovedDashboardAccess(Permission.MODULE_PAYROLL_VIEW) scoped → $queryRaw Prisma 6 con `SET LOCAL parallel_workers` → SECURITY_HEADERS + fingerprint fp32 correlationId → fail-soft 202 summary con error sanitizado.
+- **Slot Pattern Next.js 16 App Router RSC + Suspense streaming individual por sección**: `page.tsx` (searchParams Promise) → `direccion-client-page.tsx` (localStorage.selectedCompany + CustomEvent 'company-selected' listener + router.replace preserve 8 params) → `direccion-server-page.tsx` (ProtectedRoute + h1 empresa/período + FilterBar + 4 `<Suspense>` boundaries independientes con Skeletons animate-pulse fail-soft amber/slate → CLS < 0.05).
+- **MVP Placeholders CFO v1.19 (no implementados en v1)**: OP-1 BudgetDepartment = badge "Sin presupuesto" · OP-2 params 30.4% ISN hardcodeados (TODO settings UI) · OP-3 % Operación placeholder = N/D · OP-4 Exportar PDF = omitido.
+- **Sidebar menú Nómina**: 3er link `/dashboard/direccion` icono Building2 con guard `hasPermission(Permission.MODULE_PAYROLL_VIEW)` + active match `pathname.startsWith('/dashboard/direccion') → bg-white/10`.
+- **SonarQube Smells 0 new (reglas S6541 S4144 S3776 S6759 S2324 S6477 activas)** + `.gitignore` excluye carpetas permanentes `reports/` `tmp/` `bin/`.
+- **SLA Rendimiento FASE 4 AC-2**: p(95) < 1500ms · p(99) < 3000ms · errores < 0.1% · checks ≥ 100% sobre 50 VUs 60s hold (staging 10M+ CFDIs 5 años poblados).
+
+### Rutas / Endpoints Nuevos
+| Tipo | Ruta | Descripción |
+|---|---|---|
+| App Page RSC | `/dashboard/direccion` | Page Principal Slot Pattern (Promise searchParams) |
+| RSC Server | `direccion-server-page.tsx` | ProtectedRoute + Empresa + 4 Suspense boundaries |
+| Client Wrapper | `direccion-client-page.tsx` | storage company-selected + preserve 8 params URL |
+| Endpoint API | `/api/stats/direccion` | 7-capas Hardening + 4 queries MV + Cache 5 min |
+
+### Componentes UI Nuevos (Directorio `src/app/dashboard/direccion/_components/`)
+| Archivo | Descripción |
+|---|---|
+| `direccion-shared.tsx` | KpiCardDireccion 5 tones · TrendIndicatorBadge · ChartCard · EmptyState 5 tones · DIRECCION_PALETTE · StatusDesviacionBadge (4) |
+| `direccion-filter-bar.tsx` | 5 Filtros (Fechas · Depto · AñoComparativo · Vista Mensual/Trimestral/Anual · Empresa) · Dropdown Visualización 4 secciones `sections[]` · Botones Filtrar/Restablecer |
+| `direccion-kpis-section.tsx` | Async Server 4 KPIs (Costo Total · PromxEmp · %Variable · DesviacionPresup) + Trend YoY |
+| `direccion-tendencia-chart.tsx` | Server wrapper ChartCard Tendencia (vista Mensual) |
+| `_internal-tendencia-client.tsx` | Client AreaChart Actual fill gradient blue-500/900 + YoY dashed slate-400 · Tabs 3 vistas preserve URL params · CustomTooltip MXN + diff |
+| `direccion-composicion-fv.tsx` | Server wrapper Donut + Tabla 7 Rubros SAT |
+| `_internal-composicion-fv-client.tsx` | Client PieChart Donut outer120 inner80 centro %Variable bold · Mobile <768px → BarChart horizontal stacked · 7 filas Rubros SAT |
+| `direccion-desviacion-presupuestal.tsx` | Server wrapper Alert MVP Sin Presupuesto + filas Client |
+| `_internal-desviacion-client.tsx` | Client div overflow-auto sticky thead 6 cols · filas bg-rose/amber · Badges 4 estados |
+
+### Capa SQL + Analytics (FASE 1 + 2)
+| Artefacto | Descripción |
+|---|---|
+| `scripts/sql/20260909153000_mv_direccion_costo_ejecutivo_mensual.sql` | MV `mv_direccion_costo_ejecutivo_mensual` · 3 índices UNIQUE + INCLUDE · refresh function |
+| `src/lib/direccion-analytics-service.ts` | 4 funciones Prisma MV: setParallel + fetchKpisAggregates + fetchTendencia + fetchComposicionRubros + fetchDesviacionPresupuestal + fetchPeriodoAnterior |
+| `src/lib/direccion-dashboard-url.ts` | Helpers URL parse/build · sections/views enums · regex DRILLDOWN_ID_REGEX · (28/28 TR PASS) |
+| `src/lib/direccion-formatters.ts` | fmtMxn/fmtMxnFull/fmtPct/fmtDateEs/statusFromDesviacion · (28/28 TR PASS) |
+
+### Validacion Tecnica (Exit Code 0)
+1. ✅ `npx tsc --noEmit` → 0 errores propios (solo tests/ legacy 15 preexistentes no tocados)
+2. ✅ `npx eslint src/lib/direccion-*.ts src/app/api/stats/direccion/** src/app/dashboard/direccion/** src/components/layout/sidebar.tsx` → 0 problems
+3. ✅ `npm run build` Next.js 16 Turbopack → exit 0
+4. ✅ SonarQube smells 0 new (reglas S6541/S4144/S3776/S6759/S2324/S6477)
+5. ✅ `git check-ignore -v reports tmp bin` → 3 carpetas permanentemente ignoradas
+6. ✅ Unit tests 28/28 URL helpers + Formatters PASS
+
+### Impacto Usuario Final (C-Level · CFO · VP RH)
+- **Nueva Vista Estrategica**: Único tablero en Sidebar Nómina → "Tablero RH Directivo" accesible por roles con `MODULE_PAYROLL_VIEW`.
+- **Primera pantalla C-Level**: 4 KPIs en un solo vistazo (Costo Total MXN · Costo PromxEmp · %Variable · DesviacionPct) + Trend YoY con flechas up/down color verde/rojo.
+- **Tendencia 5 años YoY**: Toggle Mensual / Trimestral / Anual (preserva filtros URL al navegar entre vistas, no pierde contexto).
+- **Vista Fijo vs Variable**: Donut con porcentaje central + Tabla 7 Rubros SAT desglosados; Mobile < 768px → BarChart horizontal stacked (no Donut tiny).
+- **Desviacion Presupuestal por Departamento**: Alert MVP placeholder explicando estado v1 "Sin presupuesto autorizado" + tabla coloreada por severidad (verde / amarillo / rojo).
+
+### Notas MVP y Roadmap v1.20
+- BudgetDepartment (OP-1): Modelo Prisma + Entidad por ejercicio fiscal → v1.20.
+- Parámetros financieros ISN%/CP% (OP-2): Settings UI CFO Perfil → v1.20.
+- % del costo / Operación total (OP-3): Modelo Presupuesto Operativo → v1.20.
+- Exportar PDF consolidado CFO (OP-4): Integración `html2pdf` + Logo empresa → v1.20.
+- k6 estrés 50VUs 10M CFDI 5 años (TASK 12) + Checklist Auditoria Financiera 12ptos (TASK 13) → artefactos generados en `tests/performance/`.
+
+---
+
 ## v1.18.1 - 2026-09-08
 
 ### Resumen

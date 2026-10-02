@@ -74,8 +74,8 @@ export async function GET(request: NextRequest) {
         status: query.status,
         source: query.source,
         search: query.search || undefined,
-        startedFrom: parseDateFilterStrict(query.startDate, 'start'),
-        finishedTo: parseDateFilterStrict(query.endDate, 'end')
+        createdFrom: parseDateFilterStrict(query.startDate, 'start'),
+        createdTo: parseDateFilterStrict(query.endDate, 'end')
       }
     })
 
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Parámetros inválidos', details: sanitizeZodFlatten(error.flatten()) },
+        { error: 'Parámetros inválidos', details: sanitizeZodFlatten(error.flatten((issue) => issue.message)) },
         { status: 400, headers: SECURITY_HEADERS }
       )
     }

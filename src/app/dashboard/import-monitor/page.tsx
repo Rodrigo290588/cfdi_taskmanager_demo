@@ -1005,7 +1005,7 @@ export default function ImportMonitorPage() {
       <div className="space-y-6 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Monitor de Importación</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Monitor de integridad y timbrado de CFDI´s</h1>
             <p className="text-muted-foreground">
             </p>
           </div>

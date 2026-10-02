@@ -47,7 +47,17 @@ export const WORKPAPER_ATTRIBUTE_KEYS = [
   'objectTaxComprobante',
   'paymentConditions',
   'certificationPac',
-  ...WORKPAPER_NUMERIC_ATTRIBUTE_KEYS
+  'nominaNumEmpleado',
+  'nominaFechaPago',
+  'nominaFechaInicialPago',
+  'nominaFechaFinalPago',
+  'nominaNumDiasPagados',
+  'nominaDepartamento',
+  'nominaTipoNomina',
+  ...WORKPAPER_NUMERIC_ATTRIBUTE_KEYS,
+  'nominaTotalPercepciones',
+  'nominaTotalDeducciones',
+  'nominaTotalOtrosPagos'
 ] as const
 
 export const WORKPAPER_PROJECTION_COLUMNS: WorkpaperProjectionColumn[] = [
@@ -68,6 +78,16 @@ export const WORKPAPER_PROJECTION_COLUMNS: WorkpaperProjectionColumn[] = [
   { key: 'certificationPac', label: 'PAC', group: '<tfd:TimbreFiscalDigital>', kind: 'projectionAttribute', dataType: 'text' },
   { key: 'totalImpuestosTrasladados', label: 'Total Impuestos Trasladados', group: '<cfdi:Impuestos>', kind: 'projectionAttribute', dataType: 'number' },
   { key: 'totalImpuestosRetenidos', label: 'Total Impuestos Retenidos', group: '<cfdi:Impuestos>', kind: 'projectionAttribute', dataType: 'number' },
+  { key: 'nominaNumEmpleado', label: 'Núm Empleado', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaFechaPago', label: 'Fecha Pago', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaFechaInicialPago', label: 'Fecha Inicial Pago', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaFechaFinalPago', label: 'Fecha Final Pago', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaNumDiasPagados', label: 'Núm Días Pagados', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaDepartamento', label: 'Departamento', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaTipoNomina', label: 'Tipo Nómina', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'text', complementType: 'NOMINA' },
+  { key: 'nominaTotalPercepciones', label: 'Total Percepciones', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'number', complementType: 'NOMINA' },
+  { key: 'nominaTotalDeducciones', label: 'Total Deducciones', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'number', complementType: 'NOMINA' },
+  { key: 'nominaTotalOtrosPagos', label: 'Total Otros Pagos', group: '<nomina12:Nomina>', kind: 'projectionAttribute', dataType: 'number', complementType: 'NOMINA' },
   { key: 'hasPagos', label: 'Tiene Pagos', group: '<pago20:Pagos>', kind: 'complementFlag', dataType: 'boolean', complementType: 'PAGOS' },
   { key: 'pagosVersion', label: 'Versión Pagos', group: '<pago20:Pagos>', kind: 'complementVersion', dataType: 'text', complementType: 'PAGOS' },
   { key: 'hasNomina', label: 'Tiene Nómina', group: '<nomina12:Nomina>', kind: 'complementFlag', dataType: 'boolean', complementType: 'NOMINA' },
@@ -180,7 +200,17 @@ export function extractWorkpaperProjectionAttributes(xml: string): WorkpaperProj
     certificationPac: getTagAttribute(xml, 'TimbreFiscalDigital', 'RfcProvCertif') || null,
     // Scan every <Impuestos> tag because concept-level taxes can appear before the global totals tag.
     totalImpuestosTrasladados: getAnyNumericTagAttributeValue(xml, 'Impuestos', 'TotalImpuestosTrasladados'),
-    totalImpuestosRetenidos: getAnyNumericTagAttributeValue(xml, 'Impuestos', 'TotalImpuestosRetenidos')
+    totalImpuestosRetenidos: getAnyNumericTagAttributeValue(xml, 'Impuestos', 'TotalImpuestosRetenidos'),
+    nominaNumEmpleado: getTagAttribute(xml, 'Receptor', 'NumEmpleado') || null, // Nómina Receptor
+    nominaFechaPago: getTagAttribute(xml, 'Nomina', 'FechaPago') || null,
+    nominaFechaInicialPago: getTagAttribute(xml, 'Nomina', 'FechaInicialPago') || null,
+    nominaFechaFinalPago: getTagAttribute(xml, 'Nomina', 'FechaFinalPago') || null,
+    nominaNumDiasPagados: getTagAttribute(xml, 'Nomina', 'NumDiasPagados') || null,
+    nominaDepartamento: getTagAttribute(xml, 'Receptor', 'Departamento') || null,
+    nominaTipoNomina: getTagAttribute(xml, 'Nomina', 'TipoNomina') || null,
+    nominaTotalPercepciones: getAnyNumericTagAttributeValue(xml, 'Nomina', 'TotalPercepciones'),
+    nominaTotalDeducciones: getAnyNumericTagAttributeValue(xml, 'Nomina', 'TotalDeducciones'),
+    nominaTotalOtrosPagos: getAnyNumericTagAttributeValue(xml, 'Nomina', 'TotalOtrosPagos')
   }
 }
 

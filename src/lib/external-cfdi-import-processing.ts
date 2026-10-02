@@ -227,7 +227,7 @@ async function findDuplicateImportRunItem(params: {
     FROM import_run_items
     WHERE organization_id = ${params.organizationId}
       AND uuid = ${params.uuid}
-      AND direction = CAST(${params.direction} AS "import_run_item_direction")
+      AND direction = CAST(${params.direction} AS "ImportRunItemDirection")
       AND id <> ${params.itemId}
     ORDER BY created_at ASC
     LIMIT 1
@@ -367,7 +367,7 @@ async function refreshImportRunStatus(importRunId: string) {
   await prisma.$executeRaw(Prisma.sql`
     UPDATE import_runs
     SET
-      status = CAST(${nextStatus} AS "import_run_status"),
+      status = CAST(${nextStatus} AS "ImportRunStatus"),
       finished_at = ${finishedAtSql},
       updated_at = NOW()
     WHERE id = ${importRunId}
@@ -384,11 +384,11 @@ async function finalizeImportRunItem(
     await tx.$executeRaw(Prisma.sql`
       UPDATE import_run_items
       SET
-        status = CAST(${result.status} AS "import_run_item_status"),
+        status = CAST(${result.status} AS "ImportRunItemStatus"),
         emitted_invoice_id = ${result.emittedInvoiceId},
         received_provider_uploaded_cfdi_id = ${result.receivedProviderUploadedCfdiId},
         validation_status = ${result.validationStatus},
-        validation_bucket = CAST(${result.validationBucket} AS "validation_bucket"),
+        validation_bucket = CAST(${result.validationBucket} AS "ValidationBucket"),
         error_code = ${result.errorCode},
         error_message = ${result.errorMessage},
         processing_finished_at = NOW(),
@@ -461,10 +461,10 @@ async function classifyPreparedImportRunItem(item: ImportRunItemRow) {
   await prisma.$executeRaw(Prisma.sql`
     UPDATE import_run_items
     SET
-      classification_result = CAST(${classification.classificationResult} AS "import_run_classification_result"),
-      direction = CAST(${classification.direction} AS "import_run_item_direction"),
+      classification_result = CAST(${classification.classificationResult} AS "ImportRunClassificationResult"),
+      direction = CAST(${classification.direction} AS "ImportRunItemDirection"),
       receiver_company_id = ${classification.receiverCompanyId},
-      status = CAST(${classification.status} AS "import_run_item_status"),
+      status = CAST(${classification.status} AS "ImportRunItemStatus"),
       error_code = ${classification.errorCode},
       error_message = ${classification.errorMessage},
       updated_at = NOW()

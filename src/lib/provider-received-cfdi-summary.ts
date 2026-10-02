@@ -144,7 +144,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
         ${dimension.receiverCompanyId},
         ${dimension.summaryDate},
         ${dimension.cfdiType},
-        CAST(${dimension.validationBucket} AS "validation_bucket"),
+        CAST(${dimension.validationBucket} AS "ValidationBucket"),
         ${dimension.satEstado},
         ${dimension.issuerRfc},
         ${dimension.issuerName},
@@ -186,7 +186,7 @@ async function applyProviderReceivedCfdiSummaryDelta(
           AND receiver_company_id = ${dimension.receiverCompanyId}
           AND summary_date = ${dimension.summaryDate}
           AND cfdi_type = ${dimension.cfdiType}
-          AND validation_bucket = CAST(${dimension.validationBucket} AS "validation_bucket")
+          AND validation_bucket = CAST(${dimension.validationBucket} AS "ValidationBucket")
           AND sat_estado = ${dimension.satEstado}
           AND issuer_rfc = ${dimension.issuerRfc}
           AND payment_method = ${dimension.paymentMethod}

@@ -17,20 +17,77 @@ import type { AuthFail } from '@/lib/m2m-oauth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+async function checkGlobalIpRateLimit(sourceIp: string | null) {
+  const globalIpKey = `m2m:global:ip:${sourceIp || 'no-ip'}`
+  const limiterGlobal = await rateLimit(globalIpKey, { interval: 60_000, limit: 30 })
+  if (!limiterGlobal.success) {
+    return NextResponse.json(
+      { error: 'rate_limited_global_ip', error_description: 'Too many requests per IP' },
+      { status: 429, headers: getM2MRateLimitHeaders(limiterGlobal as unknown as NonNullable<AuthFail['limiter']>) }
+    )
+  }
+  return null
+}
+
+function validateScopeParam(rawScope: string) {
+  const strictScope = normalizeScopesStrict(rawScope)
+  if (!strictScope.ok) {
+    const descriptions: Record<string, string> = {
+      scope_string_too_long: 'scope param max 2048 chars',
+      too_many_tokens: 'scope max 128 space-separated tokens',
+      invalid_token_format: 'scope inválido: letras minúsculas/números/:_.- 1-64 chars (invalid=' + (strictScope.errorValue ?? '') + ')',
+    }
+    return {
+      errorResponse: NextResponse.json(
+        { error: 'invalid_scope', error_description: descriptions[strictScope.error] ?? 'Invalid scope format' },
+        { status: 400 }
+      ),
+      requestedScopes: []
+    }
+  }
+  
+  const requestedScopes = strictScope.scopes.length > 0
+    ? strictScope.scopes
+    : normalizeScopes(rawScope || '') // backward compat empty array
+    
+  return { errorResponse: null, requestedScopes }
+}
+
+function buildAuthFailureResponse(authResult: AuthFail) {
+  const statusMap: Record<string, number> = {
+    invalid_scope: 403,
+    access_denied: 403,
+    rate_limited: 429,
+  }
+  const status = statusMap[authResult.error] ?? authResult.status ?? 401
+
+  const descriptions: Record<string, string> = {
+    invalid_scope: authResult.error_description || 'El cliente solicitó scopes no autorizados',
+    access_denied: 'La IP origen no está autorizada para este cliente o cliente desactivado/caducado',
+    rate_limited: 'Rate limit excedido por clientId',
+    invalid_client: 'Credenciales de cliente inválidas',
+  }
+  
+  const headersObj: Record<string, string> = {}
+  if (authResult.limiter) {
+    Object.assign(headersObj, getM2MRateLimitHeaders(authResult.limiter))
+  }
+  if (status === 401) headersObj['WWW-Authenticate'] = 'Basic realm="M2M OAuth Client Credentials"'
+  
+  return NextResponse.json(
+    { error: authResult.error, error_description: descriptions[authResult.error] ?? 'Client auth failed' },
+    { status, headers: headersObj }
+  )
+}
+
 export async function POST(request: NextRequest) {
   const sourceIp = getRealClientIp(request.headers)
   const ref500 = fp32(fingerprint('m2m_oauth_500:' + String(Date.now())))
 
   try {
     // OAUTH-012: Rate limit DUAL por IP GLOBAL 30req/60s antes de clientId
-    const globalIpKey = `m2m:global:ip:${sourceIp || 'no-ip'}`
-    const limiterGlobal = await rateLimit(globalIpKey, { interval: 60_000, limit: 30 })
-    if (!limiterGlobal.success) {
-      return NextResponse.json(
-        { error: 'rate_limited_global_ip', error_description: 'Too many requests per IP' },
-        { status: 429, headers: getM2MRateLimitHeaders(limiterGlobal as unknown as NonNullable<AuthFail['limiter']>) }
-      )
-    }
+    const rateLimitResponse = await checkGlobalIpRateLimit(sourceIp)
+    if (rateLimitResponse) return rateLimitResponse
 
     const contentType = request.headers.get('content-type') || ''
     const rawBody = await request.text()
@@ -46,21 +103,8 @@ export async function POST(request: NextRequest) {
 
     // OAUTH-010: Scope string MAX 2048 chars + MAX tokens 128 + regex scope token
     const rawScope = formBody.get('scope')?.toString() ?? ''
-    const strictScope = normalizeScopesStrict(rawScope)
-    if (!strictScope.ok) {
-      const descriptions: Record<string, string> = {
-        scope_string_too_long: 'scope param max 2048 chars',
-        too_many_tokens: 'scope max 128 space-separated tokens',
-        invalid_token_format: 'scope inválido: letras minúsculas/números/:_.- 1-64 chars (invalid=' + (strictScope.errorValue ?? '') + ')',
-      }
-      return NextResponse.json(
-        { error: 'invalid_scope', error_description: descriptions[strictScope.error] ?? 'Invalid scope format' },
-        { status: 400 }
-      )
-    }
-    const requestedScopes = strictScope.scopes.length > 0
-      ? strictScope.scopes
-      : normalizeScopes(rawScope || '') // backward compat empty array
+    const { errorResponse, requestedScopes } = validateScopeParam(rawScope)
+    if (errorResponse) return errorResponse
 
     if (grantType !== 'client_credentials') {
       return NextResponse.json(
@@ -84,27 +128,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!authResult.ok) {
-      const status = authResult.error === 'invalid_scope' ? 403
-        : authResult.error === 'rate_limited' ? 429
-        : authResult.error === 'access_denied' ? 403
-        : authResult.status ?? 401
-
-      const descriptions: Record<string, string> = {
-        invalid_scope: (authResult as unknown as AuthFail).error_description || 'El cliente solicitó scopes no autorizados',
-        access_denied: 'La IP origen no está autorizada para este cliente o cliente desactivado/caducado',
-        rate_limited: 'Rate limit excedido por clientId',
-        invalid_client: 'Credenciales de cliente inválidas',
-      }
-      const headersObj: Record<string, string> = {}
-      const failRes = authResult as unknown as AuthFail
-      if (failRes.limiter) {
-        Object.assign(headersObj, getM2MRateLimitHeaders(failRes.limiter))
-      }
-      if (status === 401) headersObj['WWW-Authenticate'] = 'Basic realm="M2M OAuth Client Credentials"'
-      return NextResponse.json(
-        { error: authResult.error, error_description: descriptions[authResult.error] ?? 'Client auth failed' },
-        { status, headers: headersObj }
-      )
+      return buildAuthFailureResponse(authResult)
     }
 
     const token = await issueMachineToken(authResult.client, authResult.scopes)

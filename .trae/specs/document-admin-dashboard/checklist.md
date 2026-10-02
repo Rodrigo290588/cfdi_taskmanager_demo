@@ -1,0 +1,5 @@
+- [ ] La explicación aborda las validaciones de seguridad y bloqueo de accesos.
+- [ ] La explicación menciona la ofuscación de correos electrónicos (PII).
+- [ ] Se detallan los 4 indicadores principales (Empresas, Pendientes, Aprobadas, Usuarios).
+- [ ] Se describe el contenido de las pestañas de Resumen, Empresas y Actividad.
+- [ ] Se incluye el manejo de errores (botón de reintentar ante fallos de conexión).

@@ -87,6 +87,8 @@ export enum Permission {
   TENANT_DIRECTORY_VIEW = 'tenant:directory:view',
   // INV-009 FIXED: Nómina salarial viewer tier separation (LFPDPPP Art. 123)
   NOMINA_VIEW_SALARIES = 'nomina:view-salaries',
+  // AI Chat permission
+  AI_CHAT_ACCESS = 'ai_chat:access',
 }
 
 export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
@@ -143,6 +145,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.TENANT_API_KEY_MANAGE,
     Permission.TENANT_DIRECTORY_VIEW,
     Permission.NOMINA_VIEW_SALARIES,
+    Permission.AI_CHAT_ACCESS,
   ],
   [SystemRole.ADMIN]: [
     Permission.COMPANY_CREATE,
@@ -191,6 +194,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.TENANT_API_KEY_MANAGE,
     Permission.TENANT_DIRECTORY_VIEW,
     Permission.NOMINA_VIEW_SALARIES,
+    Permission.AI_CHAT_ACCESS,
   ],
   [SystemRole.COMPANY_ADMIN]: [
     Permission.COMPANY_CREATE,
@@ -224,6 +228,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.TENANT_API_KEY_MANAGE,
     Permission.TENANT_DIRECTORY_VIEW,
     Permission.NOMINA_VIEW_SALARIES,
+    Permission.AI_CHAT_ACCESS,
   ],
   [SystemRole.USER]: [
     Permission.COMPANY_READ,
@@ -297,6 +302,7 @@ export const ORGANIZATION_ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
     Permission.TENANT_API_KEY_MANAGE,
     Permission.TENANT_DIRECTORY_VIEW,
     Permission.NOMINA_VIEW_SALARIES,
+    Permission.AI_CHAT_ACCESS,
   ],
   [MemberRole.AUDITOR]: [
     Permission.COMPANY_READ,

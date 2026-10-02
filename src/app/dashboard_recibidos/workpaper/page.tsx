@@ -132,12 +132,36 @@ function getProjectedValue(row: InvoiceRow, key: string) {
   return null
 }
 
-function ConceptosTable({ xml }: { xml: string }) {
+function ConceptosTable({ xml: initialXml, invoiceId, companyId }: { xml?: string, invoiceId?: string, companyId?: string }) {
+  const [xmlData, setXmlData] = useState<string>(initialXml || '')
+  const [loading, setLoading] = useState(!initialXml && !!invoiceId && !!companyId)
+
+  useEffect(() => {
+    if (initialXml || !invoiceId || !companyId) return
+    let isMounted = true
+    const fetchXml = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`/api/dashboard_recibidos/workpaper/xml?id=${invoiceId}&companyId=${companyId}`)
+        if (res.ok) {
+          const text = await res.text()
+          if (isMounted) setXmlData(text)
+        }
+      } catch (err) {
+        console.error('Error fetching XML for ConceptosTable', err)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+    fetchXml()
+    return () => { isMounted = false }
+  }, [invoiceId, companyId, initialXml])
+
   const conceptos = useMemo(() => {
-    if (!xml) return []
+    if (!xmlData) return []
     try {
       const parser = new DOMParser()
-      const doc = parser.parseFromString(xml, 'text/xml')
+      const doc = parser.parseFromString(xmlData, 'text/xml')
       
       const getElementsByTagName = (node: Element | Document, name: string) => {
         const withPrefix = node.getElementsByTagName(`cfdi:${name}`)
@@ -197,8 +221,9 @@ function ConceptosTable({ xml }: { xml: string }) {
     } catch {
       return []
     }
-  }, [xml])
+  }, [xmlData])
 
+  if (loading) return <div className="text-sm text-muted-foreground p-4">Cargando conceptos...</div>
   if (conceptos.length === 0) return <div className="text-sm text-muted-foreground p-4">No se encontraron conceptos.</div>
 
   return (
@@ -1072,17 +1097,18 @@ export default function WorkpaperRecibidosPage() {
                                   size="icon"
                                   title="XML"
                                   onClick={() => {
-                                    const xml = String(r.xmlContent || '')
-                                    if (!xml) return
-                                    const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
-                                    const url = URL.createObjectURL(blob)
-                                    const a = document.createElement('a')
-                                    a.href = url
-                                    a.download = `cfdi_${r.uuid || 'cfdi'}.xml`
-                                    document.body.appendChild(a)
-                                    a.click()
-                                    document.body.removeChild(a)
-                                    URL.revokeObjectURL(url)
+                                    try {
+                                      toast.info('Descargando XML...')
+                                      const a = document.createElement('a')
+                                      a.href = `/api/dashboard_recibidos/workpaper/xml?id=${r.id}&companyId=${selectedCompanyId}`
+                                      a.target = '_blank'
+                                      document.body.appendChild(a)
+                                      a.click()
+                                      document.body.removeChild(a)
+                                    } catch (error) {
+                                      console.error('Error downloading XML:', error)
+                                      toast.error('Ocurrió un error al descargar el XML')
+                                    }
                                   }}
                                 >
                                   <FileCode className="h-4 w-4" />
@@ -1114,7 +1140,7 @@ export default function WorkpaperRecibidosPage() {
                           {expandedRows.has(r.id) && visibleCols.has('show_conceptos') && (
                             <tr className="bg-muted/10 border-b">
                               <td colSpan={Array.from(visibleCols).filter(k => k !== 'show_conceptos').length + 2}>
-                                <ConceptosTable xml={r.xmlContent} />
+                                <ConceptosTable xml={r.xmlContent} invoiceId={r.id} companyId={selectedCompanyId} />
                               </td>
                             </tr>
                           )}

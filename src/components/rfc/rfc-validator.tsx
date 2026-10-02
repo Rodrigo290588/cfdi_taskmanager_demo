@@ -44,7 +44,11 @@ export default function RFCValidator({
 
     try {
       console.log('Validating RFC:', rfc)
-      const response = await fetch(`/api/rfc/validate?rfc=${encodeURIComponent(rfc.toUpperCase())}`)
+      const response = await fetch('/api/rfc/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rfc: rfc.toUpperCase() })
+      })
       const result = await response.json()
       console.log('RFC validation result:', result)
 

@@ -1,0 +1,5 @@
+"Módulo","Caso de Prueba","Estatus","Detalle"
+"Perfiles y Roles","/admin/profiles - Prueba 1: Cambiar el Rol General de un Usuario","PASS","Se validó que el administrador puede cambiar roles y la etiqueta se actualiza al instante"
+"Perfiles y Roles","/admin/profiles - Prueba 2: Administrar Accesos por Empresa (Micro-Gestión)","PASS","Se comprobó el panel inferior para asignar roles por empresa y actualizar etiquetas"
+"Perfiles y Roles","/admin/profiles - Prueba 3: Cierre del Panel de Empresas","PASS","Se comprobó que el botón Empresas abre y cierra limpiamente el panel"
+"Perfiles y Roles","/admin/profiles - Prueba 4: Seguridad y Privilegios (Blindaje Anti-Intrusos)","PASS","Se verificó que los usuarios sin permiso de Admin Org son bloqueados"

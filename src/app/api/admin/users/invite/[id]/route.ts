@@ -45,8 +45,11 @@ export async function DELETE(
       )
     }
 
-    // Only organization owner can delete invitations
-    if (ownerMembership.organization.ownerId !== session.user.id) {
+    // Only organization owner or super admin can delete invitations
+    const isOwner = ownerMembership.organization.ownerId === session.user.id
+    const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+
+    if (!isOwner && !isSuperAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para eliminar invitaciones' },
         { status: 403 }

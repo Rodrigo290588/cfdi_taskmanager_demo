@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     const preCheck = await prisma.providerUploadedCfdi.findFirst({
       where: {
-        uuid: recordId,
+        id: recordId,
         organizationId: member.organizationId,
         receiverCompanyId: companyId
       },

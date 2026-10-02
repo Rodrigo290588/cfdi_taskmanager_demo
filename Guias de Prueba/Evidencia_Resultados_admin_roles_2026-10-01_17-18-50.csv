@@ -1,0 +1,5 @@
+Archivo,Suite,Prueba,Estado,Duracion(ms)
+"Dashboard de Administracion/Roles y Permisos/admin_roles.test.tsx","Módulo: Roles y Permisos (/admin/roles)","Prueba 1: Crear un Nuevo Rol Personalizado","EXITOSO","274"
+"Dashboard de Administracion/Roles y Permisos/admin_roles.test.tsx","Módulo: Roles y Permisos (/admin/roles)","Prueba 2: Editar un Rol de Sistema (Permisos Granulares)","EXITOSO","166"
+"Dashboard de Administracion/Roles y Permisos/admin_roles.test.tsx","Módulo: Roles y Permisos (/admin/roles)","Prueba 3: Eliminar un Rol Personalizado","EXITOSO","54"
+"Dashboard de Administracion/Roles y Permisos/admin_roles.test.tsx","Módulo: Roles y Permisos (/admin/roles)","Prueba 4: Seguridad y Bloqueo Anti-Intrusos","EXITOSO","2"

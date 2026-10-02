@@ -597,7 +597,9 @@ export async function persistProviderAcceptedCfdis(params: {
             payment_links_json,
             xml_sha256,
             first_validated_at,
-            last_validated_at
+            last_validated_at,
+            created_at,
+            updated_at
           )
           VALUES (
             ${storageId},
@@ -608,11 +610,11 @@ export async function persistProviderAcceptedCfdis(params: {
             ${record.fileName},
             ${record.uuid},
             ${record.providerRfc},
-            ${record.providerName},
+            ${record.providerName ?? null},
             ${record.issuerRfc},
-            ${record.issuerName},
+            ${record.issuerName ?? null},
             ${record.receiverRfc},
-            ${record.receiverName},
+            ${record.receiverName ?? null},
             ${record.cfdiType},
             ${record.series || null},
             ${record.folio || null},
@@ -642,6 +644,8 @@ export async function persistProviderAcceptedCfdis(params: {
             NOW(),
             CAST(${paymentLinksJson} AS jsonb),
             ${encryptedXml.sha256},
+            NOW(),
+            NOW(),
             NOW(),
             NOW()
           )

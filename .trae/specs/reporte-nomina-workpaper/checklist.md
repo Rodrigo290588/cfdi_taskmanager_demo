@@ -1,0 +1,12 @@
+- [x] El botón "Reporte de Nómina" aparece visiblemente en el sidebar bajo la sección colapsable "Nómina".
+- [x] La nueva vista de Workpaper de Nómina carga correctamente sin errores de React/Next.js.
+- [x] La interfaz incluye los filtros de búsqueda por: Fecha de Timbrado, Fecha de Pago, Departamento y Tipo de Nómina, y estos operan correctamente en conjunto con el backend.
+- [x] La tabla principal del reporte lista *exclusivamente* CFDI de tipo Nómina (se comprueba que `cfdiType=NOMINA` en la llamada a la API).
+- [x] Las columnas de la tabla muestran la información pertinente a nómina (ej. `NumEmpleado`, `FechaPago`, etc.) de forma correcta basándose en el XML.
+- [x] La funcionalidad de visibilidad de columnas permite al usuario agregar o quitar campos específicos del complemento de nómina de forma dinámica.
+- [x] Las funcionalidades de exportación (CSV, Excel) operan correctamente sobre los datos de nómina en pantalla.
+- [x] La descarga en ZIP (XML/PDF) se completa satisfactoriamente con los comprobantes seleccionados.
+- [x] (Si aplica) Los datos sensibles salariales se enmascaran u ocultan para los usuarios que no posean el permiso `NOMINA_VIEW_SALARIES`.
+- [x] La consulta de datos es performante (usando índices o proyecciones precalculadas) y soporta paginación eficiente para volúmenes de 5M+ de registros históricos.
+- [x] Las exportaciones manejan el consumo de memoria adecuadamente para grandes selecciones sin bloquear el servidor (lotes/streams).
+- [x] La generación de PDF produce un formato "propuesta" especializado que despliega todos los datos del complemento de nómina.

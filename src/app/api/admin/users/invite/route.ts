@@ -46,8 +46,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only organization owner can invite users
-    if (membership.organization.ownerId !== session.user.id) {
+    // Only organization owner or super admin can invite users
+    const isOwner = membership.organization.ownerId === session.user.id
+    const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+
+    if (!isOwner && !isSuperAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para invitar usuarios' },
         { status: 403 }
@@ -127,8 +130,11 @@ export async function GET() {
       )
     }
 
-    // Only organization owner can view pending invitations
-    if (membership.organization.ownerId !== session.user.id) {
+    // Only organization owner or super admin can view pending invitations
+    const isOwner = membership.organization.ownerId === session.user.id
+    const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+
+    if (!isOwner && !isSuperAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para ver las invitaciones' },
         { status: 403 }

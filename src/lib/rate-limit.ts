@@ -9,23 +9,17 @@
  * Para despliegues multi-replica, reemplazar el store interno por Redis INCR + EXPIRE.
  */
 
-interface Slice {
+interface StoreEntry {
   windowStart: number
-  counts: Record<string, number>
+  count: number
 }
 
-let store: Slice = {
-  windowStart: Date.now(),
-  counts: {}
-}
+let store: Record<string, StoreEntry> = {}
 
-function rotateIfExpired(windowMs: number) {
-  const now = Date.now()
-  if (now - store.windowStart >= windowMs) {
-    store = { windowStart: now, counts: {} }
-  }
-}
-
+/**
+ * Registra 1 request dentro de la ventana y retorna el estado del límite.
+ * No lanza error: es responsabilidad del handler decidir el NextResponse.
+ */
 export interface RateLimitOpts {
   /** Llave que identifica el recurso a limitar (ej: "admin-status-patch") */
   key: string
@@ -53,18 +47,30 @@ export interface RateLimitResult {
  */
 export function checkAndConsumeRateLimit(opts: RateLimitOpts): RateLimitResult {
   const { key, userId, clientId, limit, windowMs } = opts
-  rotateIfExpired(windowMs)
+  const now = Date.now()
 
   const discriminator = userId ?? clientId ?? 'global'
   const composedKey = `${key}::${discriminator}`
-  const used = (store.counts[composedKey] || 0) + 1
-  store.counts[composedKey] = used
 
-  const allowed = used <= limit
-  const remaining = Math.max(0, limit - used)
-  const resetAfterMs = Math.max(0, windowMs - (Date.now() - store.windowStart))
+  let entry = store[composedKey]
+  if (!entry || now - entry.windowStart >= windowMs) {
+    entry = { windowStart: now, count: 0 }
+  }
 
-  return { allowed, remaining, resetAfterMs, used, limit }
+  entry.count += 1
+  store[composedKey] = entry
+
+  const allowed = entry.count <= limit
+  const remaining = Math.max(0, limit - entry.count)
+  const resetAfterMs = Math.max(0, entry.windowStart + windowMs - now)
+
+  return {
+    allowed,
+    remaining,
+    resetAfterMs,
+    used: entry.count,
+    limit
+  }
 }
 
 export class RateLimitError extends Error {
@@ -75,6 +81,16 @@ export class RateLimitError extends Error {
     this.name = 'RateLimitError'
     this.retryAfterMs = retryAfterMs
   }
+}
+
+function enforceRateLimitResult(res: RateLimitResult): RateLimitResult {
+  if (!res.allowed) {
+    throw new RateLimitError(
+      `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(res.resetAfterMs / 1000)}s.`,
+      res.resetAfterMs
+    )
+  }
+  return res
 }
 
 /**
@@ -92,28 +108,14 @@ export class RateLimitError extends Error {
 export function rateLimitByUserId(
   opts: Omit<RateLimitOpts, 'clientId'> & { userId: string }
 ): RateLimitResult {
-  const res = checkAndConsumeRateLimit(opts)
-  if (!res.allowed) {
-    throw new RateLimitError(
-      `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(res.resetAfterMs / 1000)}s.`,
-      res.resetAfterMs
-    )
-  }
-  return res
+  return enforceRateLimitResult(checkAndConsumeRateLimit(opts))
 }
 
 /** Helper para endpoints anónimos o pre-auth, limitando por clientId/IP. */
 export function rateLimitByClientId(
   opts: Omit<RateLimitOpts, 'userId'> & { clientId: string }
 ): RateLimitResult {
-  const res = checkAndConsumeRateLimit(opts)
-  if (!res.allowed) {
-    throw new RateLimitError(
-      `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(res.resetAfterMs / 1000)}s.`,
-      res.resetAfterMs
-    )
-  }
-  return res
+  return enforceRateLimitResult(checkAndConsumeRateLimit(opts))
 }
 
 /**
@@ -153,7 +155,7 @@ export async function rateLimit(
 }
 
 export function clearRateLimit(): void {
-  store = { windowStart: Date.now(), counts: {} }
+  store = {}
 }
 
 // COMPANIES-014 · Wrapper estandarizado para aplicar rate-limits en todas las rutas /api/companies/**
@@ -226,7 +228,7 @@ export function enforceUserRateLimit(userId: string, routeKey: UserRouteKey): Ra
 export const AUTH_RATE_LIMITS = {
   registerIp:          { key: 'auth:register:ip',          limit: 8,  windowMs: 60 * 60 * 1000 },
   registerIpEmail:     { key: 'auth:register:ip:email',    limit: 2,  windowMs: 12 * 60 * 60 * 1000 },
-  signinEmail:         { key: 'auth:signin:email',         limit: 15, windowMs: 15 * 60 * 1000 },
+  signinEmail:         { key: 'auth:signin:email',         limit: 5, windowMs: 15 * 60 * 1000 },
   inviteVerifyIp:      { key: 'auth:invite:verify:ip',     limit: 12, windowMs: 10 * 60 * 1000 },
   inviteAcceptIp:      { key: 'auth:invite:accept:ip',     limit: 5,  windowMs: 60 * 1000 },
   completeRegId:       { key: 'auth:complete:id',          limit: 3,  windowMs: 60 * 60 * 1000 },

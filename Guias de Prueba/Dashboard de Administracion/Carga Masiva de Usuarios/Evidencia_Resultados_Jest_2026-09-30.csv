@@ -1,0 +1,5 @@
+"Módulo","Caso de Prueba","Estatus","Detalle"
+"Carga Masiva de Usuarios","/admin/users-bulk - Prueba 1: Bloquea archivos con extensión incorrecta (.jpg)","PASS","Se validó que el sistema bloquea y muestra advertencia roja para archivos no .txt"
+"Carga Masiva de Usuarios","/admin/users-bulk - Prueba 2: Muestra la tabla de errores si el backend detecta fallas","PASS","Se validó que el layout detiene la carga y muestra la tabla detallada de errores por fila"
+"Carga Masiva de Usuarios","/admin/users-bulk - Prueba 3: Procesa la carga exitosamente y muestra confirmación","PASS","Se validó que el sistema procesa archivos correctos y despliega confirmación verde"
+"Carga Masiva de Usuarios","/admin/users-bulk - Prueba 4: Bloquea el acceso a usuarios sin privilegios (Seguridad)","PASS","Se validó que la protección de rol bloquea a usuarios estándar"

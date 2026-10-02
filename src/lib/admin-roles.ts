@@ -17,6 +17,7 @@ export type SystemRoleOverride = {
   canViewSatPortal: boolean
   canViewMassDownloads: boolean
   canManageOrg: boolean
+  canUseAiChat: boolean
   granularPermissions: Record<string, boolean>
 }
 
@@ -28,6 +29,7 @@ const DEFAULT_OVERRIDES: Record<SystemRoleId, SystemRoleOverride> = {
     canViewSatPortal: true,
     canViewMassDownloads: true,
     canManageOrg: true,
+    canUseAiChat: true,
     granularPermissions: {
       emissionDashboard: true,
       emissionWorkpaper: true,
@@ -70,6 +72,7 @@ const DEFAULT_OVERRIDES: Record<SystemRoleId, SystemRoleOverride> = {
     canViewSatPortal: true,
     canViewMassDownloads: true,
     canManageOrg: false,
+    canUseAiChat: false,
     granularPermissions: {
       emissionDashboard: true,
       emissionWorkpaper: true,
@@ -112,6 +115,7 @@ const DEFAULT_OVERRIDES: Record<SystemRoleId, SystemRoleOverride> = {
     canViewSatPortal: true,
     canViewMassDownloads: true,
     canManageOrg: false,
+    canUseAiChat: false,
     granularPermissions: {
       emissionDashboard: true,
       emissionWorkpaper: false,
@@ -151,14 +155,22 @@ const DEFAULT_OVERRIDES: Record<SystemRoleId, SystemRoleOverride> = {
 
 export function buildSystemRoleDefaults(roleId: SystemRoleId) {
   const src = DEFAULT_OVERRIDES[roleId]
+
+  let name = 'Visualizador'
+  let description = 'Acceso básico de solo lectura a los dashboards.'
+
+  if (roleId === 'ADMIN') {
+    name = 'Administrador'
+    description = 'Acceso total a todas las funcionalidades del sistema.'
+  } else if (roleId === 'AUDITOR') {
+    name = 'Auditor'
+    description = 'Acceso de solo lectura para auditoría y revisión.'
+  }
+
   return {
     id: roleId,
-    name: roleId === 'ADMIN' ? 'Administrador' : roleId === 'AUDITOR' ? 'Auditor' : 'Visualizador',
-    description: roleId === 'ADMIN'
-      ? 'Acceso total a todas las funcionalidades del sistema.'
-      : roleId === 'AUDITOR'
-      ? 'Acceso de solo lectura para auditoría y revisión.'
-      : 'Acceso básico de solo lectura a los dashboards.',
+    name,
+    description,
     isSystemRole: true,
     canViewEmission: src.canViewEmission,
     canViewReception: src.canViewReception,
@@ -166,6 +178,7 @@ export function buildSystemRoleDefaults(roleId: SystemRoleId) {
     canViewSatPortal: src.canViewSatPortal,
     canViewMassDownloads: src.canViewMassDownloads,
     canManageOrg: src.canManageOrg,
+    canUseAiChat: src.canUseAiChat,
     granularPermissions: src.granularPermissions
   }
 }
@@ -216,6 +229,7 @@ export async function getSystemRoleOverrideForOrg(
     canViewSatPortal: coerceBoolean((override as Record<string, unknown>).canViewSatPortal, fallback.canViewSatPortal),
     canViewMassDownloads: coerceBoolean((override as Record<string, unknown>).canViewMassDownloads, fallback.canViewMassDownloads),
     canManageOrg: coerceBoolean((override as Record<string, unknown>).canManageOrg, fallback.canManageOrg),
+    canUseAiChat: coerceBoolean((override as Record<string, unknown>).canUseAiChat, fallback.canUseAiChat),
     granularPermissions: coerceGranularObject(
       (override as Record<string, unknown>).granularPermissions,
       fallback.granularPermissions
@@ -252,6 +266,7 @@ export async function saveSystemRoleOverrideForOrg(
     canViewSatPortal: !!data.canViewSatPortal,
     canViewMassDownloads: !!data.canViewMassDownloads,
     canManageOrg: !!data.canManageOrg,
+    canUseAiChat: !!data.canUseAiChat,
     granularPermissions: cleanedGranular
   }
 
@@ -319,7 +334,8 @@ export const CUSTOM_ROLE_PERMISSION_KEYS = [
   'canViewPayroll',
   'canViewSatPortal',
   'canViewMassDownloads',
-  'canManageOrg'
+  'canManageOrg',
+  'canUseAiChat'
 ] as const
 
 export type CustomRolePermissionKey = typeof CUSTOM_ROLE_PERMISSION_KEYS[number]
@@ -331,6 +347,7 @@ export const customRolePermissionsSchema = z.object({
   canViewSatPortal: z.boolean().default(false),
   canViewMassDownloads: z.boolean().default(false),
   canManageOrg: z.boolean().default(false),
+  canUseAiChat: z.boolean().default(false),
 }).strict()
 
 export const createCustomRoleSchema = z.object({

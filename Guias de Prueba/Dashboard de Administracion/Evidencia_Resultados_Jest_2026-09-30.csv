@@ -1,0 +1,7 @@
+ID_Prueba,Modulo,Escenario,Estado,Fecha_Ejecucion,Tiempo_Respuesta_ms,Notas
+CP01,Panel de Administración,Bloquea a usuarios sin privilegios y permite a administradores (Zero Trust),Exitoso,2026-09-30,101,Validación correcta del componente PermissionRequired.
+CP02,Panel de Administración,Muestra correctamente las tarjetas de indicadores (KPIs),Exitoso,2026-09-30,62,Datos cargados correctamente.
+CP03,Panel de Administración,Muestra correctamente el Top Industrias y Top Estados en la pestaña Resumen,Exitoso,2026-09-30,27,Estadísticas mostradas correctamente.
+CP04,Panel de Administración,Permite navegar por la bandeja de empresas y valida estado de botones,Exitoso,2026-09-30,61,El botón de visualización se desactiva para estados procesados.
+CP05,Panel de Administración,Protege la privacidad ocultando correos electrónicos (PII) en Actividad,Exitoso,2026-09-30,59,Enmascaramiento de email (ej. ju********@*****.com) validado.
+CP06,Panel de Administración,Maneja errores de conexión y permite reintentar,Exitoso,2026-09-30,123,Mensaje de error y funcionalidad de reintento exitosos.

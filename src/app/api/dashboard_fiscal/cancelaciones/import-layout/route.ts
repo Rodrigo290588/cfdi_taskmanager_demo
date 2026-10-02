@@ -27,7 +27,7 @@ export const maxDuration = 30
 const MAX_SIZE = 5 * 1024 * 1024
 
 const importLayoutPayloadSchema = z.strictObject({
-  companyId: z.string().uuid()
+  companyId: z.string().min(1)
 })
 
 const invoiceSummarySelect = {

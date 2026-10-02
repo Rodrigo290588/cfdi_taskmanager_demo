@@ -1,0 +1,23 @@
+Fecha de Ejecución,Suite de Pruebas,Descripción de la Prueba,Resultado,Duración (ms)
+2026-09-28,Tablero de Ingresos - Pre-requisitos,debe renderizar el tablero al seleccionar una empresa y fechas válidas,PASS,296
+2026-09-28,Tablero de Ingresos - Pre-requisitos,no debe permitir abrir los Drilldowns si el filtro de fechas está vacío,PASS,62
+2026-09-28,Tablero de Ingresos - KPIs,CFDI de Ingresos: suma solo facturas tipo I (INGRESO) con estatus VIGENTE,PASS,221
+2026-09-28,Tablero de Ingresos - KPIs,Cancelaciones de Ingresos: suma solo facturas tipo I con estatus CANCELADO,PASS,205
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Nominativos: excluye RFC genérico (XAXX010101000) y facturas globales,PASS,180
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Globales: suma ventas al Público en General con nodo cfdi:InformacionGlobal,PASS,94
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Individuales: suma ventas individuales a Público en General sin nodo global,PASS,148
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Brutos: verifica la fórmula matemática (Nominativos + Globales + Individuales),PASS,83
+2026-09-28,Tablero de Ingresos - KPIs,Descuentos y Bonificaciones: suma el atributo Descuento en facturas VIGENTES,PASS,83
+2026-09-28,Tablero de Ingresos - KPIs,Notas de Crédito: suma el atributo SubTotal de comprobantes tipo E (EGRESO) VIGENTES,PASS,72
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Netos Reales: verifica fórmula (Ingresos Brutos - Descuentos - Notas de Crédito),PASS,79
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Cobrados (Flujo Total): suma facturas PUE + proporción de pagos en parcialidades (CRP),PASS,214
+2026-09-28,Tablero de Ingresos - KPIs,Ingresos Pendientes de Cobro: verifica saldo insoluto (PPD - CRP - Notas de Crédito) y nunca es negativo,PASS,219
+2026-09-28,Tablero de Ingresos - KPIs,Impuesto Trasladado IVA: suma el IVA desglosado (tasas 16% y 8%) en facturas VIGENTES,PASS,100
+2026-09-28,Tablero de Ingresos - KPIs,IVA Cobrado Total: suma IVA al 100% de PUE + proporción de IVA cobrado en CRP,PASS,84
+2026-09-28,Tablero de Ingresos - KPIs,Impuestos Retenidos: suma retenciones (ISR + IVA + IEPS) en facturas de Ingreso,PASS,100
+2026-09-28,Tablero de Ingresos - Interfaz UI,bloquea la apertura del Drilldown si el valor de la tarjeta es exactamente $0.00,PASS,98
+2026-09-28,Tablero de Ingresos - Interfaz UI,abre el Drilldown correctamente si el valor de la tarjeta es mayor a $0.00,PASS,121
+2026-09-28,Tablero de Ingresos - Gráficas,CFDI de Ingresos por mes: renderiza correctamente barras de cantidad y línea de monto,PASS,144
+2026-09-28,Tablero de Ingresos - Gráficas,CFDI Vigentes vs Cancelados: agrupa y suma los estados SAT correctamente,PASS,217
+2026-09-28,Tablero de Ingresos - Gráficas,CFDI por Tipo: clasifica facturas por tipo fiscal (I E T P N),PASS,157
+2026-09-28,Tablero de Ingresos - Gráficas,Métodos de Pago: distribuye porcentajes correctamente entre PUE y PPD,PASS,80

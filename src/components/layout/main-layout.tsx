@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Sidebar } from './sidebar'
 import { Button } from '@/components/ui/button'
 import { Menu, Bell } from 'lucide-react'
+import { AiChatWrapper } from '@/components/ai/ai-chat-wrapper'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -90,6 +91,9 @@ export function MainLayout({ children }: MainLayoutProps) {
           {children}
         </main>
       </div>
+      
+      {/* AI Chat Assistant */}
+      <AiChatWrapper />
     </div>
   )
 }

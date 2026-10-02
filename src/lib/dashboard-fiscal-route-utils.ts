@@ -59,9 +59,11 @@ export type DashboardCommonParams = {
   retryAfterSeconds?: number
 }
 
+const DEFAULT_DASHBOARD_PARAMS: DashboardCommonParams = { routeKey: 'mainHeavy' }
+
 export async function buildDashboardScopedContext(
   request: NextRequest,
-  opts: DashboardCommonParams = { routeKey: 'mainHeavy' }
+  opts: DashboardCommonParams = DEFAULT_DASHBOARD_PARAMS
 ): Promise<DashboardScopedRequestCtx> {
   const clientIp = getRealClientIp(request.headers)
   const cfg = DASHBOARD_RATE_LIMITS[opts.routeKey]
@@ -147,16 +149,25 @@ export function dashboardJsonErrorResponse(error: unknown): NextResponse {
   )
 }
 
-const SAFE_FILENAME_REGEX = /[^A-Za-z0-9_\-]/g
+const SAFE_FILENAME_REGEX = /[^A-Za-z0-9_-]/g
 
 export function sanitizeDownloadFilename(unsafeName: string, fallback = 'download', ext?: string): string {
-  const base = (unsafeName || '').toString().replace(SAFE_FILENAME_REGEX, '_').slice(0, 120).replace(/^_+|_+$/g, '')
+  const base = (unsafeName || '').toString().replace(SAFE_FILENAME_REGEX, '_').slice(0, 120).replace(/^_|_$/g, '')
   const clean = (base || fallback).replace(/\s+/g, '_')
-  return ext ? `${clean}${ext.startsWith('.') ? ext : `.${ext}`}` : clean
+  
+  if (!ext) {
+    return clean
+  }
+  
+  const extension = ext.startsWith('.') ? ext : '.' + ext
+  return clean + extension
 }
 
 export function buildRfc5987ContentDisposition(filename: string, type: 'attachment' | 'inline' = 'attachment'): string {
-  const encoded = encodeURIComponent(filename).replace(/['()]/g, c => `%${c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()}`)
+  const encoded = encodeURIComponent(filename).replace(/['()]/g, c => {
+    const code = c.codePointAt(0) ?? 0
+    return `%${code.toString(16).padStart(2, '0').toUpperCase()}`
+  })
   const ascii = filename.replace(/[^\x20-\x7E]/g, '_')
   return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`
 }

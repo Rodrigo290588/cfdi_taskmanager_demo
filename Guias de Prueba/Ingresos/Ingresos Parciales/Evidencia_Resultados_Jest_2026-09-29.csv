@@ -1,0 +1,15 @@
+Fecha de Ejecución,Suite de Pruebas,Descripción de la Prueba,Resultado,Duración (ms)
+29/09/2026,Ingresos Parciales - Pre-requisitos,bloquea la carga de datos si no se seleccionan fechas (botón deshabilitado),PASS,138
+29/09/2026,Ingresos Parciales - Pre-requisitos,ejecuta la búsqueda y renderiza los datos al proporcionar fechas válidas,PASS,144
+29/09/2026,Ingresos Parciales - KPIs,Ingresos Pendientes de Cobro: refleja el Saldo Insoluto real,PASS,132
+29/09/2026,Ingresos Parciales - KPIs,Ingresos Cobrados (CRP): muestra la sumatoria de abonos,PASS,150
+29/09/2026,Ingresos Parciales - KPIs,Notas de Crédito Aplicadas: refleja montos de Egreso,PASS,136
+29/09/2026,Ingresos Parciales - KPIs,Monto por Cobrar (Bruto): suma el Total histórico,PASS,101
+29/09/2026,Ingresos Parciales - KPIs,Métricas Secundarias: conteos tienen sentido lógico,PASS,143
+29/09/2026,Ingresos Parciales - Interactividad y Filtros,Filtro Fecha Pago (REP): refleja facturas que tuvieron abonos en ese lapso,PASS,302
+29/09/2026,Ingresos Parciales - Interactividad y Filtros,Filtro Monedas y Escenarios: aplica los filtros en la consulta,PASS,124
+29/09/2026,Ingresos Parciales - Interactividad y Filtros,Buscador UUID / RFC (En Columna): filtra en tiempo real,PASS,238
+29/09/2026,Ingresos Parciales - Drilldown,"Al hacer clic en la flecha se expande la sub-tabla de ""Desglose de Pagos (REPs)""",PASS,343
+29/09/2026,Ingresos Parciales - Drilldown,Al hacer clic en el botón XML de un REP despliega el modal,PASS,460
+29/09/2026,Ingresos Parciales - Exportaciones,Descargar ZIP: genera un .zip con los XML,PASS,285
+29/09/2026,Ingresos Parciales - Exportaciones,Descarga Masiva a Excel: genera reporte xls,PASS,207

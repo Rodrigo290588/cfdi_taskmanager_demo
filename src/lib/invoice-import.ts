@@ -10,7 +10,7 @@ type ContextCache = Map<string, Promise<{ userId: string; issuerFiscalEntityId: 
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
   // IMP-002 · Longitud máxima de attrName + value por atributo (256 chars) para prevenir ReDoS
-  const re = new RegExp(`<${tagNs}[^>]{0,4096}?\\b${attrName}="([^"]{0,1024})"`, 'i')
+  const re = new RegExp(String.raw`<${tagNs}[^>]{0,4096}?\b${attrName}="([^"]{0,1024})"`, 'i')
   const m = xml.match(re)
   return m ? (m[1] || null) : null
 }
@@ -33,15 +33,33 @@ function parseDecimal(value: string | null | undefined, fallback = '0'): Prisma.
   return Number.isFinite(n) ? new Prisma.Decimal(n.toFixed(2)) : new Prisma.Decimal(fallback)
 }
 
-function extractTaxes(xml: string) {
-  const globalIvaTransferred = attrNs(xml, '[^:>]*:?Impuestos', 'TotalImpuestosTrasladados')
+export function extractTaxes(xml: string) {
+  const globalIvaTransferred = attrNs(xml, String.raw`(?:\w+:)?Impuestos`, 'TotalImpuestosTrasladados')
   const ivaTransferred = parseDecimal(globalIvaTransferred, '0')
 
+  const retenciones = extractRetenciones(xml)
+  const traslados = extractTrasladosDetails(xml)
+
+  return {
+    ivaTransferred,
+    ivaWithheld: new Prisma.Decimal(retenciones.ivaWithheldTotal.toFixed(2)),
+    isrWithheld: new Prisma.Decimal(retenciones.isrWithheldTotal.toFixed(2)),
+    iepsWithheld: new Prisma.Decimal(retenciones.iepsWithheldTotal.toFixed(2)),
+    iva16Base: new Prisma.Decimal(traslados.iva16BaseTotal.toFixed(2)),
+    iva16Tax: new Prisma.Decimal(traslados.iva16TaxTotal.toFixed(2)),
+    iva8Base: new Prisma.Decimal(traslados.iva8BaseTotal.toFixed(2)),
+    iva8Tax: new Prisma.Decimal(traslados.iva8TaxTotal.toFixed(2)),
+    iva0Base: new Prisma.Decimal(traslados.iva0BaseTotal.toFixed(2)),
+    ivaExemptBase: new Prisma.Decimal(traslados.ivaExemptBaseTotal.toFixed(2)),
+  }
+}
+
+function extractRetenciones(xml: string) {
   let ivaWithheldTotal = 0
   let isrWithheldTotal = 0
   let iepsWithheldTotal = 0
   // IMP-002 · Iteración limitada (max 128 impuestos) para evitar ReDoS pathológico retenciones sin cerrar
-  const retencionRegex = /<[^:>]{0,64}:?Retencion[^>]{0,1024}?Impuesto="([^"]{1,16})"[^>]{0,1024}?Importe="([^"]{1,32})"/giy
+  const retencionRegex = /<(?:\w+:)?Retencion[^>]{0,1024}?Impuesto="([^"]{1,16})"[^>]{0,1024}?Importe="([^"]{1,32})"/gi
   let iterCount = 0
   const MAX_TAX_ITEMS = 512
   for (const m of xml.matchAll(retencionRegex)) {
@@ -52,21 +70,75 @@ function extractTaxes(xml: string) {
     else if (imp === '001' || imp === 'ISR') isrWithheldTotal += val
     else if (imp === '003' || imp === 'IEPS') iepsWithheldTotal += val
   }
+  return { ivaWithheldTotal, isrWithheldTotal, iepsWithheldTotal }
+}
 
-  return {
-    ivaTransferred,
-    ivaWithheld: new Prisma.Decimal(ivaWithheldTotal.toFixed(2)),
-    isrWithheld: new Prisma.Decimal(isrWithheldTotal.toFixed(2)),
-    iepsWithheld: new Prisma.Decimal(iepsWithheldTotal.toFixed(2)),
+type TrasladosTotals = {
+  iva16BaseTotal: number
+  iva16TaxTotal: number
+  iva8BaseTotal: number
+  iva8TaxTotal: number
+  iva0BaseTotal: number
+  ivaExemptBaseTotal: number
+}
+
+function extractTrasladosDetails(xml: string): TrasladosTotals {
+  const totals: TrasladosTotals = {
+    iva16BaseTotal: 0,
+    iva16TaxTotal: 0,
+    iva8BaseTotal: 0,
+    iva8TaxTotal: 0,
+    iva0BaseTotal: 0,
+    ivaExemptBaseTotal: 0
+  }
+
+  const conceptosMatch = /<(?:\w+:)?Conceptos[^>]*>([\s\S]*?)<\/(?:\w+:)?Conceptos>/i.exec(xml)
+  const parseTarget = conceptosMatch ? conceptosMatch[1] : xml
+  const trasladoRegex = /<(?:\w+:)?Traslado([^>]+)>/gi
+  const attrRegex = /\b(\w+)="([^"]+)"/g
+  
+  for (const m of parseTarget.matchAll(trasladoRegex)) {
+    processTrasladoNode(m[1], totals, attrRegex)
+  }
+
+  return totals
+}
+
+function processTrasladoNode(attrsStr: string, totals: TrasladosTotals, attrRegex: RegExp) {
+  const attrs: Record<string, string> = {}
+  for (const attrMatch of attrsStr.matchAll(attrRegex)) {
+    attrs[attrMatch[1]] = attrMatch[2]
+  }
+  
+  if (attrs['Impuesto'] === '002' || attrs['Impuesto'] === 'IVA') {
+    applyTrasladoIvaTotals(attrs, totals)
+  }
+}
+
+function applyTrasladoIvaTotals(attrs: Record<string, string>, totals: TrasladosTotals) {
+  const base = Number.parseFloat(attrs['Base'] ?? '0')
+  const tax = Number.parseFloat(attrs['Importe'] ?? '0')
+  const tasa = Number.parseFloat(attrs['TasaOCuota'] ?? '0')
+  const tipo = attrs['TipoFactor']
+  
+  if (tipo === 'Exento') {
+    totals.ivaExemptBaseTotal += base
+  } else if (tipo === 'Tasa' || attrs['TasaOCuota']) {
+    if (Math.abs(tasa - 0.16) < 0.01) {
+      totals.iva16BaseTotal += base
+      totals.iva16TaxTotal += tax
+    } else if (Math.abs(tasa - 0.08) < 0.01) {
+      totals.iva8BaseTotal += base
+      totals.iva8TaxTotal += tax
+    } else if (Math.abs(tasa - 0.0) < 0.001) {
+      totals.iva0BaseTotal += base
+    }
   }
 }
 
 // IMP-021 · Validación mínima estructural SAT CFDI 4.0 (TimbreFiscalDigital obligatorio)
 // Validación criptográfica completa vía PAC queda como step posterior en roadmap (verify Sello SAT).
-export const RFC_SAT_REGEX: RegExp = (() => {
-  const N_TILDE = String.fromCharCode(0x00D1)
-  return new RegExp(`^[A-Z${N_TILDE}&]{3,4}[0-9]{6}[A-Z0-9]{2,3}$`)
-})()
+export const RFC_SAT_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{2,3}$/
 
 export interface SatSignatureCheckResult {
   valid: boolean
@@ -77,22 +149,22 @@ export interface SatSignatureCheckResult {
 }
 
 export function verifyTimbreFiscalDigitalBaseline(xml: string): SatSignatureCheckResult {
-  const hasComprobante = /<[^:>]*:?Comprobante\b/i.test(xml.slice(0, 65536))
-  const hasTimbre = /<[^:>]*:?TimbreFiscalDigital\b/i.test(xml)
-  const tfdUuidRaw: string | null = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'UUID')
+  const hasComprobante = /<(?:\w+:)?Comprobante\b/i.test(xml.slice(0, 65536))
+  const hasTimbre = /<(?:\w+:)?TimbreFiscalDigital\b/i.test(xml)
+  const tfdUuidRaw: string | null = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'UUID')
   const tfdUuid: string | null = tfdUuidRaw
-  const tfdFecha = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'FechaTimbrado')
-  const tfdPac = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'RfcProvCertif')
-  const tfdSelloSat = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'SelloSAT')
-  const tfdSelloCfd = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'SelloCFD')
-  const tfdNoCertificado = attrNs(xml, '[^:>]*:?TimbreFiscalDigital', 'NoCertificadoSAT')
+  const tfdFecha = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'FechaTimbrado')
+  const tfdPac = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'RfcProvCertif')
+  const tfdSelloSat = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'SelloSAT')
+  const tfdSelloCfd = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'SelloCFD')
+  const tfdNoCertificado = attrNs(xml, String.raw`(?:\w+:)?TimbreFiscalDigital`, 'NoCertificadoSAT')
   if (!hasComprobante) return { valid: false, reason: 'Falta nodo Comprobante', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   if (!hasTimbre) return { valid: false, reason: 'Falta nodo TimbreFiscalDigital (CFDI no timbrado)', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   if (!tfdUuid) return { valid: false, reason: 'TimbreFiscalDigital sin UUID', uuid: null, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   if (!isStrictRfc4122Uuid(tfdUuid)) return { valid: false, reason: `UUID Timbre no cumple RFC 4122: ${String(tfdUuid).slice(0, 32)}`, uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   if (!tfdSelloSat || tfdSelloSat.length < 32) return { valid: false, reason: 'Atributo SelloSAT ausente o inválido', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   if (!tfdSelloCfd || tfdSelloCfd.length < 32) return { valid: false, reason: 'Atributo SelloCFD ausente o inválido', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
-  if (!tfdNoCertificado || !/^[0-9]{20}$/.test(tfdNoCertificado)) return { valid: false, reason: 'NoCertificadoSAT inválido (deben ser 20 dígitos)', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
+  if (!tfdNoCertificado || !/^\d{20}$/.test(tfdNoCertificado)) return { valid: false, reason: 'NoCertificadoSAT inválido (deben ser 20 dígitos)', uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
   return { valid: true, uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
 }
 
@@ -130,6 +202,50 @@ export function parseInvoiceFromXml(xml: string) {
 
   const { ivaTransferred, ivaWithheld, isrWithheld, iepsWithheld } = extractTaxes(xml)
 
+  const conceptos = extractConceptos(xml)
+  const relatedCfdis = extractRelatedCfdis(xml)
+  const total = extractTotalValue(xml, cfdiType, comprobanteTag)
+
+  return {
+    uuid,
+    cfdiType,
+    series: attrNs(xml, comprobanteTag, 'Serie') || null,
+    folio: attrNs(xml, comprobanteTag, 'Folio') || null,
+    currency: attrNs(xml, comprobanteTag, 'Moneda') || 'MXN',
+    exchangeRate: (() => {
+      const raw = attrNs(xml, comprobanteTag, 'TipoCambio')
+      const n = raw ? Number(raw) : null
+      return n !== null && Number.isFinite(n) ? n : null
+    })(),
+    issuerRfc,
+    issuerName,
+    receiverRfc,
+    receiverName,
+    subtotal: parseDecimal(attrNs(xml, comprobanteTag, 'SubTotal'), '0'),
+    discount: parseDecimal(attrNs(xml, comprobanteTag, 'Descuento'), '0'),
+    total,
+    ivaTransferred,
+    ivaWithheld,
+    isrWithheld,
+    iepsWithheld,
+    xmlContent: xml,
+    issuanceDate,
+    certificationDate,
+    certificationPac: timbreCheck.rfcProvCertif || attrNs(xml, timbreTag, 'RfcProvCertif') || 'DESCONOCIDO',
+    paymentMethod: attrNs(xml, comprobanteTag, 'MetodoPago') || '',
+    paymentForm: attrNs(xml, comprobanteTag, 'FormaPago') || '',
+    cfdiUsage: attrNs(xml, receptorTag, 'UsoCFDI') || '',
+    placeOfExpedition: attrNs(xml, comprobanteTag, 'LugarExpedicion') || '',
+    exportKey: attrNs(xml, comprobanteTag, 'Exportacion') || '01',
+    paymentConditions: attrNs(xml, comprobanteTag, 'CondicionesDePago') || null,
+    objectTaxComprobante: attrNs(xml, comprobanteTag, 'ObjetoImp') || null,
+    conceptos,
+    relatedCfdis,
+    _satBaselineValid: timbreCheck.valid
+  }
+}
+
+function extractConceptos(xml: string) {
   const conceptos: Prisma.InvoiceConceptCreateWithoutInvoiceInput[] = []
   // IMP-002 · Usar parser Concepto safe (no regex backtracking)
   const conceptoSafe = createConceptoRegexSafe()
@@ -160,37 +276,51 @@ export function parseInvoiceFromXml(xml: string) {
       objectOfTax,
     })
   }
+  return conceptos
+}
 
+function extractRelatedCfdis(xml: string) {
   const relatedCfdis: Prisma.InvoiceRelatedCfdiCreateWithoutInvoiceInput[] = []
+  processCfdiRelacionados(xml, relatedCfdis)
+  processDoctoRelacionado(xml, relatedCfdis)
+  return relatedCfdis
+}
 
+function processCfdiRelacionados(xml: string, relatedCfdis: Prisma.InvoiceRelatedCfdiCreateWithoutInvoiceInput[]) {
   // IMP-022 · RelatedUuid: validar strict RFC 4122 y escapar celdas CSV en storage si fuera necesario
-  const cfdiRelacionadosRegex = /<[^:>]{0,64}:?CfdiRelacionados\b([^>]{0,512})>([\s\S]{0,65536}?)<\/[^:>]{0,64}:?CfdiRelacionados>/gi
+  const cfdiRelacionadosRegex = /<(?:\w+:)?CfdiRelacionados\b([^>]{0,512})>([\s\S]{0,65536}?)<\/(?:\w+:)?CfdiRelacionados>/gi
   let crCount = 0
   for (const match of xml.matchAll(cfdiRelacionadosRegex)) {
     if (++crCount > 64) break
     const tipoRelacion = attrNs(`<Tag ${match[1]}>`, 'Tag', 'TipoRelacion') || '04'
-    const cfdiRelacionadoRegex = /<[^:>]{0,64}:?CfdiRelacionado\b([^>]{0,512})>/gi
-    let inner = 0
-    for (const relMatch of match[2].matchAll(cfdiRelacionadoRegex)) {
-      if (++inner > 64) break
-      const relatedUuid = attrNs(`<Tag ${relMatch[1]}>`, 'Tag', 'UUID')
-      if (relatedUuid && isStrictRfc4122Uuid(relatedUuid)) {
-        const up = relatedUuid.toUpperCase()
-        if (!relatedCfdis.find(r => r.relatedUuid === up)) {
-          relatedCfdis.push({ relationType: tipoRelacion, relatedUuid: csvCellEscape(up) })
-        }
+    processInnerCfdiRelacionado(match[2], tipoRelacion, relatedCfdis)
+  }
+}
+
+function processInnerCfdiRelacionado(innerXml: string, tipoRelacion: string, relatedCfdis: Prisma.InvoiceRelatedCfdiCreateWithoutInvoiceInput[]) {
+  const cfdiRelacionadoRegex = /<(?:\w+:)?CfdiRelacionado\b([^>]{0,512})>/gi
+  let inner = 0
+  for (const relMatch of innerXml.matchAll(cfdiRelacionadoRegex)) {
+    if (++inner > 64) break
+    const relatedUuid = attrNs(`<Tag ${relMatch[1]}>`, 'Tag', 'UUID')
+    if (relatedUuid && isStrictRfc4122Uuid(relatedUuid)) {
+      const up = relatedUuid.toUpperCase()
+      if (!relatedCfdis.some(r => r.relatedUuid === up)) {
+        relatedCfdis.push({ relationType: tipoRelacion, relatedUuid: csvCellEscape(up) })
       }
     }
   }
+}
 
-  const doctoRelacionadoRegex = /<[^:>]{0,64}:?DoctoRelacionado\b([^>]{0,512})>/gi
+function processDoctoRelacionado(xml: string, relatedCfdis: Prisma.InvoiceRelatedCfdiCreateWithoutInvoiceInput[]) {
+  const doctoRelacionadoRegex = /<(?:\w+:)?DoctoRelacionado\b([^>]{0,512})>/gi
   let drCount = 0
   for (const match of xml.matchAll(doctoRelacionadoRegex)) {
     if (++drCount > 128) break
     const idDocumento = attrNs(`<Tag ${match[1]}>`, 'Tag', 'IdDocumento')
     if (idDocumento && isStrictRfc4122Uuid(idDocumento)) {
       const up = idDocumento.toUpperCase()
-      if (!relatedCfdis.find(r => r.relatedUuid === up)) {
+      if (!relatedCfdis.some(r => r.relatedUuid === up)) {
         relatedCfdis.push({
           relationType: '04',
           relatedUuid: csvCellEscape(up)
@@ -198,16 +328,18 @@ export function parseInvoiceFromXml(xml: string) {
       }
     }
   }
+}
 
+function extractTotalValue(xml: string, cfdiType: CfdiType, comprobanteTag: string) {
   let totalValue = parseDecimal(attrNs(xml, comprobanteTag, 'Total'), '0')
 
   if (cfdiType === CfdiType.PAGO) {
-    const totalesMatch = /<[^:>]{0,64}:?Totales\b[^>]{0,1024}?MontoTotalPagos="([^"]{1,32})"/i.exec(xml)
+    const totalesMatch = /<(?:\w+:)?Totales\b[^>]{0,1024}?MontoTotalPagos="([^"]{1,32})"/i.exec(xml)
     if (totalesMatch && totalesMatch[1]) {
       totalValue = parseDecimal(totalesMatch[1], '0')
     } else {
       let sumPagos = 0
-      const pagoRegex = /<[^:>]{0,64}:?Pago\b[^>]{0,1024}?Monto="([^"]{1,32})"/gi
+      const pagoRegex = /<(?:\w+:)?Pago\b[^>]{0,1024}?Monto="([^"]{1,32})"/gi
       let p = 0
       for (const m of xml.matchAll(pagoRegex)) {
         if (++p > 512) break
@@ -218,44 +350,7 @@ export function parseInvoiceFromXml(xml: string) {
       }
     }
   }
-
-  return {
-    uuid,
-    cfdiType,
-    series: attrNs(xml, comprobanteTag, 'Serie') || null,
-    folio: attrNs(xml, comprobanteTag, 'Folio') || null,
-    currency: attrNs(xml, comprobanteTag, 'Moneda') || 'MXN',
-    exchangeRate: (() => {
-      const raw = attrNs(xml, comprobanteTag, 'TipoCambio')
-      const n = raw ? Number(raw) : null
-      return n !== null && Number.isFinite(n) ? n : null
-    })(),
-    issuerRfc,
-    issuerName,
-    receiverRfc,
-    receiverName,
-    subtotal: parseDecimal(attrNs(xml, comprobanteTag, 'SubTotal'), '0'),
-    discount: parseDecimal(attrNs(xml, comprobanteTag, 'Descuento'), '0'),
-    total: totalValue,
-    ivaTransferred,
-    ivaWithheld,
-    isrWithheld,
-    iepsWithheld,
-    xmlContent: xml,
-    issuanceDate,
-    certificationDate,
-    certificationPac: timbreCheck.rfcProvCertif || attrNs(xml, timbreTag, 'RfcProvCertif') || 'DESCONOCIDO',
-    paymentMethod: attrNs(xml, comprobanteTag, 'MetodoPago') || '',
-    paymentForm: attrNs(xml, comprobanteTag, 'FormaPago') || '',
-    cfdiUsage: attrNs(xml, receptorTag, 'UsoCFDI') || '',
-    placeOfExpedition: attrNs(xml, comprobanteTag, 'LugarExpedicion') || '',
-    exportKey: attrNs(xml, comprobanteTag, 'Exportacion') || '01',
-    paymentConditions: attrNs(xml, comprobanteTag, 'CondicionesDePago') || null,
-    objectTaxComprobante: attrNs(xml, comprobanteTag, 'ObjetoImp') || null,
-    conceptos,
-    relatedCfdis,
-    _satBaselineValid: timbreCheck.valid
-  }
+  return totalValue
 }
 
 async function resolveOrganizationUser(prisma: PrismaClient, organizationId: string, preferredUserId?: string | null) {
@@ -280,6 +375,61 @@ async function resolveOrganizationUser(prisma: PrismaClient, organizationId: str
   return member.userId
 }
 
+async function tryResolveFromFiscalEntity(prisma: PrismaClient, cacheKey: string, targetOrganizationId: string) {
+  const fiscalEntity = await prisma.fiscalEntity.findFirst({
+    where: {
+      rfc: cacheKey,
+      organizationId: targetOrganizationId
+    },
+    include: { organization: { select: { ownerId: true, id: true } } },
+  })
+
+  if (fiscalEntity) {
+    if (fiscalEntity.organizationId !== targetOrganizationId) {
+      throw new Error(`BOLA detectado: FiscalEntity RFC ${cacheKey.slice(0, 6)} pertenece a otra organización`)
+    }
+    const userId = await resolveOrganizationUser(prisma, fiscalEntity.organizationId, fiscalEntity.organization.ownerId)
+    return { userId, issuerFiscalEntityId: fiscalEntity.id }
+  }
+  return null
+}
+
+async function resolveFromCompanyAccess(prisma: PrismaClient, company: { createdBy: string; companyAccesses: { organizationId: string; organization: { id: string; ownerId: string | null }; member: { userId: string } }[] }, cacheKey: string, targetOrganizationId: string) {
+  let organizationId: string | null = null
+  let preferredUserId: string | null = null
+
+  if (company.companyAccesses.length > 0) {
+    const access = company.companyAccesses[0]
+    if (access.organization.id !== targetOrganizationId) {
+      throw new Error(`BOLA detectado: CompanyAccess RFC ${cacheKey.slice(0, 6)} pertenece a org distinta a la solicitada`)
+    }
+    organizationId = access.organizationId
+    preferredUserId = access.organization.ownerId || access.member.userId
+  }
+
+  if (!organizationId) {
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: company.createdBy,
+        status: 'APPROVED',
+        organizationId: targetOrganizationId
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { organizationId: true, userId: true },
+    })
+
+    if (member) {
+      if (member.organizationId !== targetOrganizationId) {
+        throw new Error(`BOLA detectado: member RFC ${cacheKey.slice(0, 6)} pertenece a org distinta`)
+      }
+      organizationId = member.organizationId
+      preferredUserId = member.userId
+    }
+  }
+
+  return { organizationId, preferredUserId }
+}
+
 export async function resolveInvoiceImportContext(
   prisma: PrismaClient,
   issuerRfc: string,
@@ -295,22 +445,8 @@ export async function resolveInvoiceImportContext(
 
   const loader = async () => {
     // IMP-007 · Paso 1: FiscalEntity SCOPEADO a targetOrganizationId
-    const fiscalEntity = await prisma.fiscalEntity.findFirst({
-      where: {
-        rfc: cacheKey,
-        organizationId: targetOrganizationId
-      },
-      include: { organization: { select: { ownerId: true, id: true } } },
-    })
-
-    if (fiscalEntity) {
-      // IMP-007 · ASSERTION: la FE encontrada debe pertenecer a la org target
-      if (fiscalEntity.organizationId !== targetOrganizationId) {
-        throw new Error(`BOLA detectado: FiscalEntity RFC ${cacheKey.slice(0, 6)} pertenece a otra organización`)
-      }
-      const userId = await resolveOrganizationUser(prisma, fiscalEntity.organizationId, fiscalEntity.organization.ownerId)
-      return { userId, issuerFiscalEntityId: fiscalEntity.id }
-    }
+    const entityResult = await tryResolveFromFiscalEntity(prisma, cacheKey, targetOrganizationId)
+    if (entityResult) return entityResult
 
     // IMP-018 · Buscar Company + Access en 1 query usando include, no N queries secuenciales
     const company = await prisma.company.findUnique({
@@ -330,40 +466,7 @@ export async function resolveInvoiceImportContext(
       throw new Error(`No existe Company/FiscalEntity para RFC ${cacheKey.slice(0, 6)}`)
     }
 
-    let organizationId: string | null = null
-    let preferredUserId: string | null = null
-
-    if (company.companyAccesses.length > 0) {
-      const access = company.companyAccesses[0]
-      // IMP-007 · ASSERTION: CompanyAccess.organizationId === targetOrganizationId
-      if (access.organization.id !== targetOrganizationId) {
-        throw new Error(`BOLA detectado: CompanyAccess RFC ${cacheKey.slice(0, 6)} pertenece a org distinta a la solicitada`)
-      }
-      organizationId = access.organizationId
-      preferredUserId = access.organization.ownerId || access.member.userId
-    }
-
-    if (!organizationId) {
-      // IMP-007 · Fallback: member.findFirst SCOPEADO a targetOrganizationId
-      const member = await prisma.member.findFirst({
-        where: {
-          userId: company.createdBy,
-          status: 'APPROVED',
-          organizationId: targetOrganizationId
-        },
-        orderBy: { createdAt: 'asc' },
-        select: { organizationId: true, userId: true },
-      })
-
-      if (member) {
-        // IMP-007 · ASSERTION: member.organizationId === targetOrganizationId
-        if (member.organizationId !== targetOrganizationId) {
-          throw new Error(`BOLA detectado: member RFC ${cacheKey.slice(0, 6)} pertenece a org distinta`)
-        }
-        organizationId = member.organizationId
-        preferredUserId = member.userId
-      }
-    }
+    const { organizationId, preferredUserId } = await resolveFromCompanyAccess(prisma, company, cacheKey, targetOrganizationId)
 
     if (!organizationId) {
       throw new Error(`No se pudo resolver una organizacion SCOPEADA para la empresa RFC ${cacheKey.slice(0, 6)}`)
@@ -501,7 +604,7 @@ export async function createInvoiceFromXml(
 
     await upsertInvoicePaymentComplementDetails(tx, {
       issuerFiscalEntityId: context.issuerFiscalEntityId,
-      paymentInvoiceId: createdInvoice.uuid,
+      paymentInvoiceId: createdInvoice.id,
       paymentInvoiceUuid: parsed.uuid,
       xmlContent: parsed.xmlContent,
       satStatusSnapshot: SatStatus.VIGENTE,

@@ -1,0 +1,6 @@
+Suite de Pruebas,Caso de Prueba,Resultado,Duracion(ms),Notas
+Modulo de Empresas (/companies),CP01: Renderiza la tabla de búsqueda y permite filtrar,PASS,263,La búsqueda por parámetros y visualización funcionan.
+Modulo de Empresas (/companies),CP02/CP03: Valida campos obligatorios al registrar una empresa,PASS,179,Zod interceptó campos vacíos y regex de RFC corto (inválido).
+Modulo de Empresas (/companies),CP04: Permite aprobar una empresa pendiente,PASS,54,El request POST con payload approve se emitió correctamente.
+Modulo de Empresas (/companies),CP05: Bloquea rechazo sin motivo y permite rechazar con motivo,PASS,61,El botón confirmar se habilita solo tras ingresar el texto y envía el POST con reject.
+Modulo de Empresas (/companies),CP06: Protege contra enlaces maliciosos en el sitio web,PASS,29,El DOM virtual descartó el enlace con javascript:alert de manera segura.

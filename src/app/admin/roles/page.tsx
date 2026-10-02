@@ -23,6 +23,7 @@ interface CustomRole {
   canViewSatPortal: boolean
   canViewMassDownloads: boolean
   canManageOrg: boolean
+  canUseAiChat: boolean
   granularPermissions?: Record<string, boolean>
   isSystemRole?: boolean
 }
@@ -68,7 +69,8 @@ const DEFAULT_PERMISSIONS = {
   canViewPayroll: true,
   canViewSatPortal: true,
   canViewMassDownloads: true,
-  canManageOrg: false
+  canManageOrg: false,
+  canUseAiChat: false
 }
 
 const SYSTEM_ROLE_LABELS: Record<string, { placeholderName: string; placeholderDesc: string }> = {
@@ -78,7 +80,7 @@ const SYSTEM_ROLE_LABELS: Record<string, { placeholderName: string; placeholderD
 }
 
 function isSystemRoleId(id?: string | null): id is 'ADMIN' | 'AUDITOR' | 'VIEWER' {
-  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SYSTEM_ROLE_LABELS, id)
+  return typeof id === 'string' && Object.hasOwn(SYSTEM_ROLE_LABELS, id)
 }
 
 function RolesManagementPage() {
@@ -130,7 +132,8 @@ function RolesManagementPage() {
           canViewPayroll: role.canViewPayroll,
           canViewSatPortal: role.canViewSatPortal,
           canViewMassDownloads: role.canViewMassDownloads,
-          canManageOrg: role.canManageOrg
+          canManageOrg: role.canManageOrg,
+          canUseAiChat: role.canUseAiChat ?? false
         },
         granularPermissions: { ...DEFAULT_GRANULAR_PERMISSIONS, ...(role.granularPermissions as Partial<typeof DEFAULT_GRANULAR_PERMISSIONS> || {}) }
       })
@@ -247,11 +250,13 @@ function RolesManagementPage() {
         </Button>
       </div>
 
-      {loading && roles.length === 0 ? (
+      {loading && roles.length === 0 && (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      ) : roles.length === 0 ? (
+      )}
+
+      {!loading && roles.length === 0 && (
         <Card className="text-center py-12">
           <CardContent>
             <ShieldAlert className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -260,7 +265,9 @@ function RolesManagementPage() {
             <Button onClick={() => handleOpenDialog()}>Crear Rol</Button>
           </CardContent>
         </Card>
-      ) : (
+      )}
+
+      {roles.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {roles.map(role => (
             <Card key={role.id} className="flex flex-col">
@@ -298,6 +305,10 @@ function RolesManagementPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Gestionar Org:</span>
                     <span className={role.canManageOrg ? "text-green-600 font-medium" : "text-red-500"}>{role.canManageOrg ? 'Sí' : 'No'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Chat de IA:</span>
+                    <span className={role.canUseAiChat ? "text-green-600 font-medium" : "text-red-500"}>{role.canUseAiChat ? 'Sí' : 'No'}</span>
                   </div>
                 </div>
               </CardContent>
@@ -619,6 +630,21 @@ function RolesManagementPage() {
                       <Label className="text-sm text-muted-foreground font-normal">Modificar preferencias del sistema</Label>
                       <Switch size="sm" checked={formData.granularPermissions.orgSettings} onCheckedChange={() => toggleGranularPermission('orgSettings')} disabled={!formData.permissions.canManageOrg} />
                     </div>
+                  </div>
+                </div>
+
+                {/* Chat de IA */}
+                <div className="flex flex-col p-4 border rounded-lg bg-blue-50/50 dark:bg-blue-950/10 border-blue-100 dark:border-blue-900">
+                  <div className="flex items-start justify-between mb-4 pb-3 border-b border-blue-200 dark:border-blue-800">
+                    <div className="space-y-1 pr-4">
+                      <Label className="text-base font-semibold text-blue-700 dark:text-blue-400">Chat de IA</Label>
+                      <p className="text-xs text-muted-foreground text-blue-600/80 dark:text-blue-400/80">Acceso al asistente virtual de inteligencia artificial</p>
+                    </div>
+                    <Switch 
+                      checked={formData.permissions.canUseAiChat}
+                      onCheckedChange={() => togglePermission('canUseAiChat')}
+                      className="mt-1"
+                    />
                   </div>
                 </div>
               </div>

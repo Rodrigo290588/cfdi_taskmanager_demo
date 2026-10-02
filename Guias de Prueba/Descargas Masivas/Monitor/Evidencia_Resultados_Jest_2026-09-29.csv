@@ -1,0 +1,5 @@
+ID,Módulo,Submódulo,Caso de Prueba,Estado,Fecha de Ejecución,Observaciones
+1,Descargas Masivas,Monitor,1. Renderizado Sin Empresa: Botones bloqueados y advertencia visible,PASS,2026-09-29,Maneja correctamente la ausencia de empresa seleccionada.
+2,Descargas Masivas,Monitor,2. Carga Inicial con Empresa Activa y Renderizado de Badges,PASS,2026-09-29,Mapea la data de la API y renderiza estilos dinámicos de forma exitosa.
+3,Descargas Masivas,Monitor,3. Ejecución de Filtros y Botón Buscar,PASS,2026-09-29,URLSearchParams se construye y envía apropiadamente en el request.
+4,Descargas Masivas,Monitor,4. Manejo de Errores de API (500),PASS,2026-09-29,El usuario es notificado si el backend falla mediante un Toast rojo.

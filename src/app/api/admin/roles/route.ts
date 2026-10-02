@@ -50,6 +50,7 @@ export async function GET() {
           canViewSatPortal: overr.canViewSatPortal,
           canViewMassDownloads: overr.canViewMassDownloads,
           canManageOrg: overr.canManageOrg,
+          canUseAiChat: overr.canUseAiChat,
           granularPermissions: overr.granularPermissions
         }
       })
@@ -85,7 +86,9 @@ export async function POST(req: NextRequest) {
 
     // [SAST-FIX #3] Validar body con Zod strict. No más spread inseguro.
     const rawBody = await req.json()
-    const targetId = typeof rawBody === 'object' && rawBody && 'id' in rawBody ? String((rawBody as { id?: unknown }).id ?? '') : ''
+    const targetId = typeof rawBody === 'object' && rawBody !== null && 'id' in rawBody && typeof (rawBody as { id?: unknown }).id === 'string'
+      ? (rawBody as { id: string }).id 
+      : ''
 
     // Si el usuario intenta guardar un System Role (ADMIN, AUDITOR, VIEWER) -> guardar override por organización
     if (SYSTEM_ROLE_IDS.includes(targetId as SystemRoleId)) {
@@ -99,6 +102,7 @@ export async function POST(req: NextRequest) {
         canViewSatPortal: !!permissions.canViewSatPortal,
         canViewMassDownloads: !!permissions.canViewMassDownloads,
         canManageOrg: !!permissions.canManageOrg,
+        canUseAiChat: !!permissions.canUseAiChat,
         granularPermissions: Object.fromEntries(
           Object.entries(granularPermissions || {}).filter(([, v]) => typeof v === 'boolean')
         ) as Record<string, boolean>
@@ -119,6 +123,7 @@ export async function POST(req: NextRequest) {
           canViewSatPortal: overr.canViewSatPortal,
           canViewMassDownloads: overr.canViewMassDownloads,
           canManageOrg: overr.canManageOrg,
+          canUseAiChat: overr.canUseAiChat,
           granularPermissions: overr.granularPermissions
         }
       })
@@ -149,6 +154,7 @@ export async function POST(req: NextRequest) {
         canViewSatPortal: permissions.canViewSatPortal,
         canViewMassDownloads: permissions.canViewMassDownloads,
         canManageOrg: permissions.canManageOrg,
+        canUseAiChat: permissions.canUseAiChat,
         granularPermissions
       }
     })

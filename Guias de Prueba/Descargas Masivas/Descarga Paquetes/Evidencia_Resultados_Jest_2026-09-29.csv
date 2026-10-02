@@ -1,0 +1,4 @@
+ID,Módulo,Submódulo,Caso de Prueba,Estado,Fecha de Ejecución,Observaciones
+1,Descargas Masivas,Descarga Paquetes,1. Renderizado Sin Empresa: Tabla y tarjetas ocultas,PASS,2026-09-29,La seguridad de acceso por empresa funciona correctamente.
+2,Descargas Masivas,Descarga Paquetes,2. Carga Inicial, KPIs y Tabla con Empresa Activa,PASS,2026-09-29,El dashboard separa CFDI vs Metadata y calcula correctamente las sumas y barras de progreso.
+3,Descargas Masivas,Descarga Paquetes,3. Interacción con Panel Lateral (Drawer) y Descarga de ZIP,PASS,2026-09-29,Se abren los detalles y la simulación de clic en el link de descarga se construye con la URL exacta.

@@ -178,8 +178,8 @@ export type ImportRunFilters = {
   status?: string
   source?: string
   search?: string
-  startedFrom?: Date
-  finishedTo?: Date
+  createdFrom?: Date
+  createdTo?: Date
 }
 
 export type ImportRunDirectoryControl = {
@@ -300,8 +300,8 @@ function buildRunDirectoryControl(run: {
 }
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
-  const re = new RegExp(`<${tagNs}[^>]*\\b${attrName}\\s*=\\s*"([^"]+)"`, 'i')
-  const match = xml.match(re)
+  const re = new RegExp(String.raw`<${tagNs}[^>]*\b${attrName}\s*=\s*"([^"]+)"`, 'i')
+  const match = re.exec(xml)
   return match ? match[1].trim() : null
 }
 
@@ -522,11 +522,11 @@ function buildRunsWhereClause(
   ]
 
   if (filters.status) {
-    conditions.push(Prisma.sql`${column('status')} = CAST(${filters.status} AS "import_run_status")`)
+    conditions.push(Prisma.sql`${column('status')} = CAST(${filters.status} AS "ImportRunStatus")`)
   }
 
   if (filters.source) {
-    conditions.push(Prisma.sql`${column('source')} = CAST(${filters.source} AS "import_run_source")`)
+    conditions.push(Prisma.sql`${column('source')} = CAST(${filters.source} AS "ImportRunSource")`)
   }
 
   if (filters.search) {
@@ -537,14 +537,12 @@ function buildRunsWhereClause(
     )`)
   }
 
-  if (filters.startedFrom) {
-    conditions.push(Prisma.sql`${column('started_at')} IS NOT NULL`)
-    conditions.push(Prisma.sql`${column('started_at')} >= ${filters.startedFrom}`)
+  if (filters.createdFrom) {
+    conditions.push(Prisma.sql`${column('created_at')} >= ${filters.createdFrom}`)
   }
 
-  if (filters.finishedTo) {
-    conditions.push(Prisma.sql`${column('finished_at')} IS NOT NULL`)
-    conditions.push(Prisma.sql`${column('finished_at')} <= ${filters.finishedTo}`)
+  if (filters.createdTo) {
+    conditions.push(Prisma.sql`${column('created_at')} <= ${filters.createdTo}`)
   }
 
   return Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
@@ -623,15 +621,15 @@ function buildItemsWhereClause(importRunId: string, organizationId: string, filt
   ]
 
   if (filters.status) {
-    conditions.push(Prisma.sql`status = CAST(${filters.status} AS "import_run_item_status")`)
+    conditions.push(Prisma.sql`status = CAST(${filters.status} AS "ImportRunItemStatus")`)
   }
 
   if (filters.direction) {
-    conditions.push(Prisma.sql`direction = CAST(${filters.direction} AS "import_run_item_direction")`)
+    conditions.push(Prisma.sql`direction = CAST(${filters.direction} AS "ImportRunItemDirection")`)
   }
 
   if (filters.validationBucket) {
-    conditions.push(Prisma.sql`validation_bucket = CAST(${filters.validationBucket} AS "validation_bucket")`)
+    conditions.push(Prisma.sql`validation_bucket = CAST(${filters.validationBucket} AS "ValidationBucket")`)
   }
 
   if (typeof filters.hasErrors === 'boolean') {
@@ -762,11 +760,11 @@ export async function listOrganizationImportErrorDrilldown(params: {
   ]
 
   if (filters.status) {
-    conditions.push(Prisma.sql`ir.status = CAST(${filters.status} AS "import_run_status")`)
+    conditions.push(Prisma.sql`ir.status = CAST(${filters.status} AS "ImportRunStatus")`)
   }
 
   if (filters.source) {
-    conditions.push(Prisma.sql`ir.source = CAST(${filters.source} AS "import_run_source")`)
+    conditions.push(Prisma.sql`ir.source = CAST(${filters.source} AS "ImportRunSource")`)
   }
 
   if (filters.search) {
@@ -777,14 +775,12 @@ export async function listOrganizationImportErrorDrilldown(params: {
     )`)
   }
 
-  if (filters.startedFrom) {
-    conditions.push(Prisma.sql`ir.started_at IS NOT NULL`)
-    conditions.push(Prisma.sql`ir.started_at >= ${filters.startedFrom}`)
+  if (filters.createdFrom) {
+    conditions.push(Prisma.sql`ir.created_at >= ${filters.createdFrom}`)
   }
 
-  if (filters.finishedTo) {
-    conditions.push(Prisma.sql`ir.finished_at IS NOT NULL`)
-    conditions.push(Prisma.sql`ir.finished_at <= ${filters.finishedTo}`)
+  if (filters.createdTo) {
+    conditions.push(Prisma.sql`ir.created_at <= ${filters.createdTo}`)
   }
 
   const whereClause = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`

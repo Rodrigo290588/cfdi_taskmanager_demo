@@ -165,7 +165,7 @@ export default function PartialIncomePage() {
   }, [])
 
   const fetchData = useCallback(async () => {
-    if (!hasHydrated || !selectedCompany?.rfc) return
+    if (!hasHydrated || !selectedCompany?.rfc || !selectedCompany?.id) return
     if (!dateFrom || !dateTo) return
 
     setLoading(true)
@@ -174,6 +174,7 @@ export default function PartialIncomePage() {
         startDate: dateFrom,
         endDate: dateTo,
         rfc: selectedCompany.rfc,
+        companyId: selectedCompany.id,
         paymentDateStart: paymentDateFrom,
         paymentDateEnd: paymentDateTo,
         incomeCurrency,
@@ -469,10 +470,10 @@ export default function PartialIncomePage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Ingresos parcialmente cobrados</h2>
+            <h2 className="text-3xl font-bold tracking-tight">Ingresos Cobrados / No Cobrados</h2>
             <p className="text-muted-foreground">
-              CFDI de ingresos parcialmente cobrados 
-              {selectedCompany && ` · ${selectedCompany.businessName || selectedCompany.name}`}
+    
+              {selectedCompany && ` ${selectedCompany.businessName || selectedCompany.name}`}
             </p>
           </div>
           

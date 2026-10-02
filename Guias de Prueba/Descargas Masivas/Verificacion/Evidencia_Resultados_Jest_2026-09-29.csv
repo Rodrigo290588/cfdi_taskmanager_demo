@@ -1,0 +1,5 @@
+ID,Módulo,Submódulo,Caso de Prueba,Estado,Fecha de Ejecución,Observaciones
+1,Descargas Masivas,Verificacion,1. Renderizado Sin Empresa: Tabla y filtros ocultos,PASS,2026-09-29,La seguridad de acceso por empresa funciona correctamente.
+2,Descargas Masivas,Verificacion,2. Carga Inicial con Empresa y Filtrado de peticiones sin ID,PASS,2026-09-29,Filtra del lado del cliente los requests sin satPackageId y renderiza las columnas técnicas correctamente.
+3,Descargas Masivas,Verificacion,3. Funcionamiento del Filtro de Estatus por el Usuario,PASS,2026-09-29,El Data Grid reacciona a los selectores mostrando estados vacíos si es necesario.
+4,Descargas Masivas,Verificacion,4. Manejo de Errores de API (500),PASS,2026-09-29,Lanza el toast de error si la conexión falla.

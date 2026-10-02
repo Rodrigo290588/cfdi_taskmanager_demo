@@ -131,7 +131,16 @@ export function normalizeScopes(scope?: string | string[]) {
 }
 
 export function hasRequiredScope(scope: string | string[] | undefined, requiredScope: string) {
-  return normalizeScopes(scope).includes(requiredScope)
+  const scopes = normalizeScopes(scope)
+  if (scopes.includes(requiredScope)) return true
+  
+  // Soporte para scope padre (ej: 'cfdi.import' autoriza 'cfdi.import:create')
+  if (requiredScope.includes(':')) {
+    const parentScope = requiredScope.split(':')[0]
+    if (scopes.includes(parentScope)) return true
+  }
+  
+  return false
 }
 
 type AuthErrorType = 'invalid_client' | 'invalid_scope' | 'access_denied' | 'rate_limited' | 'server_error'
@@ -149,6 +158,107 @@ interface AuthOk {
   scopes: string[]
 }
 export type AuthResult = AuthOk | AuthFail
+
+async function processDbClientAuthentication(
+  prismaClient: MachineClientPrismaShape,
+  clientSecret: string,
+  requestedScopes: string[],
+  sourceIp: string | null | undefined
+): Promise<AuthResult | null> {
+  if (!prismaClient.isActive) {
+    await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
+    return { ok: false, status: 401, error: 'invalid_client' }
+  }
+  if (prismaClient.expiresAt && prismaClient.expiresAt.getTime() <= Date.now()) {
+    await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
+    return { ok: false, status: 401, error: 'invalid_client' }
+  }
+  const whitelist = Array.isArray(prismaClient.allowedIps) ? prismaClient.allowedIps.filter((i: unknown) => typeof i === 'string') : []
+  if (whitelist.length > 0 && (!sourceIp || !whitelist.includes(sourceIp))) {
+    await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
+    return { ok: false, status: 403, error: 'access_denied' }
+  }
+  const isSecretValid = await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
+  if (!isSecretValid) return { ok: false, status: 401, error: 'invalid_client' }
+
+  const defaultScopesArr = Array.isArray(prismaClient.defaultScopes) ? prismaClient.defaultScopes : []
+  const effScopeRes = resolveEffectiveScopes({
+    requestedScopes, allowedScopes: prismaClient.scopes, defaultScopes: defaultScopesArr,
+  })
+  if (!effScopeRes.ok) {
+    return effScopeRes.error === 'invalid_scope_no_defaults'
+      ? { ok: false, status: 400, error: 'invalid_scope', error_description: 'Scope requerido: cliente no tiene scopes por defecto' }
+      : { ok: false, status: 403, error: 'invalid_scope', error_description: `Scope no autorizado: ${effScopeRes.invalidScope}` }
+  }
+
+  const safeIp = validateLastUsedIp(sourceIp)
+  try {
+    await prisma.machineClient.update({
+      where: { id: prismaClient.id },
+      data: { lastUsedAt: new Date(), lastUsedIp: safeIp },
+    })
+  } catch {
+    console.error('[M2M lastUsed update FAIL]', 'Error al actualizar lastUsedAt / lastUsedIp')
+  }
+  return {
+    ok: true,
+    client: {
+      clientId: prismaClient.clientId,
+      organizationId: prismaClient.organizationId,
+      scopes: prismaClient.scopes,
+    },
+    scopes: effScopeRes.scopes,
+  }
+}
+
+async function processFallbackClientAuthentication(
+  clientId: string,
+  clientSecret: string,
+  requestedScopes: string[],
+  sourceIp: string | null | undefined
+): Promise<AuthResult> {
+  const fallbackClient = getMachineClientsFromEnv().find((i) => i.clientId === clientId) as FallbackClientExtended | undefined
+  if (!fallbackClient) {
+    // OAUTH-003 Timing constancia: dummy bcrypt cuando NO client
+    await bcryptCompareTimingSafe(clientSecret, null)
+    return { ok: false, status: 401, error: 'invalid_client' }
+  }
+  // OAUTH-001: Fallback aplicar TODOS los preAuth checks (isActive/expires/IP whitelist)
+  const pre = validateFallbackClientPreAuth({ client: fallbackClient, sourceIp })
+  if (!pre.ok) {
+    // Timing constante incluso si falla preauth
+    await bcryptCompareTimingSafe(clientSecret, fallbackClient.clientSecretHash ?? null)
+    return { ok: false, status: pre.status, error: pre.error }
+  }
+  // OAUTH-009: Soporta fallback clientSecretHash bcrypt OR clientSecret plain deprecated
+  let secretMatch = false
+  if (typeof fallbackClient.clientSecretHash === 'string' && fallbackClient.clientSecretHash.startsWith('$2')) {
+    secretMatch = await bcryptCompareTimingSafe(clientSecret, fallbackClient.clientSecretHash)
+  } else if (typeof fallbackClient.clientSecret === 'string') {
+    secretMatch = safeCompareSecrets(clientSecret, fallbackClient.clientSecret)
+  }
+  if (!secretMatch) return { ok: false, status: 401, error: 'invalid_client' }
+
+  // OAUTH-004 scopes fail closed defaultScopes
+  const fbExtended = fallbackClient as unknown as PartialFallbackClientShape
+  const effEnv = resolveEffectiveScopes({
+    requestedScopes,
+    allowedScopes: fallbackClient.scopes,
+    defaultScopes: Array.isArray(fbExtended.defaultScopes) ? (fbExtended.defaultScopes as string[]) : [],
+  })
+  if (!effEnv.ok) {
+    return effEnv.error === 'invalid_scope_no_defaults'
+      ? { ok: false, status: 400, error: 'invalid_scope', error_description: 'Env fallback: scope requerido cliente no defaultScopes' }
+      : { ok: false, status: 403, error: 'invalid_scope', error_description: `Scope inválido env: ${effEnv.invalidScope}` }
+  }
+
+  const normalizedClient: MachineClientIdentity = {
+    clientId: fallbackClient.clientId,
+    organizationId: fallbackClient.organizationId,
+    scopes: fallbackClient.scopes,
+  }
+  return { ok: true, client: normalizedClient, scopes: effEnv.scopes }
+}
 
 export async function authenticateMachineClient(params: {
   clientId: string
@@ -212,95 +322,11 @@ export async function authenticateMachineClient(params: {
   }
 
   if (prismaClient) {
-    if (!prismaClient.isActive) {
-      await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
-      return { ok: false, status: 401, error: 'invalid_client' }
-    }
-    if (prismaClient.expiresAt && prismaClient.expiresAt.getTime() <= Date.now()) {
-      await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
-      return { ok: false, status: 401, error: 'invalid_client' }
-    }
-    const whitelist = Array.isArray(prismaClient.allowedIps) ? prismaClient.allowedIps.filter((i: unknown) => typeof i === 'string') : []
-    if (whitelist.length > 0 && (!sourceIp || !whitelist.includes(sourceIp))) {
-      await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
-      return { ok: false, status: 403, error: 'access_denied' }
-    }
-    const isSecretValid = await bcryptCompareTimingSafe(clientSecret, prismaClient.clientSecretHash)
-    if (!isSecretValid) return { ok: false, status: 401, error: 'invalid_client' }
-
-    const defaultScopesArr = Array.isArray(prismaClient.defaultScopes) ? prismaClient.defaultScopes : []
-    const effScopeRes = resolveEffectiveScopes({
-      requestedScopes, allowedScopes: prismaClient.scopes, defaultScopes: defaultScopesArr,
-    })
-    if (!effScopeRes.ok) {
-      return effScopeRes.error === 'invalid_scope_no_defaults'
-        ? { ok: false, status: 400, error: 'invalid_scope', error_description: 'Scope requerido: cliente no tiene scopes por defecto' }
-        : { ok: false, status: 403, error: 'invalid_scope', error_description: `Scope no autorizado: ${effScopeRes.invalidScope}` }
-    }
-
-    const safeIp = validateLastUsedIp(sourceIp)
-    try {
-      await prisma.machineClient.update({
-        where: { id: prismaClient.id },
-        data: { lastUsedAt: new Date(), lastUsedIp: safeIp },
-      })
-    } catch (eUpd) {
-      const safe = safeErrSummary(eUpd instanceof Error ? eUpd : new Error(String(eUpd)))
-      console.error('[M2M lastUsed update FAIL]', safe.msgHash, safe.msg)
-    }
-    return {
-      ok: true,
-      client: {
-        clientId: prismaClient.clientId,
-        organizationId: prismaClient.organizationId,
-        scopes: prismaClient.scopes,
-      },
-      scopes: effScopeRes.scopes,
-    }
+    const dbAuthResult = await processDbClientAuthentication(prismaClient, clientSecret, requestedScopes, sourceIp)
+    if (dbAuthResult) return dbAuthResult
   }
 
-  // FALLBACK ENV (fall-through si prisma NO client o prisma throw DB error)
-  const fallbackClient = getMachineClientsFromEnv().find((i) => i.clientId === clientId) as FallbackClientExtended | undefined
-  if (!fallbackClient) {
-    // OAUTH-003 Timing constancia: dummy bcrypt cuando NO client
-    await bcryptCompareTimingSafe(clientSecret, null)
-    return { ok: false, status: 401, error: 'invalid_client' }
-  }
-  // OAUTH-001: Fallback aplicar TODOS los preAuth checks (isActive/expires/IP whitelist)
-  const pre = validateFallbackClientPreAuth({ client: fallbackClient, sourceIp })
-  if (!pre.ok) {
-    // Timing constante incluso si falla preauth
-    await bcryptCompareTimingSafe(clientSecret, fallbackClient.clientSecretHash ?? null)
-    return { ok: false, status: pre.status, error: pre.error }
-  }
-  // OAUTH-009: Soporta fallback clientSecretHash bcrypt OR clientSecret plain deprecated
-  let secretMatch = false
-  if (typeof fallbackClient.clientSecretHash === 'string' && fallbackClient.clientSecretHash.startsWith('$2')) {
-    secretMatch = await bcryptCompareTimingSafe(clientSecret, fallbackClient.clientSecretHash)
-  } else if (typeof fallbackClient.clientSecret === 'string') {
-    secretMatch = safeCompareSecrets(clientSecret, fallbackClient.clientSecret)
-  }
-  if (!secretMatch) return { ok: false, status: 401, error: 'invalid_client' }
-
-  // OAUTH-004 scopes fail closed defaultScopes
-  const fbExtended = fallbackClient as unknown as PartialFallbackClientShape
-  const effEnv = resolveEffectiveScopes({
-    requestedScopes,
-    allowedScopes: fallbackClient.scopes,
-    defaultScopes: Array.isArray(fbExtended.defaultScopes) ? (fbExtended.defaultScopes as string[]) : [],
-  })
-  if (!effEnv.ok) {
-    return effEnv.error === 'invalid_scope_no_defaults'
-      ? { ok: false, status: 400, error: 'invalid_scope', error_description: 'Env fallback: scope requerido cliente no defaultScopes' }
-      : { ok: false, status: 403, error: 'invalid_scope', error_description: `Scope inválido env: ${effEnv.invalidScope}` }
-  }
-
-  const normalizedClient: MachineClientIdentity = {
-    clientId: fallbackClient.clientId,
-    organizationId: fallbackClient.organizationId,
-    scopes: fallbackClient.scopes,
-  }
-  return { ok: true, client: normalizedClient, scopes: effEnv.scopes }
+  return processFallbackClientAuthentication(clientId, clientSecret, requestedScopes, sourceIp)
 }
 
 export async function issueMachineToken(client: MachineClientIdentity, scopes: string[]) {

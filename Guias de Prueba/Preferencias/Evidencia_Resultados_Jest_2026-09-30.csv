@@ -1,0 +1,6 @@
+ID_Prueba,Modulo,Escenario,Estado,Fecha_Ejecucion,Tiempo_Respuesta_ms,Notas
+CP01,Preferencias,Carga la pantalla de preferencias exitosamente (Acceso),Exitoso,2026-09-30,60,Pantalla renderizada tras finalizar el loader.
+CP02,Preferencias,Cambia la apariencia (Modo Oscuro/Claro),Exitoso,2026-09-30,103,Se validaron los botones de Sun y Moon con next-themes.
+CP03,Preferencias,Permite modificar la configuración regional (Idioma/Moneda/Zona horaria),Exitoso,2026-09-30,41,Entrada de texto en inputs controlada correctamente.
+CP04,Preferencias,Permite ajustar la seguridad de sesión,Exitoso,2026-09-30,26,Validación de input numérico exitosa.
+CP05_CP06,Preferencias,Guarda los cambios y simula persistencia,Exitoso,2026-09-30,78,Alerta Toast de éxito mostrada y validación de recarga de datos POST/GET.

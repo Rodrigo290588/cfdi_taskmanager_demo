@@ -1,0 +1,5 @@
+"Módulo","Caso de Prueba","Estatus","Detalle"
+"Roles y Permisos","/admin/roles - Prueba 1: Crear un Nuevo Rol Personalizado","PASS","Se validó la creación de un nuevo rol con permisos modificados"
+"Roles y Permisos","/admin/roles - Prueba 2: Editar un Rol de Sistema (Permisos Granulares)","PASS","Se comprobó la edición granular (sub-permisos) en roles de sistema"
+"Roles y Permisos","/admin/roles - Prueba 3: Eliminar un Rol Personalizado","PASS","Se validó que el borrado pida confirmación y se ejecute correctamente"
+"Roles y Permisos","/admin/roles - Prueba 4: Seguridad y Bloqueo Anti-Intrusos","PASS","Se verificó que el sistema bloquea a usuarios sin privilegios administrativos"

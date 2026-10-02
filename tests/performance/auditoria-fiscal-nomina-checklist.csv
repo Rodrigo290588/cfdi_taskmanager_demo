@@ -1,0 +1,13 @@
+#,Concepto SAT (Regla),Validación Técnica,Resultado,Notas / Evidencia
+01,ISR retenido global · TipoDeduccion=002,SUM(payroll_deducciones.tipo=002) vs KPI isr_retenido_mxn,❓ Pend,
+02,ISR vs Pago Provisional SAT Declarativo 1300,Compara dashboard vs línea 13 periodo,❓ Pend,Diff tolerancia ≤ 0.5%
+03,Conteo Cancelados (sat_status=CANCELADO),COUNT(invoices.sat_status) vs KPI Cancelados,❓ Pend,
+04,UUIDs Duplicados,HAVING COUNT(uuid)>1 vs KPI UUID Dup,❓ Pend,
+05,Retrasos Timbrado > 5 días,Top 100 brecha_emision_pago vs raw (fecha_emision - fecha_pago) DESC,❓ Pend,
+06,IMSS · SBC IS NULL (Art. 26 LSS),Partial idx sbc_null vs Alerta SBC NULL,❓ Pend,
+07,IMSS · SDI IS NULL (Anexo 5),Partial idx sdi_null vs Alerta SDI NULL,❓ Pend,
+08,Desviación SBC/SDI > 3%,10 filas spot diff% vs (ABS(sbc-sdi)/sdi)*100,❓ Pend,
+09,Deducciones Terceros (010·006·007·001),4 SUM raw vs 4 categorías PieChart Donut,❓ Pend,
+10,Gravado vs Exento Sueldos tipo=001,SUM(importe_gravado+exento) vs BarStacked 001,❓ Pend,
+11,Aguinaldo + PTU + Prima Vacacional (002·003·021),SUM raw c/concepto vs 3 bars,❓ Pend,
+12,30 UUIDs spot-check vs Visor SAT (CSV evidencia),Importe total · 001 Percepciones · 002 ISR por UUID,❓ Pend,Adjuntar reports/evidencia_sat_30uuids.csv

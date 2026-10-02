@@ -1,0 +1,10 @@
+Módulo,Archivo de Prueba,Prueba Evaluada,Resultado,Fecha de Ejecución,Notas
+Tablero de Egresos,dashboard_recibidos.test.tsx,Renderiza el componente DashboardRecibidos correctamente,PASS,2026-09-29,El título y selector de empresa cargan sin errores
+Tablero de Egresos,dashboard_recibidos.test.tsx,Muestra mensaje de error si falla la carga de empresas,PASS,2026-09-29,Validación de manejo de errores de red
+Tablero de Egresos,dashboard_recibidos.test.tsx,Renderiza las tarjetas de resumen (Summary Metrics) y gráficos,PASS,2026-09-29,Incluye validación de Gasto Bruto Comercial y Notas de Crédito
+Tablero de Egresos,dashboard_recibidos.test.tsx,Renderiza las tarjetas de métricas pesadas (Heavy Metrics),PASS,2026-09-29,Incluye validación de Gastos Netos, IVA Acreditable y Retenciones
+Tablero de Egresos,dashboard_recibidos.test.tsx,Renderiza las tarjetas de flujo de efectivo,PASS,2026-09-29,Incluye Total Pagado (PUE+REP) y Saldo Pendiente (PPD)
+Tablero de Egresos,dashboard_recibidos.test.tsx,Renderiza las tarjetas de compliance y reglas de negocio,PASS,2026-09-29,Incluye Impacto EFOS y ObjetoImp vs IVA
+Tablero de Egresos,dashboard_recibidos.test.tsx,Permite abrir el modal de ObjetoImp vs IVA,PASS,2026-09-29,Validación de apertura de Drilldown
+Tablero de Egresos,dashboard_recibidos.test.tsx,Permite abrir el modal de IVA Acreditable,PASS,2026-09-29,Validación de apertura de Drilldown
+Tablero de Egresos,dashboard_recibidos.test.tsx,Permite interactuar con los filtros de fechas,PASS,2026-09-29,Actualización de estado de fechas para consultas

@@ -1,0 +1,6 @@
+Archivo,Suite,Prueba,Estado,Duracion(ms)
+"Dashboard/Monitor de Importacion/monitor_importacion.test.tsx","Monitor de Importacion (ImportMonitorPage)","CP01: Renderiza la interfaz principal y muestra KPIs en tiempo real","EXITOSO","192"
+"Dashboard/Monitor de Importacion/monitor_importacion.test.tsx","Monitor de Importacion (ImportMonitorPage)","CP02: Muestra Cifras de Control de Directorio y resalta brechas (ámbar)","EXITOSO","151"
+"Dashboard/Monitor de Importacion/monitor_importacion.test.tsx","Monitor de Importacion (ImportMonitorPage)","CP03: Permite buscar y filtrar la tabla de corridas con botones rápidos","EXITOSO","248"
+"Dashboard/Monitor de Importacion/monitor_importacion.test.tsx","Monitor de Importacion (ImportMonitorPage)","CP04: Abre el detalle de documentos (Drilldown Modal) y filtra solo errores","EXITOSO","308"
+"Dashboard/Monitor de Importacion/monitor_importacion.test.tsx","Monitor de Importacion (ImportMonitorPage)","CP05: Protege contra inyección de fórmulas (CWE-1236) al exportar CSV de errores","EXITOSO","74"

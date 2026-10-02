@@ -11,12 +11,16 @@ const DRILLDOWN_BATCH_SIZE = 500
 
 export async function GET(request: NextRequest) {
   try {
-    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
-    void _sr
+    const { ctx, searchParams } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
 
     const companyId = searchParams.get('companyId')!
     const startDateParam = searchParams.get('startDate')
     const endDateParam = searchParams.get('endDate')
+    
+    if (!startDateParam || !endDateParam) {
+      return NextResponse.json({ data: [] }, { headers: SECURITY_HEADERS })
+    }
+
     const originParam = searchParams.get('origin') || 'issued'
 
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { rfc: true } })
@@ -29,9 +33,13 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dateFilter: any = {}
     if (startDateParam && endDateParam) {
-      const end = new Date(endDateParam)
-      end.setHours(23, 59, 59, 999)
-      dateFilter.issuanceDate = { gte: new Date(startDateParam), lte: end }
+      const startParts = startDateParam.split('-')
+      const endParts = endDateParam.split('-')
+      
+      const start = new Date(Date.UTC(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]), 0, 0, 0, 0))
+      const end = new Date(Date.UTC(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]), 23, 59, 59, 999))
+      
+      dateFilter.issuanceDate = { gte: start, lte: end }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +61,15 @@ export async function GET(request: NextRequest) {
         where: {
           ...baseWhere,
           cfdiType: 'EGRESO',
-          satStatus: 'VIGENTE'
+          satStatus: 'VIGENTE',
+          relatedCfdis: {
+            some: {
+              invoice: {
+                cfdiType: 'INGRESO',
+                satStatus: 'VIGENTE'
+              }
+            }
+          }
         },
         orderBy: { id: 'asc' },
         take: DRILLDOWN_BATCH_SIZE,
@@ -98,7 +114,7 @@ export async function GET(request: NextRequest) {
         })
       })
 
-      cursor = invoices[invoices.length - 1]?.id
+      cursor = invoices.at(-1)?.id
     } while (cursor)
 
     drilldownData.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())

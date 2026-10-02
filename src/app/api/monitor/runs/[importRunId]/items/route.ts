@@ -110,7 +110,7 @@ export async function GET(
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Parámetros inválidos', details: sanitizeZodFlatten(error.flatten()) },
+        { error: 'Parámetros inválidos', details: sanitizeZodFlatten(error.flatten((issue) => issue.message)) },
         { status: 400, headers: SECURITY_HEADERS }
       )
     }

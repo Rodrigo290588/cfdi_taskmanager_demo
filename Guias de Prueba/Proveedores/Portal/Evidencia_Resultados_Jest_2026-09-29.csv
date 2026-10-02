@@ -1,0 +1,12 @@
+Módulo,Archivo de Prueba,Prueba Evaluada,Resultado,Fecha de Ejecución,Notas
+Portal de Proveedores,provider_cfdis_report.test.tsx,1. Carga Inicial y Visualización del Historial,PASS,2026-09-29,Valida carga de la página y listado histórico
+Portal de Proveedores,provider_cfdis_report.test.tsx,2. Carga Exitosa de CFDI (Happy Path),PASS,2026-09-29,Valida flujo de apertura de modal de carga (Dropzone)
+Portal de Proveedores,provider_cfdis_report.test.tsx,3. Interacción con el Grid y Visores,PASS,2026-09-29,Valida existencia de UUID en tabla y botones de exportación/XML
+Portal de Proveedores,provider_cfdis_report.test.tsx,4. Escenario de Error: Archivo Inválido (No XML/ZIP),PASS,2026-09-29,Simula el rechazo de archivos con extensiones no permitidas
+Portal de Proveedores,provider_cfdis_report.test.tsx,5. Escenario de Error: RFC Emisor Incorrecto,PASS,2026-09-29,Simula el rechazo por regla de negocio de RFC no coincidente
+Portal de Proveedores,provider_cfdis_report.test.tsx,6. Escenario de Error: Validación SAT (Factura Cancelada),PASS,2026-09-29,Simula el rechazo por respuesta de cancelación desde webservice del SAT
+Portal de Proveedores,provider_cfdis_report.test.tsx,7. Escenario de Error: Validación SAT (Factura Inexistente),PASS,2026-09-29,Simula el rechazo de comprobante no encontrado por SAT
+Portal de Proveedores,provider_cfdis_report.test.tsx,8. Escenario de Error: Fallo Validación PAC (Anexo 20),PASS,2026-09-29,Simula error técnico de estructura devuelto por Factrónica
+Portal de Proveedores,provider_cfdis_report.test.tsx,9. Escenario de Error: RFC Receptor No Autorizado,PASS,2026-09-29,Rechazo porque la empresa no es cliente del proveedor
+Portal de Proveedores,provider_cfdis_report.test.tsx,10. Escenario de Error: REP sin Factura,PASS,2026-09-29,Rechazo por intentar cargar Complemento de Pago huérfano
+Portal de Proveedores,provider_cfdis_report.test.tsx,11. Escenario de Error: Compliance PUE vs Forma 99,PASS,2026-09-29,Rechazo por inconsistencia contable detectada por el sistema

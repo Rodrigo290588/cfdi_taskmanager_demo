@@ -11,6 +11,59 @@ import {
   type SystemRoleId
 } from '@/lib/admin-roles'
 
+async function processSystemRoleUpdate(
+  id: SystemRoleId,
+  body: z.infer<typeof updateCustomRoleSchema>,
+  organizationId: string
+) {
+  const existingOverr = await getSystemRoleOverrideForOrg(organizationId, id)
+
+  const permissions = body.permissions ?? {
+    canViewEmission: existingOverr.canViewEmission,
+    canViewReception: existingOverr.canViewReception,
+    canViewPayroll: existingOverr.canViewPayroll,
+    canViewSatPortal: existingOverr.canViewSatPortal,
+    canViewMassDownloads: existingOverr.canViewMassDownloads,
+    canManageOrg: existingOverr.canManageOrg,
+    canUseAiChat: existingOverr.canUseAiChat
+  }
+  
+  // Se remueve el uso inútil del objeto vacío `|| {}` que reportaba SonarQube
+  const granular = { ...existingOverr.granularPermissions, ...body.granularPermissions }
+
+  await saveSystemRoleOverrideForOrg(organizationId, id, {
+    canViewEmission: !!permissions.canViewEmission,
+    canViewReception: !!permissions.canViewReception,
+    canViewPayroll: !!permissions.canViewPayroll,
+    canViewSatPortal: !!permissions.canViewSatPortal,
+    canViewMassDownloads: !!permissions.canViewMassDownloads,
+    canManageOrg: !!permissions.canManageOrg,
+    canUseAiChat: !!permissions.canUseAiChat,
+    granularPermissions: Object.fromEntries(
+      Object.entries(granular).filter(([, v]) => typeof v === 'boolean')
+    ) as Record<string, boolean>
+  })
+
+  const base = buildSystemRoleDefaults(id)
+  const updated = await getSystemRoleOverrideForOrg(organizationId, id)
+  return NextResponse.json({
+    role: {
+      id,
+      name: typeof body.name === 'string' ? body.name : base.name,
+      description: typeof body.description === 'string' ? body.description : base.description,
+      isSystemRole: true,
+      canViewEmission: updated.canViewEmission,
+      canViewReception: updated.canViewReception,
+      canViewPayroll: updated.canViewPayroll,
+      canViewSatPortal: updated.canViewSatPortal,
+      canViewMassDownloads: updated.canViewMassDownloads,
+      canManageOrg: updated.canManageOrg,
+      canUseAiChat: updated.canUseAiChat,
+      granularPermissions: updated.granularPermissions
+    }
+  })
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth()
@@ -35,47 +88,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (SYSTEM_ROLE_IDS.includes(id as SystemRoleId)) {
       const rawBody = await req.json()
       const body = updateCustomRoleSchema.parse(rawBody)
-      const existingOverr = await getSystemRoleOverrideForOrg(member.organizationId, id as SystemRoleId)
-
-      const permissions = body.permissions ?? {
-        canViewEmission: existingOverr.canViewEmission,
-        canViewReception: existingOverr.canViewReception,
-        canViewPayroll: existingOverr.canViewPayroll,
-        canViewSatPortal: existingOverr.canViewSatPortal,
-        canViewMassDownloads: existingOverr.canViewMassDownloads,
-        canManageOrg: existingOverr.canManageOrg
-      }
-      const granular = { ...existingOverr.granularPermissions, ...(body.granularPermissions || {}) }
-
-      await saveSystemRoleOverrideForOrg(member.organizationId, id as SystemRoleId, {
-        canViewEmission: !!permissions.canViewEmission,
-        canViewReception: !!permissions.canViewReception,
-        canViewPayroll: !!permissions.canViewPayroll,
-        canViewSatPortal: !!permissions.canViewSatPortal,
-        canViewMassDownloads: !!permissions.canViewMassDownloads,
-        canManageOrg: !!permissions.canManageOrg,
-        granularPermissions: Object.fromEntries(
-          Object.entries(granular).filter(([, v]) => typeof v === 'boolean')
-        ) as Record<string, boolean>
-      })
-
-      const base = buildSystemRoleDefaults(id as SystemRoleId)
-      const updated = await getSystemRoleOverrideForOrg(member.organizationId, id as SystemRoleId)
-      return NextResponse.json({
-        role: {
-          id,
-          name: typeof body.name === 'string' ? body.name : base.name,
-          description: typeof body.description === 'string' ? body.description : base.description,
-          isSystemRole: true,
-          canViewEmission: updated.canViewEmission,
-          canViewReception: updated.canViewReception,
-          canViewPayroll: updated.canViewPayroll,
-          canViewSatPortal: updated.canViewSatPortal,
-          canViewMassDownloads: updated.canViewMassDownloads,
-          canManageOrg: updated.canManageOrg,
-          granularPermissions: updated.granularPermissions
-        }
-      })
+      return await processSystemRoleUpdate(id as SystemRoleId, body, member.organizationId)
     }
 
     // [SAST-FIX #3] Validación estricta del body.
@@ -105,6 +118,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       updateData.canViewSatPortal = permissions.canViewSatPortal
       updateData.canViewMassDownloads = permissions.canViewMassDownloads
       updateData.canManageOrg = permissions.canManageOrg
+      updateData.canUseAiChat = permissions.canUseAiChat
     }
     if (granularPermissions) updateData.granularPermissions = granularPermissions
 

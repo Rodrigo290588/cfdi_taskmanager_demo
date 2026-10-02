@@ -23,7 +23,6 @@ const WEBSITE_ALLOWED_SCHEMES = new Set(['https:', 'http:'])
 const safeUrlSchema = z.preprocess(
   (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
   z
-    .string()
     .url('URL inválida')
     .refine((val) => {
       try {
@@ -61,9 +60,10 @@ const registerCompanySchema = z.strictObject({
   industry: z.string().optional(),
   employeesCount: optionalPositiveIntSchema,
   incorporationDate: z.string().datetime().optional(),
+  notes: z.string().optional()
 })
 
-function safeZodHumanFriendly(issues: Array<z.ZodIssue>): Array<{ field: string; message: string }> {
+function safeZodHumanFriendly(issues: Array<{ path: PropertyKey[], message?: string }>): Array<{ field: string; message: string }> {
   return issues.map((issue) => ({
     field: issue.path.join('.'),
     message: issue.message || 'Valor inválido'
@@ -75,6 +75,271 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 const RFC_UNIFORM_TIMING_MS = 180
+
+function applyCreationRateLimits(userId: string, clientIp: string, reqId: string) {
+  try {
+    enforceCompaniesRateLimit(userId, 'create')
+    rateLimitByClientId({
+      clientId: clientIp,
+      key: 'companies:register:ip',
+      limit: 20,
+      windowMs: 60 * 60 * 1000
+    })
+  } catch (rlErr) {
+    if (rlErr instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: rlErr.message, reqId },
+        {
+          status: rlErr.statusCode,
+          headers: {
+            'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
+            'X-Request-Id': reqId,
+            ...SAT_SECURITY_HEADERS
+          }
+        }
+      )
+    }
+    throw rlErr
+  }
+  return null
+}
+
+function applyRfcRateLimit(clientIp: string, normalizedRfc: string, reqId: string) {
+  const rfcDualKey = `companies:register:rfc:${normalizedRfc}`
+  try {
+    rateLimitByUserId({
+      userId: `${clientIp}:${normalizedRfc}`,
+      key: rfcDualKey,
+      limit: 3,
+      windowMs: 12 * 60 * 60 * 1000
+    })
+  } catch (rlErr) {
+    if (rlErr instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: rlErr.message, reqId },
+        {
+          status: rlErr.statusCode,
+          headers: {
+            'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
+            'X-Request-Id': reqId,
+            ...SAT_SECURITY_HEADERS
+          }
+        }
+      )
+    }
+    throw rlErr
+  }
+  return null
+}
+
+type TxResult = { createdCompany: Company | null; rfcExists: boolean }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function executeCompanyRegistrationTx(data: any, normalizedRfc: string, dbUser: any, primaryMembership: any) {
+  return await prisma.$transaction<TxResult>(async tx => {
+    const existing = await tx.company.findUnique({
+      where: { rfc: normalizedRfc },
+      select: { id: true, rfc: true }
+    })
+
+    if (existing) {
+      try {
+        await tx.auditLog.count({
+          where: { recordId: `__shadow_rfc_enum_${normalizedRfc}`.slice(0, 50) },
+          take: 1
+        })
+      } catch {
+        // ignore shadow operation
+      }
+      return { createdCompany: null, rfcExists: true }
+    }
+
+    const created = await tx.company.create({
+      data: {
+        name: data.name,
+        rfc: normalizedRfc,
+        businessName: data.businessName,
+        legalRepresentative: data.legalRepresentative ?? null,
+        taxRegime: data.taxRegime,
+        postalCode: data.postalCode,
+        address: data.address ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
+        country: data.country,
+        phone: data.phone ?? null,
+        email: data.email ?? null,
+        website: data.website ?? null,
+        industry: data.industry ?? null,
+        employeesCount: data.employeesCount,
+        incorporationDate: data.incorporationDate ? new Date(data.incorporationDate) : undefined,
+        notes: data.notes,
+        createdBy: dbUser.id,
+        updatedBy: dbUser.id,
+      }
+    })
+
+    if (primaryMembership) {
+      try {
+        await tx.companyAccess.create({
+          data: {
+            companyId: created.id,
+            memberId: primaryMembership.id,
+            organizationId: primaryMembership.organizationId,
+          }
+        })
+      } catch {
+        // Ignore unique constraint collision
+      }
+    }
+    return { createdCompany: created, rfcExists: false }
+  }, { isolationLevel: 'Serializable' })
+}
+
+async function validateUserPermissions(sessionUser: { email: string, id: string }, reqId: string) {
+  const dbUser = await prisma.user.findUnique({
+    where: { email: sessionUser.email },
+    include: {
+      memberships: {
+        // Hard Constraint equivalente isActive: onboardingCompleted === true (schema Prisma NO tiene isActive)
+        where: { status: 'APPROVED', organization: { onboardingCompleted: true } },
+        include: { organization: true }
+      }
+    }
+  })
+
+  if (!dbUser) {
+    return {
+      errorResponse: NextResponse.json(
+        { error: 'Usuario no encontrado', reqId },
+        { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+  }
+
+  const primaryMembership = dbUser.memberships[0]
+  const organizationId = primaryMembership?.organizationId
+
+  const enrichedUser = await enrichUserWithMemberships({ id: dbUser.id, systemRole: dbUser.systemRole })
+  const canCreate = hasPermission(enrichedUser, Permission.COMPANY_CREATE, organizationId)
+
+  if (!canCreate) {
+    return {
+      errorResponse: NextResponse.json(
+        { error: 'No tienes permisos para crear empresas', reqId },
+        { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+  }
+
+  return { dbUser, primaryMembership }
+}
+
+async function parseAndValidateBody(request: NextRequest, reqId: string) {
+  const rawBuffer = await request.arrayBuffer()
+  if (rawBuffer.byteLength > bodySizeLimit) {
+    return {
+      errorResponse: NextResponse.json(
+        { error: 'Solicitud demasiado grande', reqId },
+        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+  }
+  const decoder = new TextDecoder('utf-8')
+  let body: unknown
+  try {
+    body = JSON.parse(decoder.decode(rawBuffer))
+  } catch {
+    return {
+      errorResponse: NextResponse.json(
+        { error: 'JSON inválido', reqId },
+        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+  }
+
+  const validationResult = registerCompanySchema.safeParse(body)
+
+  if (!validationResult.success) {
+    return {
+      errorResponse: NextResponse.json(
+        {
+          error: 'Datos inválidos',
+          reqId,
+          details: safeZodHumanFriendly(validationResult.error.issues)
+        },
+        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+      )
+    }
+  }
+
+  return { data: validationResult.data }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function finalizeCompanyCreation(txResult: TxResult, dbUser: any, primaryMembership: any, data: any, normalizedRfc: string, reqId: string) {
+  const finalCompany = txResult.createdCompany
+  const rfcExists = txResult.rfcExists
+  const finalMembership = primaryMembership
+
+  if (finalMembership && finalCompany && finalMembership.organization?.ownerId === dbUser.id) {
+    try {
+      await updateTenantProgress(finalMembership.organizationId)
+    } catch (tpErr) {
+      console.warn('[companies register] updateTenantProgress failed (non-fatal):', {
+        reqId,
+        orgId: finalMembership.organizationId,
+        err: tpErr instanceof Error ? tpErr.message : String(tpErr)
+      })
+    }
+  }
+
+  if (finalCompany) {
+    await prisma.auditLog.create({
+      data: {
+        tableName: 'companies',
+        recordId: finalCompany.id,
+        action: 'CREATE',
+        newValues: {
+          name: data.name,
+          rfc: normalizedRfc,
+          businessName: data.businessName,
+          taxRegime: data.taxRegime,
+          postalCode: data.postalCode
+        },
+        userId: dbUser.id,
+        userEmail: dbUser.email ?? '',
+        description: `Company "${data.name}" registered with RFC ${normalizedRfc}`,
+        companyId: finalCompany.id,
+      }
+    })
+  }
+
+  if (rfcExists) {
+    return NextResponse.json(
+      {
+        status: 'RFC_DUPLICATE' as const,
+        message: 'Solicitud recibida. El RFC ya se encuentra registrado, te contactaremos si hay novedades.',
+        reqId,
+        nextReviewAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      },
+      { status: 202, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
+    )
+  }
+
+  return NextResponse.json({
+    status: 'OK' as const,
+    message: 'Empresa registrada exitosamente',
+    reqId,
+    company: finalCompany ? {
+      id: finalCompany.id,
+      name: finalCompany.name,
+      rfc: finalCompany.rfc,
+      businessName: finalCompany.businessName,
+      status: finalCompany.status,
+      createdAt: finalCompany.createdAt,
+    } : null
+  }, { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } })
+}
 
 export async function POST(request: NextRequest) {
   const reqId = crypto.randomUUID()
@@ -102,183 +367,28 @@ export async function POST(request: NextRequest) {
       (request.headers.get('x-real-ip')?.trim()) ||
       'unknown'
 
-    try {
-      enforceCompaniesRateLimit(session.user.id, 'create')
-      rateLimitByClientId({
-        clientId: clientIp,
-        key: 'companies:register:ip',
-        limit: 20,
-        windowMs: 60 * 60 * 1000
-      })
-    } catch (rlErr) {
-      if (rlErr instanceof RateLimitError) {
-        return NextResponse.json(
-          { error: rlErr.message, reqId },
-          {
-            status: rlErr.statusCode,
-            headers: {
-              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
-              'X-Request-Id': reqId,
-              ...SAT_SECURITY_HEADERS
-            }
-          }
-        )
-      }
-      throw rlErr
-    }
+    const rlResult1 = applyCreationRateLimits(session.user.id, clientIp, reqId)
+    if (rlResult1) return rlResult1
 
-    // TSC FIX: memberships + include organization relation para poder acceder organization fields
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: {
-        memberships: {
-          // Hard Constraint equivalente isActive: onboardingCompleted === true (schema Prisma NO tiene isActive)
-          where: { status: 'APPROVED', organization: { onboardingCompleted: true } },
-          include: { organization: true }
-        }
-      }
-    })
+    const authResult = await validateUserPermissions({ id: session.user.id, email: session.user.email || '' }, reqId)
+    if (authResult.errorResponse) return authResult.errorResponse
+    const { dbUser, primaryMembership } = authResult
 
-    if (!dbUser) {
-      return NextResponse.json(
-        { error: 'Usuario no encontrado', reqId },
-        { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const primaryMembership = dbUser.memberships[0]
-    const organizationId = primaryMembership?.organizationId
-
-    const enrichedUser = await enrichUserWithMemberships({ id: dbUser.id, systemRole: dbUser.systemRole })
-    const canCreate = hasPermission(enrichedUser, Permission.COMPANY_CREATE, organizationId)
-
-    if (!canCreate) {
-      return NextResponse.json(
-        { error: 'No tienes permisos para crear empresas', reqId },
-        { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const rawBuffer = await request.arrayBuffer()
-    if (rawBuffer.byteLength > bodySizeLimit) {
-      return NextResponse.json(
-        { error: 'Solicitud demasiado grande', reqId },
-        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    const decoder = new TextDecoder('utf-8')
-    let body: unknown
-    try {
-      body = JSON.parse(decoder.decode(rawBuffer))
-    } catch {
-      return NextResponse.json(
-        { error: 'JSON inválido', reqId },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const validationResult = registerCompanySchema.safeParse(body)
-
-    if (!validationResult.success) {
-      return NextResponse.json(
-        {
-          error: 'Datos inválidos',
-          reqId,
-          details: safeZodHumanFriendly(validationResult.error.issues)
-        },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const data = validationResult.data
+    const bodyResult = await parseAndValidateBody(request, reqId)
+    if (bodyResult.errorResponse) return bodyResult.errorResponse
+    const { data } = bodyResult
 
     const normalizedRfc = data.rfc.toUpperCase()
-    const rfcDualKey = `companies:register:rfc:${normalizedRfc}`
-    try {
-      rateLimitByUserId({
-        userId: `${clientIp}:${normalizedRfc}`,
-        key: rfcDualKey,
-        limit: 3,
-        windowMs: 12 * 60 * 60 * 1000
-      })
-    } catch (rlErr) {
-      if (rlErr instanceof RateLimitError) {
-        return NextResponse.json(
-          { error: rlErr.message, reqId },
-          {
-            status: rlErr.statusCode,
-            headers: {
-              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
-              'X-Request-Id': reqId,
-              ...SAT_SECURITY_HEADERS
-            }
-          }
-        )
-      }
-      throw rlErr
-    }
+
+    const rlResult2 = applyRfcRateLimit(clientIp, normalizedRfc, reqId)
+    if (rlResult2) return rlResult2
+
     const shadowStart = performance.now()
 
-    type TxResult = { createdCompany: Company | null; rfcExists: boolean }
-    let txResult: TxResult = { createdCompany: null, rfcExists: false }
+    let txResult: TxResult
 
     try {
-      txResult = await prisma.$transaction<TxResult>(async tx => {
-        const existing = await tx.company.findUnique({
-          where: { rfc: normalizedRfc },
-          select: { id: true, rfc: true }
-        })
-
-        if (existing) {
-          try {
-            await tx.auditLog.count({
-              where: { recordId: `__shadow_rfc_enum_${normalizedRfc}`.slice(0, 50) },
-              take: 1
-            })
-          } catch {
-            // ignore shadow operation
-          }
-          return { createdCompany: null, rfcExists: true }
-        }
-
-        const created = await tx.company.create({
-          data: {
-            name: data.name,
-            rfc: normalizedRfc,
-            businessName: data.businessName,
-            legalRepresentative: data.legalRepresentative ?? null,
-            taxRegime: data.taxRegime,
-            postalCode: data.postalCode,
-            address: data.address ?? null,
-            city: data.city ?? null,
-            state: data.state ?? null,
-            country: data.country,
-            phone: data.phone ?? null,
-            email: data.email ?? null,
-            website: data.website ?? null,
-            industry: data.industry ?? null,
-            employeesCount: data.employeesCount ?? null,
-            incorporationDate: data.incorporationDate ? new Date(data.incorporationDate) : null,
-            createdBy: dbUser.id,
-            updatedBy: dbUser.id,
-          }
-        })
-
-        if (primaryMembership) {
-          try {
-            await tx.companyAccess.create({
-              data: {
-                companyId: created.id,
-                memberId: primaryMembership.id,
-                organizationId: primaryMembership.organizationId,
-              }
-            })
-          } catch {
-            // Ignore unique constraint collision
-          }
-        }
-        return { createdCompany: created, rfcExists: false }
-      }, { isolationLevel: 'Serializable' })
+      txResult = await executeCompanyRegistrationTx(data, normalizedRfc, dbUser, primaryMembership)
     } finally {
       const elapsed = performance.now() - shadowStart
       if (elapsed < RFC_UNIFORM_TIMING_MS) {
@@ -286,68 +396,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const finalCompany = txResult.createdCompany
-    const rfcExists = txResult.rfcExists
-    const finalMembership = primaryMembership
-
-    if (finalMembership && finalCompany && finalMembership.organization?.ownerId === dbUser.id) {
-      try {
-        await updateTenantProgress(finalMembership.organizationId)
-      } catch (tpErr) {
-        console.warn('[companies register] updateTenantProgress failed (non-fatal):', {
-          reqId,
-          orgId: finalMembership.organizationId,
-          err: tpErr instanceof Error ? tpErr.message : String(tpErr)
-        })
-      }
-    }
-
-    if (finalCompany) {
-      await prisma.auditLog.create({
-        data: {
-          tableName: 'companies',
-          recordId: finalCompany.id,
-          action: 'CREATE',
-          newValues: {
-            name: data.name,
-            rfc: normalizedRfc,
-            businessName: data.businessName,
-            taxRegime: data.taxRegime,
-            postalCode: data.postalCode
-          },
-          userId: dbUser.id,
-          userEmail: dbUser.email ?? '',
-          description: `Company "${data.name}" registered with RFC ${normalizedRfc}`,
-          companyId: finalCompany.id,
-        }
-      })
-    }
-
-    if (rfcExists) {
-      return NextResponse.json(
-        {
-          status: 'RFC_DUPLICATE' as const,
-          message: 'Solicitud recibida. El RFC ya se encuentra registrado, te contactaremos si hay novedades.',
-          reqId,
-          nextReviewAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-        },
-        { status: 202, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } }
-      )
-    }
-
-    return NextResponse.json({
-      status: 'OK' as const,
-      message: 'Empresa registrada exitosamente',
-      reqId,
-      company: finalCompany ? {
-        id: finalCompany.id,
-        name: finalCompany.name,
-        rfc: finalCompany.rfc,
-        businessName: finalCompany.businessName,
-        status: finalCompany.status,
-        createdAt: finalCompany.createdAt,
-      } : null
-    }, { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } })
+    return await finalizeCompanyCreation(txResult, dbUser, primaryMembership, data, normalizedRfc, reqId)
 
   } catch (error) {
     const safe = safeErrSummarySat(error)

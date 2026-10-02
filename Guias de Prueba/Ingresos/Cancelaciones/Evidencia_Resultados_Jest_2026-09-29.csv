@@ -1,0 +1,16 @@
+Fecha de Ejecución,Suite de Pruebas,Descripción de la Prueba,Resultado,Duración (ms)
+2026-09-29,Módulo de Cancelaciones - Pre-requisitos,CH-CAN-01: muestra aviso "Selecciona una empresa" si no hay empresa,PASS,25
+2026-09-29,Módulo de Cancelaciones - Pre-requisitos,CH-CAN-02: alerta si se da clic en "Aplicar" sin filtros,PASS,77
+2026-09-29,Módulo de Cancelaciones - Filtros,CH-CAN-03, CH-CAN-04, CH-CAN-05: envía parámetros correctos incluyendo satStatus=CANCELADO,PASS,46
+2026-09-29,Módulo de Cancelaciones - Filtros,CH-CAN-06: fechas limitan resultados,PASS,110
+2026-09-29,Módulo de Cancelaciones - Filtros,CH-CAN-07: limpiar filtros reinicia la tabla y los inputs,PASS,628
+2026-09-29,Módulo de Cancelaciones - Tabla,CH-CAN-08: filtro de columna oculta registros,PASS,636
+2026-09-29,Módulo de Cancelaciones - Tabla,CH-CAN-10: botón XML descarga el archivo original,PASS,206
+2026-09-29,Módulo de Cancelaciones - Tabla,CH-CAN-11: botón PDF abre pestaña nueva,PASS,186
+2026-09-29,Módulo de Cancelaciones - Tabla,CH-CAN-12: paginación está deshabilitada en extremos,PASS,199
+2026-09-29,Módulo de Cancelaciones - Importación,CH-CAN-13, CH-CAN-14: Modal rechaza archivos no .txt,PASS,154
+2026-09-29,Módulo de Cancelaciones - Importación,CH-CAN-15, CH-CAN-16: Procesar .txt muestra KPIs y pestañas,PASS,244
+2026-09-29,Módulo de Cancelaciones - Importación,CH-CAN-17: Permite copiar registros no contemplados,PASS,175
+2026-09-29,Módulo de Cancelaciones - Exportaciones,CH-CAN-18: Exportar botones deshabilitados sin datos,PASS,66
+2026-09-29,Módulo de Cancelaciones - Exportaciones,CH-CAN-19: Exportar CSV genera archivo,PASS,174
+2026-09-29,Módulo de Cancelaciones - Exportaciones,CH-CAN-20: Exportar Excel genera archivo,PASS,172

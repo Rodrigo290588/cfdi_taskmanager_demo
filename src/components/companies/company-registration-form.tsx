@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
-import { useForm, useWatch } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
+import { useForm, useWatch, Controller, FieldErrors } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import RFCValidator from '@/components/rfc/rfc-validator'
 import Image from 'next/image'
 import { Upload, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 const optionalUrlSchema = z.preprocess(
   (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
@@ -143,36 +143,67 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
     control,
     reset,
   } = useForm<CompanyFormData>({
-    resolver: zodResolver(companyFormSchema),
-    defaultValues: {
+    resolver: async (data) => {
+      const parsed = companyFormSchema.safeParse(data)
+      if (parsed.success) {
+        return { values: parsed.data, errors: {} }
+      } else {
+        const formErrors: Record<string, { type: string; message: string }> = {}
+        for (const issue of parsed.error.issues) {
+          const path = issue.path[0] as string
+          if (path && !formErrors[path]) {
+            formErrors[path] = { type: issue.code, message: issue.message }
+          }
+        }
+        return { values: {}, errors: formErrors }
+      }
+    },
+    defaultValues: initialData ? {
+      name: initialData.name,
+      rfc: initialData.rfc,
+      businessName: initialData.businessName,
+      legalRepresentative: initialData.legalRepresentative || undefined,
+      taxRegime: initialData.taxRegime,
+      postalCode: initialData.postalCode,
+      address: initialData.address || undefined,
+      city: initialData.city || undefined,
+      state: initialData.state || undefined,
+      country: initialData.country || 'México',
+      phone: initialData.phone || undefined,
+      email: initialData.email || undefined,
+      website: initialData.website || undefined,
+      industry: initialData.industry || undefined,
+      employeesCount: initialData.employeesCount ?? undefined,
+      incorporationDate: initialData.incorporationDate ? new Date(initialData.incorporationDate as string).toISOString().slice(0,10) : undefined,
+      notes: initialData.notes || undefined
+    } : {
       country: 'México',
     },
   })
 
   const rfcValue = useWatch({ control, name: 'rfc' })
-  const taxRegimeValue = useWatch({ control, name: 'taxRegime' })
-  const industryValue = useWatch({ control, name: 'industry' })
 
   useEffect(() => {
+    console.log('CompanyRegistrationForm initialData:', initialData)
     if (!initialData) return
     const defaults: Partial<CompanyFormData> = {
       name: initialData.name,
       rfc: initialData.rfc,
       businessName: initialData.businessName,
-      legalRepresentative: initialData.legalRepresentative ?? undefined,
+      legalRepresentative: initialData.legalRepresentative || undefined,
       taxRegime: initialData.taxRegime,
       postalCode: initialData.postalCode,
-      address: initialData.address ?? undefined,
-      city: initialData.city ?? undefined,
-      state: initialData.state ?? undefined,
-      country: initialData.country ?? 'México',
-      phone: initialData.phone ?? undefined,
-      email: initialData.email ?? undefined,
-      website: initialData.website ?? undefined,
-      industry: initialData.industry ?? undefined,
+      address: initialData.address || undefined,
+      city: initialData.city || undefined,
+      state: initialData.state || undefined,
+      country: initialData.country || 'México',
+      phone: initialData.phone || undefined,
+      email: initialData.email || undefined,
+      website: initialData.website || undefined,
+      industry: initialData.industry || undefined,
       employeesCount: initialData.employeesCount ?? undefined,
       incorporationDate: initialData.incorporationDate ? new Date(initialData.incorporationDate as string).toISOString().slice(0,10) : undefined,
-      notes: initialData.notes ?? undefined
+      notes: initialData.notes || undefined
     }
     reset(defaults as CompanyFormData)
   }, [initialData, reset])
@@ -218,6 +249,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
       })
       setFieldErrors(errors)
       setError('Errores de validación en el formulario')
+      toast.error('Por favor completa todos los campos obligatorios correctamente.')
       console.log('Client-side validation errors:', validationResult.error.issues)
       return
     }
@@ -271,16 +303,19 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
 
       if (mode === 'edit') {
         setSuccess('Empresa actualizada exitosamente')
+        toast.success('Empresa actualizada exitosamente')
         if (onSaved && result && result.company) {
           onSaved(result.company as UpdatedCompany)
         }
         if (onClose) onClose()
       } else {
         if (onSaved && result && result.company) {
+          toast.success('Empresa registrada exitosamente')
           onSaved(result.company as UpdatedCompany)
           if (onClose) onClose()
         } else {
           setSuccess('Empresa registrada exitosamente. Será revisada por el administrador.')
+          toast.success('Empresa registrada exitosamente. Será revisada por el administrador.')
           reset()
           setTimeout(() => {
             router.push('/companies')
@@ -297,6 +332,12 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
     }
   }
 
+  const onError = (formErrors: FieldErrors<CompanyFormData>) => {
+    toast.error('Por favor completa todos los campos obligatorios correctamente.')
+    setError('Hay campos obligatorios vacíos o con información incorrecta. Revisa el formulario.')
+    console.log('Form validation errors:', formErrors)
+  }
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <Card>
@@ -308,7 +349,7 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-6">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>
@@ -423,24 +464,33 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
 
               <div className="space-y-2">
                 <Label htmlFor="taxRegime">Régimen Fiscal *</Label>
-                <Select value={taxRegimeValue || undefined} onValueChange={(value) => setValue('taxRegime', value)}>
-                  <SelectTrigger className={fieldErrors.taxRegime ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Seleccione régimen fiscal" />
-                  </SelectTrigger>
-                  <SelectContent 
-                    className="max-h-[300px] overflow-y-auto w-full" 
-                    position="popper" 
-                    side="bottom" 
-                    align="start"
-                    sideOffset={4}
-                  >
-                    {taxRegimes.map((regime) => (
-                      <SelectItem key={regime.code} value={regime.code} className="break-all text-sm">
-                        {regime.code} - {regime.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Controller
+                  control={control}
+                  name="taxRegime"
+                  render={({ field }) => (
+                    <Select 
+                      onValueChange={field.onChange} 
+                      value={field.value || undefined}
+                    >
+                      <SelectTrigger className={fieldErrors.taxRegime ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Seleccione régimen fiscal" />
+                      </SelectTrigger>
+                      <SelectContent 
+                        className="max-h-[300px] overflow-y-auto w-full" 
+                        position="popper" 
+                        side="bottom" 
+                        align="start"
+                        sideOffset={4}
+                      >
+                        {taxRegimes.map((regime) => (
+                          <SelectItem key={regime.code} value={regime.code} className="break-all text-sm">
+                            {regime.code} - {regime.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
                 {errors.taxRegime && (
                   <p className="text-sm text-red-500">{errors.taxRegime.message}</p>
                 )}
@@ -538,18 +588,27 @@ export default function CompanyRegistrationForm({ mode = 'create', initialData, 
 
               <div className="space-y-2">
                 <Label htmlFor="industry">Industria</Label>
-                <Select value={industryValue || undefined} onValueChange={(value) => setValue('industry', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione industria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {industries.map((industry) => (
-                      <SelectItem key={industry} value={industry}>
-                        {industry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Controller
+                  control={control}
+                  name="industry"
+                  render={({ field }) => (
+                    <Select 
+                      onValueChange={field.onChange} 
+                      value={field.value || undefined}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione industria" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {industries.map((industry) => (
+                          <SelectItem key={industry} value={industry}>
+                            {industry}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
               </div>
 
               <div className="space-y-2">

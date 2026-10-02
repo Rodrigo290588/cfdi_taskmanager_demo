@@ -18,7 +18,19 @@ export async function GET(request: NextRequest) {
     const rawQuery = Object.fromEntries(scoped.searchParams.entries())
     const parsed = DashboardRecibidosDownloadQuerySchema.safeParse(rawQuery)
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400 })
+      const fieldErrors: { [k: string]: string[] } = {};
+      for (const issue of parsed.error.issues) {
+        if (issue.path.length === 0) continue;
+        const key = String(issue.path[0]);
+        const bucket = fieldErrors[key] ?? [];
+        bucket.push(issue.message);
+        fieldErrors[key] = bucket;
+      }
+      const formErrors = parsed.error.issues
+        .filter(i => i.path.length === 0)
+        .map(i => i.message);
+
+      return NextResponse.json({ error: 'Parámetros inválidos', issues: { formErrors, fieldErrors } }, { status: 400 })
     }
     const recordId = parsed.data.id
 
@@ -32,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     const preCheck = await prisma.providerUploadedCfdi.findFirst({
       where: {
-        uuid: recordId,
+        id: recordId,
         organizationId: member.organizationId,
         receiverCompanyId: companyId
       },

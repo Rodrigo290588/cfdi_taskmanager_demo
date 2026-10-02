@@ -18,6 +18,7 @@ import { DrilldownDialogUuidDuplicadosNom } from './drilldown-dialog-uuid-duplic
 import { DrilldownDialogRetrasosNom } from './drilldown-dialog-retrasos-nom';
 import { DrilldownDialogAlertasSbcSdiNom } from './drilldown-dialog-alertas-sbcsdi-nom';
 import { DrilldownDialogIsrRetenidoNom } from './drilldown-dialog-isr-retenido-nom';
+import { DrilldownDialogCuotasTercerosNom } from './drilldown-dialog-cuotas-terceros-nom';
 
 export type ToneId = 'slate' | 'emerald' | 'rose' | 'amber' | 'indigo' | 'violet';
 const TONE_CLASSES: Record<ToneId, { bar: string; text: string; icon: string; border: string }> = {
@@ -188,6 +189,7 @@ const UuidDuplicadosDrilldownCtx = createContext<{ open: KpiDrilldownOpenFn } | 
 const RetrasosTimbradoDrilldownCtx = createContext<{ open: KpiDrilldownOpenFn } | null>(null);
 const AlertasSbcSdiDrilldownCtx = createContext<{ open: KpiDrilldownOpenFn } | null>(null);
 const IsrRetenidoDrilldownCtx = createContext<{ open: KpiDrilldownOpenFn } | null>(null);
+const CuotasTercerosDrilldownCtx = createContext<{ open: KpiDrilldownOpenFn } | null>(null);
 
 export type KpiDrilldownShellNominaProps = Readonly<{
     companyId: string;
@@ -204,68 +206,82 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
     const [drilldownRetrasosOpen, setDrilldownRetrasosOpen] = useState(false);
     const [drilldownAlertasOpen, setDrilldownAlertasOpen] = useState(false);
     const [drilldownIsrRetenidoOpen, setDrilldownIsrRetenidoOpen] = useState(false);
+    const [drilldownCuotasTercerosOpen, setDrilldownCuotasTercerosOpen] = useState(false);
     const openCancelados = useCallback<KpiDrilldownOpenFn>(() => setDrilldownCanceladosOpen(true), []);
     const openUuidDuplicados = useCallback<KpiDrilldownOpenFn>(() => setDrilldownUuidDuplicadosOpen(true), []);
     const openRetrasos = useCallback<KpiDrilldownOpenFn>(() => setDrilldownRetrasosOpen(true), []);
     const openAlertas = useCallback<KpiDrilldownOpenFn>(() => setDrilldownAlertasOpen(true), []);
     const openIsrRetenido = useCallback<KpiDrilldownOpenFn>(() => setDrilldownIsrRetenidoOpen(true), []);
+    const openCuotasTerceros = useCallback<KpiDrilldownOpenFn>(() => setDrilldownCuotasTercerosOpen(true), []);
     const ctxValueCancelados = useMemo(() => ({ open: openCancelados }), [openCancelados]);
     const ctxValueUuidDuplicados = useMemo(() => ({ open: openUuidDuplicados }), [openUuidDuplicados]);
     const ctxValueRetrasos = useMemo(() => ({ open: openRetrasos }), [openRetrasos]);
     const ctxValueAlertas = useMemo(() => ({ open: openAlertas }), [openAlertas]);
     const ctxValueIsrRetenido = useMemo(() => ({ open: openIsrRetenido }), [openIsrRetenido]);
+    const ctxValueCuotasTerceros = useMemo(() => ({ open: openCuotasTerceros }), [openCuotasTerceros]);
     return (
         <CanceladosDrilldownCtx.Provider value={ctxValueCancelados}>
             <UuidDuplicadosDrilldownCtx.Provider value={ctxValueUuidDuplicados}>
                 <RetrasosTimbradoDrilldownCtx.Provider value={ctxValueRetrasos}>
                     <AlertasSbcSdiDrilldownCtx.Provider value={ctxValueAlertas}>
                         <IsrRetenidoDrilldownCtx.Provider value={ctxValueIsrRetenido}>
-                            {props.children}
-                            <DrilldownDialogCanceladosNom
-                                open={drilldownCanceladosOpen}
-                                onOpenChange={setDrilldownCanceladosOpen}
-                                companyId={props.companyId}
-                                companyRfc={props.companyRfc ?? null}
-                                companyDisplayName={props.companyDisplayName ?? null}
-                                startDate={props.startDate}
-                                endDate={props.endDate}
-                            />
-                            <DrilldownDialogUuidDuplicadosNom
-                                open={drilldownUuidDuplicadosOpen}
-                                onOpenChange={setDrilldownUuidDuplicadosOpen}
-                                companyId={props.companyId}
-                                companyRfc={props.companyRfc ?? null}
-                                companyDisplayName={props.companyDisplayName ?? null}
-                                startDate={props.startDate}
-                                endDate={props.endDate}
-                            />
-                            <DrilldownDialogRetrasosNom
-                                open={drilldownRetrasosOpen}
-                                onOpenChange={setDrilldownRetrasosOpen}
-                                companyId={props.companyId}
-                                companyRfc={props.companyRfc ?? null}
-                                companyDisplayName={props.companyDisplayName ?? null}
-                                startDate={props.startDate}
-                                endDate={props.endDate}
-                            />
-                            <DrilldownDialogAlertasSbcSdiNom
-                                open={drilldownAlertasOpen}
-                                onOpenChange={setDrilldownAlertasOpen}
-                                companyId={props.companyId}
-                                companyRfc={props.companyRfc ?? null}
-                                companyDisplayName={props.companyDisplayName ?? null}
-                                startDate={props.startDate}
-                                endDate={props.endDate}
-                            />
-                            <DrilldownDialogIsrRetenidoNom
-                                open={drilldownIsrRetenidoOpen}
-                                onOpenChange={setDrilldownIsrRetenidoOpen}
-                                companyId={props.companyId}
-                                companyRfc={props.companyRfc ?? null}
-                                companyDisplayName={props.companyDisplayName ?? null}
-                                startDate={props.startDate}
-                                endDate={props.endDate}
-                            />
+                            <CuotasTercerosDrilldownCtx.Provider value={ctxValueCuotasTerceros}>
+                                {props.children}
+                                <DrilldownDialogCanceladosNom
+                                    open={drilldownCanceladosOpen}
+                                    onOpenChange={setDrilldownCanceladosOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                                <DrilldownDialogUuidDuplicadosNom
+                                    open={drilldownUuidDuplicadosOpen}
+                                    onOpenChange={setDrilldownUuidDuplicadosOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                                <DrilldownDialogRetrasosNom
+                                    open={drilldownRetrasosOpen}
+                                    onOpenChange={setDrilldownRetrasosOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                                <DrilldownDialogAlertasSbcSdiNom
+                                    open={drilldownAlertasOpen}
+                                    onOpenChange={setDrilldownAlertasOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                                <DrilldownDialogIsrRetenidoNom
+                                    open={drilldownIsrRetenidoOpen}
+                                    onOpenChange={setDrilldownIsrRetenidoOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                                <DrilldownDialogCuotasTercerosNom
+                                    open={drilldownCuotasTercerosOpen}
+                                    onOpenChange={setDrilldownCuotasTercerosOpen}
+                                    companyId={props.companyId}
+                                    companyRfc={props.companyRfc ?? null}
+                                    companyDisplayName={props.companyDisplayName ?? null}
+                                    startDate={props.startDate}
+                                    endDate={props.endDate}
+                                />
+                            </CuotasTercerosDrilldownCtx.Provider>
                         </IsrRetenidoDrilldownCtx.Provider>
                     </AlertasSbcSdiDrilldownCtx.Provider>
                 </RetrasosTimbradoDrilldownCtx.Provider>
@@ -330,4 +346,9 @@ export function KpiAlertasSbcSdiTriggerClient(props: KpiTriggerClientBaseProps) 
 export function KpiIsrRetenidoTriggerClient(props: KpiTriggerClientBaseProps) {
     const ctx = useContext(IsrRetenidoDrilldownCtx);
     return _KpiDrilldownTriggerBase(ctx, { ...props, defaultAriaLabel: 'Abrir reporte de ISR retenido de nómina' });
+}
+
+export function KpiCuotasTercerosTriggerClient(props: KpiTriggerClientBaseProps) {
+    const ctx = useContext(CuotasTercerosDrilldownCtx);
+    return _KpiDrilldownTriggerBase(ctx, { ...props, defaultAriaLabel: 'Abrir reporte de cuotas a terceros de nómina' });
 }

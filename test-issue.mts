@@ -1,0 +1,1 @@
+import { issueMachineToken } from './src/lib/m2m-oauth'; async function run() { try { const token = await issueMachineToken({ clientId: 'test', organizationId: 'testOrg', scopes: ['cfdi.import'] }, ['cfdi.import']); console.log('Token:', token); } catch (e) { console.error('ERROR:', e); } } run();

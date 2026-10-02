@@ -6,6 +6,7 @@ import QRCode from 'qrcode'
 import puppeteer from 'puppeteer-core'
 import type { Browser, BrowserContext, Page, LaunchOptions } from 'puppeteer-core'
 import { generateTemplateClassicHtml } from '@/components/pdf-templates/TemplateClassic'
+import { generateTemplateNominaHtml } from '@/components/pdf-templates/TemplateNomina'
 import { createSemaphore } from '@/lib/semaphore'
 import { scanXXEAndReportSafe } from '@/lib/xml-sanitize'
 
@@ -156,7 +157,7 @@ async function acquireBrowserFromPool(): Promise<{ browser: Browser; releaseBrow
       const e = _browserPool[i]
       const tooOld = now - e.createdAtMs > BROWSER_CACHE_USER_DATA_TTL_MS
       const noRenders = e.rendersRemaining <= 0
-      const disconnected = !e.browser.isConnected()
+      const disconnected = !e.browser.connected
       if (tooOld || noRenders || disconnected) {
         try { await e.browser.close() } catch { /* ignore */ }
         try { rmSync(e.tmpUserDataDir, { recursive: true, force: true, maxRetries: 3 }) } catch { /* ignore */ }
@@ -164,7 +165,7 @@ async function acquireBrowserFromPool(): Promise<{ browser: Browser; releaseBrow
       }
     }
     // Reutiliza la instancia más llena (menor rendersRemaining > 0) para rotación homogénea
-    const reusable = _browserPool.find(e => e.rendersRemaining > 0 && e.browser.isConnected())
+    const reusable = _browserPool.find(e => e.rendersRemaining > 0 && e.browser.connected)
     if (reusable) return reusable
     // Pool lleno? Cierra la entrada más vieja
     while (_browserPool.length >= BROWSER_POOL_MAX_INSTANCES) {
@@ -173,7 +174,7 @@ async function acquireBrowserFromPool(): Promise<{ browser: Browser; releaseBrow
       try { rmSync(oldest.tmpUserDataDir, { recursive: true, force: true, maxRetries: 3 }) } catch { /* ignore */ }
     }
     await launchNewBrowserInstance()
-    return _browserPool[_browserPool.length - 1]
+    return _browserPool.at(-1)!
   })
   const entry = release as unknown as BrowserPoolEntry
   return {
@@ -196,7 +197,12 @@ const _AMP_RE = /&/g; const _LT_RE = /</g; const _GT_RE = />/g; const _QUOT_RE =
 const _EVENT_HANDLER_RE = /\son[a-z0-9_-]{1,32}\s*=/gi
 const _JS_SCHEME_RE = /(javascript|data|vbscript|file)\s*:/gi
 export function escapeHtmlForCfdiTemplate(unsafe: unknown): string {
-  const s = String(unsafe ?? '')
+  if (unsafe == null) return ''
+  let s = ''
+  if (typeof unsafe === 'string') s = unsafe
+  else if (typeof unsafe === 'number' || typeof unsafe === 'boolean') s = String(unsafe)
+  else return ''
+
   if (!s) return ''
   return s
     .replace(_EVENT_HANDLER_RE, ' _attr_removed_=')
@@ -205,8 +211,8 @@ export function escapeHtmlForCfdiTemplate(unsafe: unknown): string {
     .replace(_QUOT_RE, '&quot;').replace(_SQUOT_RE, '&#39;')
 }
 
-/** INV-001 FIXED (CAPA deep-walk): Recorre TODO el árbol CFDI parsed y escapea TODAS las hojas string
- * No confía solo en 4 campos UUID/RFC/Total/Tail. Conceptos, nomina CURP, parte, información aduanera: TODO
+/** INV-001 FIXED (CAPA deep-walk): Recorre el árbol CFDI parsed completo y escapea todas las hojas string
+ * No confía solo en 4 campos UUID/RFC/Total/Tail. Conceptos, nomina CURP, parte, información aduanera: incluye todo
  */
 function deepEscapeCfdiStrings(input: unknown): unknown {
   if (input === null || input === undefined) return input
@@ -221,7 +227,7 @@ function deepEscapeCfdiStrings(input: unknown): unknown {
     }
     return out
   }
-  return escapeHtmlForCfdiTemplate(String(input))
+  return escapeHtmlForCfdiTemplate('')
 }
 
 function decodeXmlIfNeeded(xmlRaw: string): string {
@@ -243,16 +249,16 @@ function safeParseCfdiXml(xmlContentUtf8: string) {
 }
 
 /* ==================================================================
- * INV-001 FIXED: CAPA request interception en Page. Bloquea TODO 
+ * INV-001 FIXED: CAPA request interception en Page. Bloquea todo 
  * request que no sea data: / about:blank / chrome-extension.
  * ================================================================== */
-function installSsrfRequestGuard(page: Page) {
-  page.setRequestInterception(true).catch(() => { /* ignore if not supported */ })
+async function installSsrfRequestGuard(page: Page) {
+  await page.setRequestInterception(true).catch(() => { /* ignore if not supported */ })
   page.on('request', (req) => {
     const u = (req.url() || '').toLowerCase()
     const allow = u.startsWith('data:') || u.startsWith('about:blank') || u.startsWith('chrome-extension:') || u.startsWith('blob:')
-    if (!allow) { try { req.abort('blockedbyclient') } catch { /* ignore */ } return }
-    try { req.continue() } catch { /* ignore */ }
+    if (!allow) { req.abort('blockedbyclient').catch(() => { /* ignore */ }); return }
+    req.continue().catch(() => { /* ignore */ })
   })
   // Blanket CSP para eliminar cualquier intento de JS dentro del HTML renderizado
   page.setBypassCSP?.(false)
@@ -263,6 +269,7 @@ export async function generateCfdiPdfFromXml(params: {
   invoiceIdForFallback: string
   isCancelled?: boolean
   preSanitizeHook?: (parsed: unknown) => unknown
+  templateType?: 'classic' | 'nomina'
 }) {
   const xmlContent = decodeXmlIfNeeded(params.xmlRaw)
 
@@ -283,35 +290,44 @@ export async function generateCfdiPdfFromXml(params: {
 
   type CfdiNode = Record<string, unknown>
   const comprobante = (
-    (postPreprocessed as CfdiNode)['cfdi:Comprobante'] ||
-    (postPreprocessed as CfdiNode)['Comprobante'] || {}
+    (postPreprocessed as CfdiNode)['cfdi:Comprobante'] ??
+    (postPreprocessed as CfdiNode)['Comprobante'] ?? {}
   ) as CfdiNode
-  const emisor = (comprobante['cfdi:Emisor'] || comprobante['Emisor'] || {}) as CfdiNode
-  const receptor = (comprobante['cfdi:Receptor'] || comprobante['Receptor'] || {}) as CfdiNode
-  const complemento = (comprobante['cfdi:Complemento'] || comprobante['Complemento'] || {}) as CfdiNode
-  const timbre = (complemento['tfd:TimbreFiscalDigital'] || complemento['TimbreFiscalDigital'] || {}) as CfdiNode
+  const emisor = (comprobante['cfdi:Emisor'] ?? comprobante['Emisor'] ?? {}) as CfdiNode
+  const receptor = (comprobante['cfdi:Receptor'] ?? comprobante['Receptor'] ?? {}) as CfdiNode
+  const complemento = (comprobante['cfdi:Complemento'] ?? comprobante['Complemento'] ?? {}) as CfdiNode
+  const timbre = (complemento['tfd:TimbreFiscalDigital'] ?? complemento['TimbreFiscalDigital'] ?? {}) as CfdiNode
 
-  const timbreUuidRaw = String(timbre['@_UUID'] || '')
+  const getString = (val: unknown): string => {
+    if (typeof val === 'string') return val
+    if (typeof val === 'number') return String(val)
+    return ''
+  }
+  const timbreUuidRaw = getString(timbre['@_UUID'])
   const safeUuidValue = escapeHtmlForCfdiTemplate(timbreUuidRaw)
-  const safeEmisorRfc = escapeHtmlForCfdiTemplate(emisor['@_Rfc'] || '')
-  const safeReceptorRfc = escapeHtmlForCfdiTemplate(receptor['@_Rfc'] || '')
-  const safeTotal = escapeHtmlForCfdiTemplate(comprobante['@_Total'] || '')
-  const safeSelloTail = escapeHtmlForCfdiTemplate(String(timbre['@_SelloCFD'] || '').slice(-8))
+  const safeEmisorRfc = escapeHtmlForCfdiTemplate(getString(emisor['@_Rfc']))
+  const safeReceptorRfc = escapeHtmlForCfdiTemplate(getString(receptor['@_Rfc']))
+  const safeTotal = escapeHtmlForCfdiTemplate(getString(comprobante['@_Total']))
+  const safeSelloTail = escapeHtmlForCfdiTemplate(getString(timbre['@_SelloCFD']).slice(-8))
 
   const qrString = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${safeUuidValue}&re=${safeEmisorRfc}&rr=${safeReceptorRfc}&tt=${safeTotal}&fe=${safeSelloTail}`
 
   let qrCodeDataUrl = ''
   try {
     qrCodeDataUrl = await QRCode.toDataURL(qrString, { errorCorrectionLevel: 'M', margin: 1 })
-  } catch (err) { void err; console.warn('INV-WARN: QR code generation failed (no PII logged). Continuing PDF without QR.') }
+  } catch { console.warn('INV-WARN: QR code generation failed (no PII logged). Continuing PDF without QR.') }
 
   type CfdiParsed = Record<string, unknown>
-  const fullHtml = generateTemplateClassicHtml({
+  const templateProps = {
     cfdiData: postPreprocessed as unknown as CfdiParsed,
     qrCodeDataUrl,
     brandConfig: { primaryColor: '#0f172a' },
     isCancelled: Boolean(params.isCancelled)
-  })
+  }
+
+  const fullHtml = params.templateType === 'nomina'
+    ? generateTemplateNominaHtml(templateProps)
+    : generateTemplateClassicHtml(templateProps)
 
   /* INV-001 + INV-006 CAPA FINAL: semaphore tabs + pool browser rotation + incognito context PER PDF */
   return _browserTabsSemaphore.run<{ pdfBuffer: Buffer; uuid: string }>(async () => {
@@ -324,7 +340,7 @@ export async function generateCfdiPdfFromXml(params: {
       if (!context) throw new Error('INV-PDF: No se pudo crear BrowserContext aislado (pool inválido).')
       page = await context.newPage()
       if (!page) throw new Error('INV-PDF: No se pudo crear nueva Page en browser context.')
-      installSsrfRequestGuard(page)  // <-- CAPA anti-SSRF network 100% bloqueado EXCEPTO data:
+      await installSsrfRequestGuard(page)  // <-- CAPA anti-SSRF network 100% bloqueado EXCEPTO data:
       page.setDefaultNavigationTimeout(45000)
       page.setDefaultTimeout(45000)
       await page.setContent(fullHtml, { waitUntil: 'domcontentloaded', timeout: 45000 })

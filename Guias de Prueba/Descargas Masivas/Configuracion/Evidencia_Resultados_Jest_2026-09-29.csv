@@ -1,0 +1,6 @@
+Módulo,Archivo de Prueba,Prueba Evaluada,Resultado,Fecha de Ejecución,Notas
+Descargas Masivas - Config.,configuracion_descargas.test.tsx,1. Renderizado Inicial y Botón de Ojo (UX),PASS,2026-09-29,Valida carga de formulario y visibilidad de contraseña
+Descargas Masivas - Config.,configuracion_descargas.test.tsx,2. Escenario de Error: Envío en Blanco,PASS,2026-09-29,Valida prevención de envío de datos vacíos
+Descargas Masivas - Config.,configuracion_descargas.test.tsx,3. Escenario de Error: Archivo Inválido (.pdf en lugar de .key),PASS,2026-09-29,Verifica limpieza del campo al usar extensión incorrecta
+Descargas Masivas - Config.,configuracion_descargas.test.tsx,4. Escenario de Error: Rechazo del Servidor (Credenciales Inválidas),PASS,2026-09-29,Simula error desde backend por contraseña errónea
+Descargas Masivas - Config.,configuracion_descargas.test.tsx,5. Escenario de Éxito Total (Happy Path),PASS,2026-09-29,Verifica correcta creación de FormData y mensaje de éxito

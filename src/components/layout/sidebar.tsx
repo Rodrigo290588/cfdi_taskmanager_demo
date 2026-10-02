@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
+import type { Session } from 'next-auth'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -23,7 +24,7 @@ import { TenantNavigation } from '@/components/tenant/tenant-navigation'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useCompanyAccess } from '@/hooks/use-company-access'
 import { Permission } from '@/lib/permissions'
-import { useTenant } from '@/hooks/use-tenant'
+import { useTenant, type TenantState } from '@/hooks/use-tenant'
 import {
   FileText,
   BarChart3,
@@ -42,7 +43,6 @@ import {
   Receipt,
   Sliders,
   Table,
-  Calculator,
   Users,
   Scale,
   Activity,
@@ -55,26 +55,6 @@ function isAbortError(error: unknown) {
 }
 
 type NavIcon = React.ComponentType<{ className?: string }>
-const navigation: Array<{ name: string; href: string; icon: NavIcon; required?: Permission | Permission[] }> = [
-  {
-    name: 'Bóveda Fiscal',
-    href: '/invoices',
-    icon: FileText,
-    required: Permission.INVOICE_READ
-  },
-  {
-    name: 'Empresas',
-    href: '#',
-    icon: Building,
-    required: Permission.COMPANY_READ
-  },
-  {
-    name: 'Reportes',
-    href: '/reports',
-    icon: BarChart3,
-    required: Permission.INVOICE_READ
-  },
-]
 
 type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | string
 interface FiscalEntity {
@@ -100,105 +80,646 @@ interface SidebarProps {
   onToggle: () => void
 }
 
-export function Sidebar({ isOpen, onToggle }: SidebarProps) {
-  const pathname = usePathname()
-  const { data: session } = useSession()
-  const { canAccessOperationalFeatures, isTenantOwner, tenantState } = useTenant()
-  const { hasPermission, hasAnyPermission } = usePermissions()
-  const { hasAccess: hasCompanyAccess } = useCompanyAccess()
+function formatRoleLabel(entity: FiscalEntity): string {
+  if (!entity.role) return '';
+  if (entity.isCustomRole) return entity.role;
+  switch (entity.role) {
+    case 'ADMIN': return 'Administrador';
+    case 'AUDITOR': return 'Auditor';
+    default: return 'Visualizador';
+  }
+}
+
+function formatRoleLabelShort(entity: FiscalEntity): string {
+  if (!entity.role) return '';
+  if (entity.isCustomRole) return entity.role;
+  switch (entity.role) {
+    case 'ADMIN': return 'Admin';
+    case 'AUDITOR': return 'Auditor';
+    default: return 'Vis';
+  }
+}
+
+async function fetchCompaniesApi(orgId?: string, signal?: AbortSignal) {
+  const url = orgId ? `/api/user/company-access?orgId=${orgId}` : '/api/user/company-access';
+  const response = await fetch(url, { cache: 'no-store', signal });
+  if (!response.ok) return [];
+  try {
+    const data = await response.json();
+    return data.companies || [];
+  } catch {
+    return [];
+  }
+}
+
+function getSavedCompany(): FiscalEntity | null {
+  try {
+    const stored = localStorage.getItem('selectedCompany');
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return null;
+}
+
+function determineSelectedCompany(companies: FiscalEntity[], savedCompany: FiscalEntity | null): FiscalEntity | null {
+  if (!companies || companies.length === 0) return null;
+  
+  const isValidSaved = savedCompany && companies.some(c => c.id === savedCompany.id);
+  if (savedCompany && !isValidSaved) {
+    try { localStorage.removeItem('selectedCompany') } catch {}
+  }
+  
+  if (isValidSaved && savedCompany) {
+    return companies.find(c => c.id === savedCompany.id) || savedCompany;
+  }
+  
+  return companies.find(c => c.isActive) || companies[0];
+}
+
+async function fetchMemberFlags(orgId: string, signal?: AbortSignal) {
+  const res = await fetch(`/api/user/member?orgId=${orgId}`, { signal })
+  if (!res.ok) return null
+  const data = await res.json()
+  if (!data?.member) return null
+  
+  return {
+    canViewEmission: data.member.canViewEmission,
+    canViewReception: data.member.canViewReception,
+    canViewPayroll: data.member.canViewPayroll,
+    canViewSatPortal: data.member.canViewSatPortal,
+    canViewMassDownloads: data.member.canViewMassDownloads,
+    canManageOrg: data.member.canManageOrg,
+    granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
+  }
+}
+
+async function fetchAvatarApi(signal?: AbortSignal) {
+  const res = await fetch('/api/user/profile', { cache: 'no-store', signal })
+  if (!res.ok) return null
+  const data = await res.json()
+  return data?.user?.image as string | null
+}
+
+function NavCollapsible({
+  title,
+  icon: Icon,
+  isOpen,
+  onOpenChange,
+  children
+}: Readonly<{
+  title: string;
+  icon: NavIcon;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}>) {
+  return (
+    <Collapsible open={isOpen} onOpenChange={onOpenChange}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" className="w-full justify-start px-3">
+          <Icon className="h-5 w-5 mr-3" />
+          <span className="flex-1 text-left">{title}</span>
+          {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function StatefulNavCollapsible({
+  title,
+  icon,
+  show,
+  children
+}: Readonly<{
+  title: string;
+  icon: NavIcon;
+  show: boolean;
+  children: ReactNode;
+}>) {
+  const [isOpen, setIsOpen] = useState(false);
+  if (!show) return null;
+  return (
+    <NavCollapsible title={title} icon={icon} isOpen={isOpen} onOpenChange={setIsOpen}>
+      {children}
+    </NavCollapsible>
+  );
+}
+
+function MassDownloadsNavGroup({ show }: Readonly<{ show: boolean }>) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
+
+  if (!show) return null;
+
+  return (
+    <NavCollapsible title="Descargas masivas de CFDI" icon={CloudDownload} isOpen={isOpen} onOpenChange={setIsOpen}>
+      <SubNavLinkItem href="/mass-downloads" icon={CloudDownload} title="Configuración de llaves privadas" />
+      <Collapsible open={requestsOpen} onOpenChange={setRequestsOpen}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="w-full justify-start px-3 h-auto py-2 text-blue-200 hover:bg-white/10 hover:text-white rounded-full">
+            <CloudDownload className="h-4 w-4 mr-3" />
+            <span className="flex-1 text-left font-medium text-sm">Solicitud de descargas</span>
+            {requestsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+          <SubNavLinkItem href="/mass-downloads/requests" icon={Plus} title="Nueva Solicitud" />
+          <SubNavLinkItem href="/mass-downloads/requests/monitor" icon={BarChart3} title="Monitor de solicitud de peticiones" />
+        </CollapsibleContent>
+      </Collapsible>
+      <SubNavLinkItem href="/mass-downloads/verification" icon={Shield} title="Monitor de verificación de peticiones" />
+      <SubNavLinkItem href="/mass-downloads/package-downloads" icon={CloudDownload} title="Módulo de descargas de paquetes de solicitud" />
+      <SubNavLinkItem href="/mass-downloads/fiscal-control" icon={BarChart3} title="Panel de Control Fiscal CFDI" />
+    </NavCollapsible>
+  );
+}
+
+function CompaniesNavGroup({
+  show,
+  pathname,
+  hasPermission,
+  orgId
+}: Readonly<{
+  show: boolean;
+  pathname: string;
+  hasPermission: (p: Permission, orgId?: string) => boolean;
+  orgId?: string;
+}>) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!show) return null;
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="ghost"
+          className={cn(
+            "w-full justify-start px-4 py-2 rounded-full hover:bg-white/10 hover:text-white transition-all duration-200",
+            pathname?.startsWith('/companies') ? "bg-white/20 text-white font-semibold shadow-inner" : "text-blue-100"
+          )}
+        >
+          <Building className="h-5 w-5 mr-3" />
+          <span className="flex-1 text-left">Empresas</span>
+          {isOpen ? <ChevronDown className="h-4 w-4 text-blue-200" /> : <ChevronRight className="h-4 w-4 text-blue-200" />}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+        {hasPermission(Permission.COMPANY_CREATE, orgId) && (
+          <SubNavLinkItem href="/companies" icon={Plus} title="Registrar Empresas" />
+        )}
+        {hasPermission(Permission.COMPANY_READ, orgId) && (
+          <SubNavLinkItem href="/companies/search" icon={Search} title="Buscar Empresas" />
+        )}
+        {hasPermission(Permission.ADMIN_DASHBOARD, orgId) && (
+          <SubNavLinkItem href="/admin/dashboard" icon={Shield} title="Administrar" />
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function NavLinkItem({
+  href,
+  icon: Icon,
+  title,
+  isActive
+}: Readonly<{
+  href: string;
+  icon: NavIcon;
+  title: string;
+  isActive?: boolean;
+}>) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200",
+        isActive
+          ? "bg-white/20 text-white font-semibold shadow-inner"
+          : "text-blue-100 hover:bg-white/10 hover:text-white"
+      )}
+    >
+      <Icon className="h-5 w-5" />
+      <span>{title}</span>
+    </Link>
+  );
+}
+
+function SubNavLinkItem({
+  href,
+  icon: Icon,
+  title,
+  isActive
+}: Readonly<{
+  href: string;
+  icon: NavIcon | null;
+  title: string;
+  isActive?: boolean;
+}>) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium hover:bg-white/10 hover:text-white",
+        isActive ? "bg-white/10 text-white" : "text-blue-200"
+      )}
+    >
+      {Icon && <Icon className="h-4 w-4" />}
+      <span>{title}</span>
+    </Link>
+  );
+}
+
+function useNavigationPermissions(moduleFlags: FiscalEntity['moduleFlags']) {
+  const { tenantState } = useTenant();
+  const { hasPermission } = usePermissions();
+  const { hasAccess: hasCompanyAccess } = useCompanyAccess();
+  const orgId = tenantState?.organizationId;
+
+  const isEmissionEnabled = moduleFlags?.canViewEmission !== false;
+  const isReceptionEnabled = moduleFlags?.canViewReception !== false;
+  const isPayrollEnabled = moduleFlags?.canViewPayroll !== false;
+  const isSatPortalEnabled = moduleFlags?.canViewSatPortal !== false;
+  const isMassDownloadsEnabled = moduleFlags?.canViewMassDownloads !== false;
+  
+  const granularEmission = moduleFlags?.granularPermissions?.emissionDashboard !== false;
+  const granularReception = moduleFlags?.granularPermissions?.receptionDashboard !== false;
+  const granularProvider = moduleFlags?.granularPermissions?.providerDashboard !== false;
+  
+  const isProviderOnly = moduleFlags?.granularPermissions?.providerDashboard === true && !isEmissionEnabled && !isReceptionEnabled;
+  const isEmissionReceptionDisabled = !isEmissionEnabled && !isReceptionEnabled;
+  const isOrgCompaniesDisabled = moduleFlags?.canManageOrg === false && moduleFlags?.granularPermissions?.orgCompanies === false;
+
+  return {
+    showEmission: hasPermission(Permission.MODULE_EMISSION_VIEW, orgId) && isEmissionEnabled && granularEmission,
+    showReception: hasPermission(Permission.MODULE_RECEPTION_VIEW, orgId) && isReceptionEnabled && granularReception,
+    showPayroll: hasPermission(Permission.MODULE_PAYROLL_VIEW, orgId) && isPayrollEnabled,
+    showProvider: granularProvider,
+    showMassDownloads: hasPermission(Permission.MODULE_MASS_DOWNLOADS_VIEW, orgId) && isMassDownloadsEnabled,
+    showSatPortal: hasPermission(Permission.MODULE_SAT_PORTAL_VIEW, orgId) && isSatPortalEnabled,
+    canViewInvoices: hasPermission(Permission.INVOICE_READ, orgId) && hasCompanyAccess && !isEmissionReceptionDisabled,
+    canViewEmpresas: hasPermission(Permission.COMPANY_READ, orgId) && !isProviderOnly && !isOrgCompaniesDisabled,
+    canShowEmissionFeature: hasPermission(Permission.MODULE_EMISSION_VIEW, orgId) && isEmissionEnabled,
+  };
+}
+
+function MainNavigation({ moduleFlags }: Readonly<{ moduleFlags: FiscalEntity['moduleFlags'] }>) {
+  const pathname = usePathname();
+  const { tenantState } = useTenant();
+  const { hasPermission } = usePermissions();
+  const orgId = tenantState?.organizationId;
+  
+  const perms = useNavigationPermissions(moduleFlags);
+
+  return (
+    <>
+      <StatefulNavCollapsible title="Ingresos" icon={FileText} show={perms.showEmission}>
+        <SubNavLinkItem href="/dashboard_fiscal" icon={BarChart3} title="Tablero de ingresos" />
+        <SubNavLinkItem href="/dashboard_fiscal/workpaper" icon={Table} title="Reporte de ingresos" />
+        <SubNavLinkItem href="/dashboard_fiscal/ingresos-parciales" icon={Receipt} title="Ingresos Cobrados / No Cobrados" />
+        <SubNavLinkItem href="/dashboard_fiscal/cancelaciones" icon={XCircle} title="Cancelaciones" />
+      </StatefulNavCollapsible>
+
+      <StatefulNavCollapsible title="Egresos" icon={Inbox} show={perms.showReception}>
+        <SubNavLinkItem href="/dashboard_recibidos" icon={BarChart3} title="Tablero de Egresos" />
+        <SubNavLinkItem href="/dashboard_recibidos/workpaper" icon={Table} title="Reporte de Egresos" />
+      </StatefulNavCollapsible>
+
+      <StatefulNavCollapsible title="Nómina" icon={Receipt} show={perms.showPayroll}>
+        <SubNavLinkItem href="/dashboard/rh" icon={BarChart3} title="Tablero Recursos Humanos" isActive={pathname === '/dashboard/rh' || pathname.startsWith('/dashboard/rh/')} />
+        <SubNavLinkItem href="/dashboard/nomina/workpaper" icon={Table} title="Reporte de Nómina" />
+        <SubNavLinkItem href="/dashboard/nomina/fiscal" icon={Landmark} title="Tablero Contabilidad y Fiscal" isActive={pathname === '/dashboard/nomina/fiscal' || pathname.startsWith('/dashboard/nomina/fiscal/')} />
+        <SubNavLinkItem href="/dashboard/direccion" icon={Building2} title="Tablero RH Directivo" isActive={pathname === '/dashboard/direccion' || pathname.startsWith('/dashboard/direccion/')} />
+      </StatefulNavCollapsible>
+
+      <StatefulNavCollapsible title="Proveedor" icon={Building2} show={perms.showProvider}>
+        <SubNavLinkItem href="/provider/cfdis-report" icon={FileText} title="Reporte CFDI´s" />
+      </StatefulNavCollapsible>
+
+      <MassDownloadsNavGroup show={perms.showMassDownloads} />
+
+      {perms.canShowEmissionFeature && (
+        <Link href="/dashboard/import-monitor" className={cn(buttonVariants({ variant: "ghost" }), "w-full justify-start px-3 h-auto py-2", pathname === '/dashboard/import-monitor' ? "bg-accent text-accent-foreground" : "")}>
+          <Activity className="h-5 w-5 mr-3 shrink-0" />
+          <span className="whitespace-normal text-left leading-tight">Monitor de integridad y timbrado de CFDI´s</span>
+        </Link>
+      )}
+
+      <StatefulNavCollapsible title="Monitor" icon={CloudDownload} show={perms.showSatPortal}>
+        <SubNavLinkItem href="/sat_cfdis" icon={CloudDownload} title="Dashboard" />
+      </StatefulNavCollapsible>
+
+      {perms.canViewInvoices && (
+        <NavLinkItem href="/invoices" icon={FileText} title="Bóveda Fiscal" isActive={pathname === '/invoices'} />
+      )}
+
+      <CompaniesNavGroup 
+        show={perms.canViewEmpresas} 
+        pathname={pathname} 
+        hasPermission={hasPermission} 
+        orgId={orgId} 
+      />
+    </>
+  );
+}
+
+function AdminNavigation() {
+  const pathname = usePathname();
+  const { tenantState } = useTenant();
+  const { hasPermission, hasAnyPermission } = usePermissions();
+  const orgId = tenantState?.organizationId;
+  const [adminOpen, setAdminOpen] = useState(false);
+
+  const canShowAdmin = hasAnyPermission([
+    Permission.ADMIN_DASHBOARD,
+    Permission.ADMIN_USERS,
+    Permission.ADMIN_SETTINGS,
+    Permission.ADMIN_COMPANIES,
+    Permission.ADMIN_ORGANIZATIONS,
+    Permission.ADMIN_AUDIT,
+  ], orgId);
+
+  if (!canShowAdmin) return null;
+
+  return (
+    <Collapsible open={adminOpen} onOpenChange={setAdminOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" className="w-full justify-start px-4 py-2 rounded-full hover:bg-white/10 hover:text-white transition-all duration-200">
+          <Shield className="h-5 w-5 mr-3" />
+          <span className="flex-1 text-left text-sm font-medium text-blue-100">Administración de la Organización</span>
+          {adminOpen ? <ChevronDown className="h-4 w-4 text-blue-200" /> : <ChevronRight className="h-4 w-4 text-blue-200" />}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
+        {hasPermission(Permission.ADMIN_DASHBOARD, orgId) && (
+          <SubNavLinkItem href="/admin/dashboard" icon={BarChart3} title="Panel de Control" isActive={pathname?.startsWith('/admin/dashboard')} />
+        )}
+        {hasPermission(Permission.ADMIN_USERS, orgId) && (
+          <SubNavLinkItem href="/admin/users" icon={Users} title="Usuarios" isActive={pathname?.startsWith('/admin/users') && !pathname?.includes('/bulk') && !pathname?.includes('/profiles')} />
+        )}
+        {hasPermission(Permission.ADMIN_USERS, orgId) && (
+          <SubNavLinkItem href="/admin/users-bulk" icon={Activity} title="Carga Masiva Usuarios" isActive={pathname?.startsWith('/admin/users-bulk')} />
+        )}
+        {hasPermission(Permission.ADMIN_USERS, orgId) && (
+          <SubNavLinkItem href="/admin/profiles" icon={UserCircle} title="Perfiles y Accesos" isActive={pathname?.startsWith('/admin/profiles')} />
+        )}
+        {hasPermission(Permission.ADMIN_SETTINGS, orgId) && (
+          <SubNavLinkItem href="/admin/roles" icon={Scale} title="Roles y Permisos" isActive={pathname?.startsWith('/admin/roles')} />
+        )}
+        {hasPermission(Permission.ADMIN_COMPANIES, orgId) && (
+          <SubNavLinkItem href="/admin/dashboard" icon={Building2} title="Administrar Empresas" />
+        )}
+        {hasPermission(Permission.ADMIN_SETTINGS, orgId) && (
+          <SubNavLinkItem href="/preferences" icon={Sliders} title="Preferencias del Sistema" isActive={pathname?.startsWith('/preferences')} />
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+
+function CompanySwitcher({ 
+  selectedEntity, 
+  fiscalEntities, 
+  onSelect 
+}: Readonly<{ 
+  selectedEntity: FiscalEntity | null; 
+  fiscalEntities: FiscalEntity[]; 
+  onSelect: (entity: FiscalEntity) => void;
+}>) {
+  return (
+    <div className="p-4 border-b border-white/10">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="w-full justify-between rounded-full border border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30 h-auto py-2 text-white">
+            <div className="flex items-center space-x-2 text-left min-w-0">
+              <Building2 className="h-4 w-4 text-secondary" />
+              <div className="min-w-0">
+                {selectedEntity ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-medium truncate text-white">{selectedEntity.rfc}</p>
+                      {selectedEntity.role && (
+                        <Badge className="text-[10px] bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-2" variant="secondary">
+                          {formatRoleLabelShort(selectedEntity)}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-blue-200 truncate">
+                      {selectedEntity.businessName}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-white">Sin empresas</p>
+                    <p className="text-xs text-blue-200 truncate">Registra tu primera empresa</p>
+                  </>
+                )}
+              </div>
+            </div>
+            <ChevronDown className="h-4 w-4 text-blue-200" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-80">
+          {fiscalEntities.length > 0 ? (
+            <>
+              {fiscalEntities.map((entity) => (
+                <DropdownMenuItem
+                  key={entity.id}
+                  onClick={() => onSelect(entity)}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <Building2 className="h-4 w-4" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{entity.rfc}</p>
+                      <p className="text-xs text-gray-500 truncate">{entity.businessName}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {entity.role && (
+                      <Badge className="text-[10px]" variant="secondary">
+                        {formatRoleLabel(entity)}
+                      </Badge>
+                    )}
+                    {!entity.isActive && (
+                      <Badge variant="secondary" className="text-[10px]">Inactivo</Badge>
+                    )}
+                  </div>
+                </DropdownMenuItem>
+              ))}
+              <div className="border-t pt-1">
+                <DropdownMenuItem>
+                  <div className="flex items-center space-x-2">
+                    <Plus className="h-4 w-4" />
+                    <span>Agregar RFC</span>
+                  </div>
+                </DropdownMenuItem>
+              </div>
+            </>
+          ) : (
+            <div className="p-4 text-center text-sm text-gray-500">
+              <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+              <p>No hay empresas registradas</p>
+              <p className="text-xs mt-1">Registra tu primera empresa para comenzar</p>
+            </div>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function SidebarSkeleton({ isOpen }: Readonly<{ isOpen: boolean }>) {
+  return (
+    <div className={cn(
+      "fixed inset-y-0 left-0 z-50 bg-white shadow-lg transform transition-all duration-300 ease-in-out lg:relative",
+      isOpen ? "translate-x-0 lg:w-80" : "-translate-x-full lg:w-0"
+    )}>
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center space-x-3">
+            <div className="h-8 w-8 bg-gray-200 rounded-lg animate-pulse" />
+            <div>
+              <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-1" />
+              <div className="h-3 w-16 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 p-4 space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-10 bg-gray-200 rounded-lg animate-pulse" />
+          ))}
+        </div>
+        <div className="border-t p-4">
+          <div className="flex items-center space-x-3">
+            <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+            <div className="flex-1">
+              <div className="h-4 w-20 bg-gray-200 rounded animate-pulse mb-1" />
+              <div className="h-3 w-16 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SidebarHeader({ onToggle }: Readonly<{ onToggle: () => void }>) {
+  return (
+    <div className="h-16 flex items-center justify-between px-4 border-b border-white/10 shrink-0">
+      <div className="flex items-center space-x-3 min-w-0">
+        <div className="flex items-center justify-center">
+            <div className="flex items-start">
+              <span className="text-lg font-heading font-bold text-white">CFDI Task Manager</span>
+              <div className="flex ml-1 mt-1.5 space-x-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+              </div>
+            </div>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+        onClick={onToggle}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
+
+function UserProfile({ session, avatarUrl }: Readonly<{ session: Session | null; avatarUrl: string | null }>) {
+  const resolvedAvatarUrl = session?.user?.image || avatarUrl || "/api/placeholder/32/32"
+  
+  const handleLogout = async () => {
+    try {
+      localStorage.clear()
+      sessionStorage.clear()
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      await signOut({ redirect: true, callbackUrl: '/auth/signin' })
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error)
+      window.location.href = '/auth/signin'
+    }
+  }
+
+  return (
+    <div className="border-t border-white/10 p-4">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="w-full justify-start px-3 py-2 h-auto rounded-full hover:bg-white/10">
+            <Avatar className="h-8 w-8 mr-3 border border-white/20">
+              <AvatarImage src={resolvedAvatarUrl} alt={session?.user?.name || "User"} />
+              <AvatarFallback className="bg-white/10 text-white">{session?.user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-sm font-medium truncate text-white">{session?.user?.name || 'Usuario'}</p>
+              <p className="text-xs text-blue-200 truncate">{session?.user?.email || 'Administrador'}</p>
+            </div>
+            <ChevronDown className="h-4 w-4 text-blue-200" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem asChild>
+            <Link href="/profile">
+              <UserCircle className="h-4 w-4 mr-2" />
+              Perfil
+            </Link>
+          </DropdownMenuItem>
+          <div className="border-t">
+            <DropdownMenuItem className="text-red-600" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Cerrar Sesión
+            </DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function useSidebarState(session: Session | null, tenantState: TenantState | null) {
   const [fiscalEntities, setFiscalEntities] = useState<FiscalEntity[]>([])
   const [selectedEntity, setSelectedEntity] = useState<FiscalEntity | null>(null)
-  const [reportsOpen, setReportsOpen] = useState(false)
-  const [companiesOpen, setCompaniesOpen] = useState(false)
-  const [adminOpen, setAdminOpen] = useState(false)
-  const [cfdisEmittedOpen, setCfdisEmittedOpen] = useState(false)
-  const [cfdisReceivedOpen, setCfdisReceivedOpen] = useState(false)
-  const [cfdisPayrollOpen, setCfdisPayrollOpen] = useState(false)
-  const [cfdisTaxesOpen, setCfdisTaxesOpen] = useState(false)
-  const [clientsOpen, setClientsOpen] = useState(false)
-  const [massDownloadsOpen, setMassDownloadsOpen] = useState(false)
-  const [requestsOpen, setRequestsOpen] = useState(false)
-  const [materialityOpen, setMaterialityOpen] = useState(false)
-  const [providerOpen, setProviderOpen] = useState(false)
-  const [cfdisSatPortalOpen, setCfdisSatPortalOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [globalModuleFlags, setGlobalModuleFlags] = useState<{ canViewEmission: boolean; canViewReception: boolean; canViewPayroll: boolean; canViewSatPortal: boolean; canViewMassDownloads: boolean; canManageOrg?: boolean; granularPermissions?: Record<string, boolean> } | null>(null)
+  const [globalModuleFlags, setGlobalModuleFlags] = useState<FiscalEntity['moduleFlags']>(null)
 
-  // Use selected company flags if it has a custom role, otherwise fallback to global flags
-  const moduleFlags = selectedEntity?.isCustomRole && selectedEntity.moduleFlags 
-    ? selectedEntity.moduleFlags 
-    : globalModuleFlags
-  const resolvedAvatarUrl = session?.user?.image || avatarUrl || "/api/placeholder/32/32"
-
-  // Fetch companies the current user has access to
   const fetchTenantCompanies = useCallback(async (signal?: AbortSignal) => {
     try {
-      const orgId = tenantState?.organizationId
-      const url = orgId ? `/api/user/company-access?orgId=${orgId}` : '/api/user/company-access'
-      const response = await fetch(url, { cache: 'no-store', signal })
-      let data: { companies?: FiscalEntity[]; hasAccess?: boolean } = { companies: [] }
-      try {
-        data = await response.json()
-      } catch {}
-      if (!response.ok) {
-        setFiscalEntities([])
-        setSelectedEntity(null)
-        return
-      }
-
-      setFiscalEntities(data.companies || [])
+      const companies = await fetchCompaniesApi(tenantState?.organizationId, signal);
+      setFiscalEntities(companies);
       
-      // Try to recover from localStorage first
-      let savedCompany: FiscalEntity | null = null
-      try {
-        const stored = localStorage.getItem('selectedCompany')
-        if (stored) {
-          savedCompany = JSON.parse(stored)
-        }
-      } catch {}
-
-      // Check if saved company is still valid in the new list
-      const isValidSaved = savedCompany && data.companies?.some((c: FiscalEntity) => c.id === savedCompany?.id)
-
-      // Hard-invalidate stale localStorage entry to avoid state corruption
-      if (savedCompany && !isValidSaved) {
-        try { localStorage.removeItem('selectedCompany') } catch {}
+      if (companies.length === 0) {
+        setSelectedEntity(null);
+        return;
       }
 
-      if (isValidSaved && savedCompany) {
-        // Find the full updated object from the list to ensure freshness
-        const updatedSaved = data.companies?.find((c: FiscalEntity) => c.id === savedCompany?.id)
-        setSelectedEntity(prev => {
-          // Avoid triggering unnecessary updates if the ID hasn't changed
-          if (prev?.id === (updatedSaved?.id || savedCompany?.id)) {
-            return prev;
-          }
-          return updatedSaved || savedCompany;
-        })
-      } else if (data.companies && data.companies.length > 0) {
-        // Fallback to first active company as selected, or first company if none active
-        const activeCompany = data.companies.find((company: FiscalEntity) => company.isActive)
-        setSelectedEntity(prev => {
-          const newSelection = activeCompany || data.companies![0]
-          if (prev?.id === newSelection?.id) return prev;
-          return newSelection;
-        })
-      } else {
-        setSelectedEntity(null)
-      }
+      const savedCompany = getSavedCompany();
+      const nextSelection = determineSelectedCompany(companies, savedCompany);
+      
+      setSelectedEntity(prev => {
+        if (prev?.id === nextSelection?.id) return prev;
+        return nextSelection;
+      });
     } catch (error) {
-      if (isAbortError(error)) {
-        return
-      }
-      console.error('Error fetching tenant companies:', error)
-      // Fallback to empty array
-      setFiscalEntities([])
-      setSelectedEntity(null)
+      if (isAbortError(error)) return;
+      console.error('Error fetching tenant companies:', error);
+      setFiscalEntities([]);
+      setSelectedEntity(null);
     }
-  }, [tenantState])
+  }, [tenantState]);
 
-  // Asegurar que el componente esté montado en el cliente
   useEffect(() => {
     const id = setTimeout(() => {
       setIsClient(true)
@@ -206,30 +727,17 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         void fetchTenantCompanies()
       }
     }, 0)
-    return () => {
-      clearTimeout(id)
-    }
-  }, [session?.user, tenantState?.organizationId, fetchTenantCompanies])
+    return () => clearTimeout(id)
+  }, [session?.user, fetchTenantCompanies])
 
   useEffect(() => {
     const controller = new AbortController()
     const loadFlags = async () => {
       try {
         if (!tenantState?.organizationId) return
-        const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`, {
-          signal: controller.signal
-        })
-        const data = await res.json()
-        if (res.ok && data?.member) {
-          setGlobalModuleFlags({
-            canViewEmission: data.member.canViewEmission,
-            canViewReception: data.member.canViewReception,
-            canViewPayroll: data.member.canViewPayroll,
-            canViewSatPortal: data.member.canViewSatPortal,
-            canViewMassDownloads: data.member.canViewMassDownloads,
-            canManageOrg: data.member.canManageOrg,
-            granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
-          })
+        const flags = await fetchMemberFlags(tenantState.organizationId, controller.signal)
+        if (flags) {
+          setGlobalModuleFlags(flags)
         }
       } catch (error) {
         if (!isAbortError(error)) {
@@ -238,11 +746,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       }
     }
     void loadFlags()
-
     return () => controller.abort()
   }, [tenantState?.organizationId])
 
-  // Persist selected company and notify dashboard
   useEffect(() => {
     if (selectedEntity) {
       try {
@@ -253,28 +759,18 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     }
   }, [selectedEntity])
 
-  // React to access changes dynamically
   useEffect(() => {
     const refreshCompanies = () => fetchTenantCompanies()
     const refreshModules = () => {
       (async () => {
         try {
           if (!tenantState?.organizationId) return
-          const res = await fetch(`/api/user/member?orgId=${tenantState.organizationId}`)
-          const data = await res.json()
-          if (res.ok && data?.member) {
-            setGlobalModuleFlags({
-              canViewEmission: data.member.canViewEmission,
-              canViewReception: data.member.canViewReception,
-              canViewPayroll: data.member.canViewPayroll,
-              canViewSatPortal: data.member.canViewSatPortal,
-              canViewMassDownloads: data.member.canViewMassDownloads,
-              canManageOrg: data.member.canManageOrg,
-              granularPermissions: data.member.granularPermissions || data.member.customRole?.granularPermissions || {}
-            })
+          const flags = await fetchMemberFlags(tenantState.organizationId)
+          if (flags) {
+            setGlobalModuleFlags(flags)
           }
         } catch {}
-      })()
+      })().catch(err => console.error(err))
     }
     window.addEventListener('company-access-changed', refreshCompanies as EventListener)
     document.addEventListener('company-access-changed', refreshCompanies)
@@ -292,13 +788,11 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
   useEffect(() => {
     let isMounted = true
-
     const fetchAvatar = async () => {
       try {
-        const res = await fetch('/api/user/profile', { cache: 'no-store' })
-        const data = await res.json()
-        if (isMounted && res.ok && data?.user?.image) {
-          setAvatarUrl(data.user.image as string)
+        const url = await fetchAvatarApi()
+        if (isMounted && url) {
+          setAvatarUrl(url)
         }
       } catch (error) {
         if (!isAbortError(error)) {
@@ -306,87 +800,48 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         }
       }
     }
-
     if (session?.user?.image) {
-      return () => {
-        isMounted = false
-      }
+      return () => { isMounted = false }
     }
-
     if (session?.user) {
       void fetchAvatar()
     }
-
-    return () => {
-      isMounted = false
-    }
+    return () => { isMounted = false }
   }, [session?.user, session?.user?.image])
 
-  const handleLogout = async () => {
-    try {
-      // Security: Clear all local storage and session storage
-      localStorage.clear()
-      sessionStorage.clear()
-      
-      // Clear cookies that might be accessible via JS (though HttpOnly ones won't be)
-      document.cookie.split(";").forEach((c) => {
-        document.cookie = c
-          .replace(/^ +/, "")
-          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
-
-      await signOut({ redirect: true, callbackUrl: '/auth/signin' })
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error)
-      // Force redirect even if error
-      window.location.href = '/auth/signin'
-    }
+  return {
+    fiscalEntities,
+    selectedEntity,
+    setSelectedEntity,
+    isClient,
+    avatarUrl,
+    globalModuleFlags
   }
+}
 
-  // Evitar renderizar contenido dinámico hasta que esté montado
+export function Sidebar({ isOpen, onToggle }: Readonly<SidebarProps>) {
+  const { data: session } = useSession()
+  const { canAccessOperationalFeatures, tenantState } = useTenant()
+  
+  const {
+    fiscalEntities,
+    selectedEntity,
+    setSelectedEntity,
+    isClient,
+    avatarUrl,
+    globalModuleFlags
+  } = useSidebarState(session, tenantState)
+  
+  const moduleFlags = selectedEntity?.isCustomRole && selectedEntity.moduleFlags 
+    ? selectedEntity.moduleFlags 
+    : globalModuleFlags
+
   if (!isClient) {
-    return (
-      <div className={cn(
-        "fixed inset-y-0 left-0 z-50 bg-white shadow-lg transform transition-all duration-300 ease-in-out lg:relative",
-        isOpen ? "translate-x-0 lg:w-80" : "-translate-x-full lg:w-0"
-      )}>
-        <div className="flex h-full flex-col">
-          {/* Header skeleton */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center space-x-3">
-              <div className="h-8 w-8 bg-gray-200 rounded-lg animate-pulse" />
-              <div>
-                <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-1" />
-                <div className="h-3 w-16 bg-gray-200 rounded animate-pulse" />
-              </div>
-            </div>
-          </div>
-          
-          {/* Navigation skeleton */}
-          <div className="flex-1 p-4 space-y-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-10 bg-gray-200 rounded-lg animate-pulse" />
-            ))}
-          </div>
-          
-          {/* User profile skeleton */}
-          <div className="border-t p-4">
-            <div className="flex items-center space-x-3">
-              <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
-              <div className="flex-1">
-                <div className="h-4 w-20 bg-gray-200 rounded animate-pulse mb-1" />
-                <div className="h-3 w-16 bg-gray-200 rounded animate-pulse" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <SidebarSkeleton isOpen={isOpen} />
   }
 
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpen && (
         <div 
           className="fixed inset-0 bg-gray-600 bg-opacity-75 z-40 lg:hidden"
@@ -394,794 +849,32 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         />
       )}
 
-      {/* Sidebar */}
       <div className={cn(
-        "fixed inset-y-0 left-0 z-50 bg-gradient-to-b from-primary to-[#0f172a] text-primary-foreground border-r border-primary/20 transform transition-all duration-300 ease-in-out lg:relative",
+        "fixed inset-y-0 left-0 z-50 bg-gradient-to-b from-primary to-[#0f172a] text-primary-foreground border-r border-primary/20 transform transition-all duration-300 ease-in-out lg:relative flex flex-col overflow-hidden",
         isOpen ? "translate-x-0 lg:w-80" : "-translate-x-full lg:w-0"
       )}>
-        <div className="flex h-full flex-col overflow-hidden">
-          {/* Header */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-white/10 shrink-0">
-            <div className="flex items-center space-x-3 min-w-0">
-              <div className="flex items-center justify-center">
-                 {/* CFDI Task Manager Logo Small */}
-                 <div className="flex items-start">
-                   <span className="text-lg font-heading font-bold text-white">CFDI Task Manager</span>
-                   <div className="flex ml-1 mt-1.5 space-x-0.5">
-                     <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                     <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1"></span>
-                     <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                   </div>
-                 </div>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-white/70 hover:text-white hover:bg-white/10"
-              onClick={onToggle}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          </div>
+        <SidebarHeader onToggle={onToggle} />
 
-          {/* RFC Context Switcher */}
-          <div className="p-4 border-b border-white/10">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-between rounded-full border border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30 h-auto py-2 text-white">
-                  <div className="flex items-center space-x-2 text-left min-w-0">
-                    <Building2 className="h-4 w-4 text-secondary" />
-                    <div className="min-w-0">
-                      {selectedEntity ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <p className="text-xs font-medium truncate text-white">{selectedEntity.rfc}</p>
-                            {selectedEntity.role && (
-                              <Badge className="text-[10px] bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-2" variant="secondary">
-                                {selectedEntity.isCustomRole ? selectedEntity.role : selectedEntity.role === 'ADMIN' ? 'Admin' : selectedEntity.role === 'AUDITOR' ? 'Auditor' : 'Vis'}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-blue-200 truncate">
-                            {selectedEntity.businessName}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-xs font-medium text-white">Sin empresas</p>
-                          <p className="text-xs text-blue-200 truncate">
-                            Registra tu primera empresa
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-blue-200" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                {fiscalEntities.length > 0 ? (
-                  <>
-                    {fiscalEntities.map((entity) => (
-                      <DropdownMenuItem
-                        key={entity.id}
-                        onClick={() => setSelectedEntity(entity)}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <Building2 className="h-4 w-4" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{entity.rfc}</p>
-                            <p className="text-xs text-gray-500 truncate">
-                              {entity.businessName}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {entity.role && (
-                            <Badge className="text-[10px]" variant="secondary">
-                              {entity.isCustomRole ? entity.role : entity.role === 'ADMIN' ? 'Administrador' : entity.role === 'AUDITOR' ? 'Auditor' : 'Visualizador'}
-                            </Badge>
-                          )}
-                          {!entity.isActive && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              Inactivo
-                            </Badge>
-                          )}
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                    <div className="border-t pt-1">
-                      <DropdownMenuItem>
-                        <div className="flex items-center space-x-2">
-                          <Plus className="h-4 w-4" />
-                          <span>Agregar RFC</span>
-                        </div>
-                      </DropdownMenuItem>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-4 text-center text-sm text-gray-500">
-                    <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                    <p>No hay empresas registradas</p>
-                    <p className="text-xs mt-1">Registra tu primera empresa para comenzar</p>
-                  </div>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+        <CompanySwitcher 
+          selectedEntity={selectedEntity} 
+          fiscalEntities={fiscalEntities} 
+          onSelect={setSelectedEntity} 
+        />
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && moduleFlags?.granularPermissions?.emissionDashboard !== false && (
-            <Collapsible open={cfdisEmittedOpen} onOpenChange={setCfdisEmittedOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <FileText className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Ingresos</span>
-                  {cfdisEmittedOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/dashboard_fiscal"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Tablero de ingresos</span>
-                </Link>
-                <Link
-                  href="/dashboard_fiscal/workpaper"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Table className="h-4 w-4" />
-                  <span>Reporte de ingresos</span>
-                </Link>
-                <Link
-                  href="/dashboard_fiscal/ingresos-parciales"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Receipt className="h-4 w-4" />
-                  <span>Ingresos parcialmente cobrados</span>
-                </Link>
-                <Link
-                  href="/dashboard_fiscal/cancelaciones"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <XCircle className="h-4 w-4" />
-                  <span>Cancelaciones</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
+        <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
+          {!canAccessOperationalFeatures() && (
+            <TenantNavigation />
+          )}
+          
+          {canAccessOperationalFeatures() && (
+            <>
+              <MainNavigation moduleFlags={moduleFlags} />
+              <AdminNavigation />
+            </>
+          )}
+        </nav>
 
-            {hasPermission(Permission.MODULE_RECEPTION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewReception !== false && moduleFlags?.granularPermissions?.receptionDashboard !== false && (
-            <Collapsible open={cfdisReceivedOpen} onOpenChange={setCfdisReceivedOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Inbox className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Egresos</span>
-                  {cfdisReceivedOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/dashboard_recibidos"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Tablero de Egresos</span>
-                </Link>
-                <Link
-                  href="/dashboard_recibidos/workpaper"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Table className="h-4 w-4" />
-                  <span>Reporte de Egresos</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_PAYROLL_VIEW, tenantState?.organizationId) && moduleFlags?.canViewPayroll !== false && (
-            <Collapsible open={cfdisPayrollOpen} onOpenChange={setCfdisPayrollOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Receipt className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Nómina</span>
-                  {cfdisPayrollOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/dashboard/rh"
-                  className={cn(
-                    "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                    pathname === '/dashboard/rh' || pathname.startsWith('/dashboard/rh/') ? "bg-white/10 text-white" : ""
-                  )}
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Tablero Recursos Humanos</span>
-                </Link>
-                <Link
-                  href="/dashboard/nomina/fiscal"
-                  className={cn(
-                    "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                    pathname === '/dashboard/nomina/fiscal' || pathname.startsWith('/dashboard/nomina/fiscal/') ? "bg-white/10 text-white" : ""
-                  )}
-                >
-                  <Landmark className="h-4 w-4" />
-                  <span>Tablero Contabilidad y Fiscal</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {moduleFlags?.granularPermissions?.providerDashboard !== false && (
-            <Collapsible open={providerOpen} onOpenChange={setProviderOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Building2 className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Proveedor</span>
-                  {providerOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/provider/cfdis-report"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Reporte CFDI´s</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
-            <Collapsible open={cfdisTaxesOpen} onOpenChange={setCfdisTaxesOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Calculator className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Impuestos</span>
-                  {cfdisTaxesOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/impuestos"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Dashboard</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
-            <Collapsible open={clientsOpen} onOpenChange={setClientsOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Users className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Clientes</span>
-                  {clientsOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/clients"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Users className="h-4 w-4" />
-                  <span>Lista de Clientes</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_MASS_DOWNLOADS_VIEW, tenantState?.organizationId) && moduleFlags?.canViewMassDownloads !== false && (
-            <Collapsible open={massDownloadsOpen} onOpenChange={setMassDownloadsOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <CloudDownload className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Descargas masivas de CFDI</span>
-                  {massDownloadsOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/mass-downloads"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <CloudDownload className="h-4 w-4" />
-                  <span>Configuración de llaves privadas</span>
-                </Link>
-                <Collapsible open={requestsOpen} onOpenChange={setRequestsOpen}>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start px-3 h-auto py-2 text-blue-200 hover:bg-white/10 hover:text-white rounded-full"
-                    >
-                      <CloudDownload className="h-4 w-4 mr-3" />
-                      <span className="flex-1 text-left font-medium text-sm">Solicitud de descargas</span>
-                      {requestsOpen ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                    <Link
-                      href="/mass-downloads/requests"
-                      className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Nueva Solicitud</span>
-                    </Link>
-                    <Link
-                      href="/mass-downloads/requests/monitor"
-                      className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Monitor de solicitud de peticiones</span>
-                    </Link>
-                  </CollapsibleContent>
-                </Collapsible>
-                <Link
-                  href="/mass-downloads/verification"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Shield className="h-4 w-4" />
-                  <span>Monitor de verificación de peticiones</span>
-                </Link>
-                <Link
-                  href="/mass-downloads/package-downloads"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <CloudDownload className="h-4 w-4" />
-                  <span>Módulo de descargas de paquetes de solicitud</span>
-                </Link>
-                <Link
-                  href="/mass-downloads/fiscal-control"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Panel de Control Fiscal CFDI</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
-            <Link
-              href="/dashboard/import-monitor"
-              className={cn(
-                buttonVariants({ variant: "ghost" }),
-                "w-full justify-start px-3",
-                pathname === '/dashboard/import-monitor' ? "bg-accent text-accent-foreground" : ""
-              )}
-            >
-              <Activity className="h-5 w-5 mr-3" />
-              <span>Monitor de Importación</span>
-            </Link>
-            )}
-
-            {hasPermission(Permission.MODULE_EMISSION_VIEW, tenantState?.organizationId) && moduleFlags?.canViewEmission !== false && (
-            <Collapsible open={materialityOpen} onOpenChange={setMaterialityOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <Scale className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Materialidad</span>
-                  {materialityOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/materialidad"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Scale className="h-4 w-4" />
-                  <span>Materialidad Ventas</span>
-                </Link>
-                <Link
-                  href="/materialidad/compras"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <Scale className="h-4 w-4" />
-                  <span>Materialidad Compras</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-
-            {hasPermission(Permission.MODULE_SAT_PORTAL_VIEW, tenantState?.organizationId) && moduleFlags?.canViewSatPortal !== false && (
-            <Collapsible open={cfdisSatPortalOpen} onOpenChange={setCfdisSatPortalOpen}>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-3"
-                >
-                  <CloudDownload className="h-5 w-5 mr-3" />
-                  <span className="flex-1 text-left">Monitor</span>
-                  {cfdisSatPortalOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                <Link
-                  href="/sat_cfdis"
-                  className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                >
-                  <CloudDownload className="h-4 w-4" />
-                  <span>Dashboard</span>
-                </Link>
-              </CollapsibleContent>
-            </Collapsible>
-            )}
-            {/* Show tenant navigation for new users (moved below SAT module) */}
-            {(!canAccessOperationalFeatures() || !isTenantOwner()) && (
-              <TenantNavigation />
-            )}
-            
-            {/* Show full navigation for operational users */}
-            {canAccessOperationalFeatures() && (
-              <>
-                {navigation.map((item) => {
-                  const isActive = pathname === item.href
-                  const orgId = tenantState?.organizationId
-                  const permitted = Array.isArray(item.required)
-                    ? hasAnyPermission(item.required, orgId)
-                    : item.required
-                    ? hasPermission(item.required, orgId)
-                    : true
-
-                  // Special handling for Empresas submenu
-                  if (item.name === 'Empresas') {
-                    if (!permitted) return null
-                    // If the user has a custom role that explicitly disables managing orgs and doesn't explicitly allow org companies, we might want to hide it if they are restricted
-                    if (moduleFlags?.granularPermissions?.providerDashboard === true && moduleFlags?.canViewEmission === false && moduleFlags?.canViewReception === false) {
-                      return null
-                    }
-                    return (
-                      <Collapsible key={item.name} open={companiesOpen} onOpenChange={setCompaniesOpen}>
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className={cn(
-                              "w-full justify-start px-4 py-2 rounded-full hover:bg-white/10 hover:text-white transition-all duration-200",
-                              pathname?.startsWith('/companies') ? "bg-white/20 text-white font-semibold shadow-inner" : "text-blue-100"
-                            )}
-                          >
-                            <Building className="h-5 w-5 mr-3" />
-                            <span className="flex-1 text-left">{item.name}</span>
-                            {companiesOpen ? (
-                              <ChevronDown className="h-4 w-4 text-blue-200" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-blue-200" />
-                            )}
-                          </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                          {hasPermission(Permission.COMPANY_CREATE, orgId) && (
-                            <Link
-                              href="/companies"
-                              className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                            >
-                              <Plus className="h-4 w-4" />
-                              <span>Registrar Empresas</span>
-                            </Link>
-                          )}
-                          {hasPermission(Permission.COMPANY_READ, orgId) && (
-                            <Link
-                              href="/companies/search"
-                              className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                            >
-                              <Search className="h-4 w-4" />
-                              <span>Buscar Empresas</span>
-                            </Link>
-                          )}
-                          {hasPermission(Permission.ADMIN_DASHBOARD, orgId) && (
-                            <Link
-                              href="/admin/dashboard"
-                              className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                            >
-                              <Shield className="h-4 w-4" />
-                              <span>Administrar</span>
-                            </Link>
-                          )}
-                        </CollapsibleContent>
-                      </Collapsible>
-                    )
-                  }
-                  
-                  // For company-related sections, also require company assignment access
-                  const requiresCompanyAssignment = ['Bóveda Fiscal', 'CFDIs en el SAT', 'Reportes'].includes(item.name)
-                  if (!permitted) return null
-                  if (requiresCompanyAssignment && !hasCompanyAccess) return null
-                  
-                  // Specific checks for custom roles
-                  if ((item.name === 'Bóveda Fiscal' || item.name === 'Reportes') && moduleFlags?.canViewEmission === false && moduleFlags?.canViewReception === false) return null
-                  if (item.name === 'Empresas' && moduleFlags?.canManageOrg === false && moduleFlags?.granularPermissions?.orgCompanies === false) return null
-
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200",
-                        isActive
-                          ? "bg-white/20 text-white font-semibold shadow-inner"
-                          : "text-blue-100 hover:bg-white/10 hover:text-white"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      <span>{item.name}</span>
-                    </Link>
-                  )
-                })}
-
-                {/* Reports Submenu */}
-                {hasPermission(Permission.INVOICE_READ, tenantState?.organizationId) && hasCompanyAccess && (
-                <Collapsible open={reportsOpen} onOpenChange={setReportsOpen}>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start px-3"
-                    >
-                      <BarChart3 className="h-5 w-5 mr-3" />
-                      <span className="flex-1 text-left">Reportes</span>
-                      {reportsOpen ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-                    <Link
-                      href="/reports/financial"
-                      className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                    >
-                      <span>Estado de Resultados</span>
-                    </Link>
-                    <Link
-                      href="/reports/tax"
-                      className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                    >
-                      <span>Declaración de Impuestos</span>
-                    </Link>
-                    <Link
-                      href="/reports/compliance"
-                      className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-                    >
-                      <span>Cumplimiento Fiscal</span>
-                    </Link>
-                  </CollapsibleContent>
-        </Collapsible>
-        )}
-
-        </>
-      )}
-      {/* Configuración del Sistema */}
-      
-
-      {/* Administración de la Organización (debajo del SAT, antes de Preferencias) */}
-      {hasAnyPermission([
-        Permission.ADMIN_DASHBOARD,
-        Permission.ADMIN_USERS,
-        Permission.ADMIN_SETTINGS,
-        Permission.ADMIN_COMPANIES,
-        Permission.ADMIN_ORGANIZATIONS,
-        Permission.ADMIN_AUDIT,
-      ], tenantState?.organizationId) && (
-        <Collapsible open={adminOpen} onOpenChange={setAdminOpen}>
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              className="w-full justify-start px-4 py-2 rounded-full hover:bg-white/10 hover:text-white transition-all duration-200"
-            >
-              <Shield className="h-5 w-5 mr-3" />
-              <span className="flex-1 text-left text-sm font-medium text-blue-100">Administración de la Organización</span>
-              {adminOpen ? (
-                <ChevronDown className="h-4 w-4 text-blue-200" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-blue-200" />
-              )}
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="ml-6 space-y-1 mt-1 border-l border-white/10 pl-2">
-            {hasPermission(Permission.ADMIN_DASHBOARD, tenantState?.organizationId) && (
-              <Link
-                href="/admin/dashboard"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/admin/dashboard') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <BarChart3 className="h-4 w-4" />
-                <span>Panel de Control</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
-              <Link
-                href="/admin/users"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/admin/users') && !pathname?.includes('/bulk') && !pathname?.includes('/profiles') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <Users className="h-4 w-4" />
-                <span>Usuarios</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
-              <Link
-                href="/admin/users-bulk"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/admin/users-bulk') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <Activity className="h-4 w-4" />
-                <span>Carga Masiva Usuarios</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_USERS, tenantState?.organizationId) && (
-              <Link
-                href="/admin/profiles"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/admin/profiles') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <UserCircle className="h-4 w-4" />
-                <span>Perfiles y Accesos</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
-              <Link
-                href="/admin/roles"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/admin/roles') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <Scale className="h-4 w-4" />
-                <span>Roles y Permisos</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_COMPANIES, tenantState?.organizationId) && (
-              <Link
-                href="/admin/dashboard"
-                className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white"
-              >
-                <Building2 className="h-4 w-4" />
-                <span>Administrar Empresas</span>
-              </Link>
-            )}
-            {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
-              <Link
-                href="/preferences"
-                className={cn(
-                  "flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white",
-                  pathname?.startsWith('/preferences') && "bg-white/20 text-white font-semibold shadow-inner"
-                )}
-              >
-                <Sliders className="h-4 w-4" />
-                <span>Preferencias del Sistema</span>
-              </Link>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
-      {/* Bottom: Preferencias del Sistema (shortcut standalone si tiene permiso y el menú admin no se renderizó) */}
-      {hasPermission(Permission.ADMIN_SETTINGS, tenantState?.organizationId) && (
-        <Link
-          href="/preferences"
-          className="flex items-center space-x-3 rounded-full px-4 py-2 text-sm font-medium text-blue-100 hover:bg-white/10 hover:text-white"
-        >
-          <Sliders className="h-5 w-5" />
-          <span>Preferencias del Sistema</span>
-        </Link>
-      )}
-      </nav>
-
-          {/* User Profile */}
-          <div className="border-t border-white/10 p-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start px-3 py-2 h-auto rounded-full hover:bg-white/10">
-                  <Avatar className="h-8 w-8 mr-3 border border-white/20">
-                    <AvatarImage src={resolvedAvatarUrl} alt={session?.user?.name || "User"} />
-                    <AvatarFallback className="bg-white/10 text-white">{session?.user?.name?.split(' ').map(n => n[0]).join('') || 'U'}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium truncate text-white">{session?.user?.name || 'Usuario'}</p>
-                    <p className="text-xs text-blue-200 truncate">{session?.user?.email || 'Administrador'}</p>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-blue-200" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem asChild>
-                  <Link href="/profile">
-                    <UserCircle className="h-4 w-4 mr-2" />
-                    Perfil
-                  </Link>
-                </DropdownMenuItem>
-                <div className="border-t">
-                  <DropdownMenuItem className="text-red-600" onClick={handleLogout}>
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Cerrar Sesión
-                  </DropdownMenuItem>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+        <UserProfile session={session} avatarUrl={avatarUrl} />
       </div>
     </>
   )

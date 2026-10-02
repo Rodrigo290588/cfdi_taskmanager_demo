@@ -1,0 +1,1 @@
+import { authenticateMachineClient, issueMachineToken } from './src/lib/m2m-oauth'; async function run() { try { const res = await authenticateMachineClient({ clientId: 'test', clientSecret: 'test' }); console.log(res); if (res.ok) { const token = await issueMachineToken(res.client, res.scopes); console.log('Token:', token); } } catch (e) { console.error('ERROR:', e); } } run();

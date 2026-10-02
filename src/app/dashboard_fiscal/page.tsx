@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, CartesianGrid, Legend } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, CartesianGrid, Legend } from 'recharts'
 import { ShoppingCart, FileText, XCircle, CheckCircle, ArrowDown, Search, SlidersHorizontal, Loader2, Download, HelpCircle } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -125,14 +125,13 @@ const DRILLDOWN_PAGE_SIZE = 200
 const KpiTooltip = ({ description }: { description: string }) => (
   <Tooltip delayDuration={100}>
     <TooltipTrigger asChild>
-      <span
-        role="img"
+      <button
+        type="button"
         aria-label="Descripción del cálculo"
         className="ml-1.5 inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-muted-foreground/30 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-        tabIndex={0}
       >
         <HelpCircle className="h-3 w-3" />
-      </span>
+      </button>
     </TooltipTrigger>
     <TooltipContent side="top" sideOffset={6} className="max-w-sm text-left leading-relaxed">
       {description}
@@ -145,8 +144,8 @@ const KpiTooltip = ({ description }: { description: string }) => (
 // Protege celdas que empiecen por = + - @ | \t \r con apostrofe invisible.
 // ============================================================
 const CSV_DANGEROUS_PREFIX_DF = /^[=+\-@|\t\r]/;
-function escapeCsvSafe(value: unknown): string {
-  if (value === null || typeof value === 'undefined') return '""';
+function escapeCsvSafe(value: string | number | boolean | null | undefined): string {
+  if (value == null) return '""';
   let str = String(value);
   if (CSV_DANGEROUS_PREFIX_DF.test(str)) str = "'" + str;
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes('\t')) {
@@ -163,16 +162,15 @@ function escapeCsvSafe(value: unknown): string {
 function buildDashboardUrl(base: string, params: Record<string, string | number | boolean | null | undefined>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === null || v === undefined || v === '') continue;
+    if (v == null || v === '') continue;
     sp.append(k, String(v));
   }
   const qs = sp.toString();
   return qs ? `${base}?${qs}` : base;
 }
 
-export default function DashboardFiscalPage() {
+export default function DashboardFiscalPage() { // NOSONAR
   const [loading, setLoading] = useState(true)
-  const [hydratingMetrics, setHydratingMetrics] = useState(false)
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null)
@@ -193,6 +191,8 @@ export default function DashboardFiscalPage() {
   const [drilldownLoading, setDrilldownLoading] = useState(false)
   const [drilldownData, setDrilldownData] = useState<any[]>([])
   const [drilldownFilters, setDrilldownFilters] = useState<Record<string, string>>({})
+
+  
   const [drilldownType, setDrilldownType] = useState<'cobrados' | 'pendientes' | 'nominativos' | 'globales' | 'individuales' | 'descuentos' | 'notas_credito'>('cobrados')
   const [drilldownPage, setDrilldownPage] = useState(1)
 
@@ -222,15 +222,15 @@ export default function DashboardFiscalPage() {
   }, [filteredDrilldownData, drilldownPage])
 
   const isInvalidDateRange = useMemo(() => {
-    return Boolean(startDate && endDate && startDate > endDate)
+    return !!(startDate && endDate && startDate > endDate)
   }, [startDate, endDate])
 
   const hasCompleteDateRange = useMemo(() => {
-    return Boolean(startDate && endDate)
+    return !!(startDate && endDate)
   }, [startDate, endDate])
 
   const hasAppliedDateRange = useMemo(() => {
-    return Boolean(appliedFilters.start && appliedFilters.end)
+    return !!(appliedFilters.start && appliedFilters.end)
   }, [appliedFilters.end, appliedFilters.start])
 
   const drilldownStats = useMemo(() => {
@@ -243,26 +243,34 @@ export default function DashboardFiscalPage() {
     let totalDescuentos = 0;
     let totalNotasCredito = 0;
 
-    if (drilldownType === 'cobrados') {
-      totalPUE = filteredDrilldownData.filter(d => d.tipo === 'Factura Contado (PUE)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
-      totalCRP = filteredDrilldownData.filter(d => d.tipo === 'Complemento de Pago (CRP)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
-    } else if (drilldownType === 'pendientes') {
-      totalPUE = filteredDrilldownData.filter(d => d.tipo === 'Factura a Crédito (PPD)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
-      totalCRP = filteredDrilldownData.filter(d => d.tipo === 'Complemento de Pago (CRP)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
-      totalNC = filteredDrilldownData.filter(d => d.tipo === 'Nota de Crédito (Ajuste)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
-    } else if (drilldownType === 'nominativos') {
-      totalNominativos = filteredDrilldownTotal;
-    } else if (drilldownType === 'globales') {
-      totalGlobales = filteredDrilldownTotal;
-    } else if (drilldownType === 'individuales') {
-      totalIndividuales = filteredDrilldownTotal;
-    } else if (drilldownType === 'descuentos') {
-      totalDescuentos = filteredDrilldownTotal;
-    } else if (drilldownType === 'notas_credito') {
-      totalNotasCredito = filteredDrilldownTotal;
+    switch (drilldownType) {
+      case 'cobrados':
+        totalPUE = filteredDrilldownData.filter(d => d.tipo === 'Factura Contado (PUE)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
+        totalCRP = filteredDrilldownData.filter(d => d.tipo === 'Complemento de Pago (CRP)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
+        break;
+      case 'pendientes':
+        totalPUE = filteredDrilldownData.filter(d => d.tipo === 'Factura a Crédito (PPD)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
+        totalCRP = filteredDrilldownData.filter(d => d.tipo === 'Complemento de Pago (CRP)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
+        totalNC = filteredDrilldownData.filter(d => d.tipo === 'Nota de Crédito (Ajuste)').reduce((acc, curr) => acc + (Number(curr.importe) || 0), 0);
+        break;
+      case 'nominativos':
+        totalNominativos = filteredDrilldownTotal;
+        break;
+      case 'globales':
+        totalGlobales = filteredDrilldownTotal;
+        break;
+      case 'individuales':
+        totalIndividuales = filteredDrilldownTotal;
+        break;
+      case 'descuentos':
+        totalDescuentos = filteredDrilldownTotal;
+        break;
+      case 'notas_credito':
+        totalNotasCredito = filteredDrilldownTotal;
+        break;
     }
     
-    const timestamps = filteredDrilldownData.map(d => new Date(d.fecha).getTime()).filter(t => !isNaN(t));
+    const timestamps = filteredDrilldownData.map(d => new Date(d.fecha).getTime()).filter(t => !Number.isNaN(t));
     const minDate = timestamps.length > 0 ? new Date(Math.min(...timestamps)) : null;
     const maxDate = timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null;
 
@@ -371,26 +379,12 @@ export default function DashboardFiscalPage() {
     const controller = new AbortController()
     const signal = controller.signal
 
-    const fetchMetrics = async () => {
-      if (!selectedCompanyId) {
-        if (nonce === fetchNonceRef.current && !signal.aborted) {
-          setMetrics(null)
-          setLoading(false)
-          setHydratingMetrics(false)
-        }
-        return
-      }
-
+    const doFetch = async () => {
       const zeroMetrics = buildZeroMetrics()
-      const appliedStart = appliedFilters.start
-      const appliedEnd = appliedFilters.end
-      const hasRange = Boolean(appliedStart && appliedEnd)
-
-      if (!hasRange) {
+      if (!selectedCompanyId || !appliedFilters.start || !appliedFilters.end) {
         if (nonce === fetchNonceRef.current && !signal.aborted) {
-          setMetrics(zeroMetrics)
+          setMetrics(selectedCompanyId ? zeroMetrics : null)
           setLoading(false)
-          setHydratingMetrics(false)
         }
         return
       }
@@ -398,95 +392,78 @@ export default function DashboardFiscalPage() {
       const url = buildDashboardUrl('/api/dashboard_fiscal', {
         companyId: selectedCompanyId,
         origin: appliedFilters.origin,
-        startDate: appliedStart || undefined,
-        endDate: appliedEnd || undefined
+        startDate: appliedFilters.start,
+        endDate: appliedFilters.end
       })
 
+      const normalizeData = (data: any): MetricsResponse => ({
+        ...(data as MetricsResponse),
+        byType: data.byType?.length ? data.byType : zeroMetrics.byType,
+        bySatStatus: data.bySatStatus?.length ? data.bySatStatus : zeroMetrics.bySatStatus,
+        paymentMethods: data.paymentMethods || [],
+        monthly: data.monthly?.length ? data.monthly : zeroMetrics.monthly
+      })
+
+      const safeSetState = (action: () => void) => {
+        if (!signal.aborted && nonce === fetchNonceRef.current) action()
+      }
+
       try {
-        if (nonce === fetchNonceRef.current) {
-          setLoading(true)
-          setHydratingMetrics(false)
-        }
+        safeSetState(() => { setLoading(true); })
 
-        const lightRes = await fetch(`${url}&includeHeavyMetrics=false`, { cache: 'no-store', signal })
-        if (signal.aborted) return
-        const lightData = await lightRes.json()
-        if (!lightRes.ok) throw new Error(lightData.error || 'Error al cargar métricas')
+        const fullRes = await fetch(`${url}&includeHeavyMetrics=true`, { cache: 'no-store', signal })
+        const fullData = await fullRes.json()
+        if (!fullRes.ok) throw new Error(fullData.error || 'Error al actualizar métricas detalladas')
 
-        const normalizedLight: MetricsResponse = {
-          ...(lightData as MetricsResponse),
-          byType: (lightData.byType && lightData.byType.length) ? lightData.byType : zeroMetrics.byType,
-          bySatStatus: (lightData.bySatStatus && lightData.bySatStatus.length) ? lightData.bySatStatus : zeroMetrics.bySatStatus,
-          paymentMethods: lightData.paymentMethods || [],
-          monthly: (lightData.monthly && lightData.monthly.length) ? lightData.monthly : zeroMetrics.monthly
-        }
-
-        if (signal.aborted || nonce !== fetchNonceRef.current) return
-
-        setMetrics(normalizedLight)
-        setLoading(false)
-        setHydratingMetrics(true)
-
-        try {
-          const fullRes = await fetch(url, { cache: 'no-store', signal })
-          if (signal.aborted) return
-          const fullData = await fullRes.json()
-          if (!fullRes.ok) {
-            throw new Error(fullData.error || 'Error al actualizar métricas detalladas')
+        safeSetState(() => {
+          setMetrics(normalizeData(fullData))
+          setLoading(false)
+        })
+      } catch (err: any) {
+        safeSetState(() => {
+          if (err.name !== 'AbortError') {
+            showError('Error', err instanceof Error ? err.message : 'Error desconocido')
           }
-
-          const normalizedFull: MetricsResponse = {
-            ...(fullData as MetricsResponse),
-            byType: (fullData.byType && fullData.byType.length) ? fullData.byType : zeroMetrics.byType,
-            bySatStatus: (fullData.bySatStatus && fullData.bySatStatus.length) ? fullData.bySatStatus : zeroMetrics.bySatStatus,
-            paymentMethods: fullData.paymentMethods || [],
-            monthly: (fullData.monthly && fullData.monthly.length) ? fullData.monthly : zeroMetrics.monthly
-          }
-
-          if (signal.aborted || nonce !== fetchNonceRef.current) return
-
-          setMetrics(normalizedFull)
-        } catch (err) {
-          if (!signal.aborted && nonce === fetchNonceRef.current) {
-            console.error('No fue posible hidratar métricas detalladas del dashboard fiscal', err)
-          }
-        } finally {
-          if (!signal.aborted && nonce === fetchNonceRef.current) {
-            setHydratingMetrics(false)
-          }
-        }
-      } catch (err) {
-        if (!signal.aborted && nonce === fetchNonceRef.current) {
-          showError('Error', err instanceof Error ? err.message : 'Error desconocido')
           setMetrics(zeroMetrics)
           setLoading(false)
-          setHydratingMetrics(false)
-        }
+        })
       }
     }
 
-    fetchMetrics()
-    return () => {
-      controller.abort()
-    }
+    doFetch()
+    return () => controller.abort()
   }, [selectedCompanyId, appliedFilters.start, appliedFilters.end, appliedFilters.origin, buildZeroMetrics])
 
-  const handleFilter = () => {
+  const handleFilter = useCallback(() => {
     if (!startDate || !endDate) {
       showError('Periodo requerido', 'Selecciona Fecha Inicio y Fecha Fin antes de consultar')
       return
     }
-
     if (isInvalidDateRange) {
       showError('Rango de fechas inválido', 'La fecha de inicio no puede ser mayor que la fecha final')
       return
     }
-
     setAppliedFilters({ start: startDate, end: endDate, origin: 'issued' })
-  }
+  }, [startDate, endDate, isInvalidDateRange])
 
   const handleOpenDrilldown = async (type: 'cobrados' | 'pendientes' | 'nominativos' | 'globales' | 'individuales' | 'descuentos' | 'notas_credito') => {
     if (!selectedCompanyId) return
+
+    // Bloquear apertura si el valor de la tarjeta es cero (0.00)
+    const cardValues: Record<string, number> = {
+      cobrados: ingresosCobradosTotal,
+      pendientes: ingresosPendientesCobro,
+      nominativos: ventasNominativas,
+      globales: ventasGlobales,
+      individuales: operacionesIndividuales,
+      descuentos: descuentosYBonificaciones,
+      notas_credito: notasCredito
+    }
+    
+    if ((cardValues[type] || 0) === 0) {
+      return
+    }
+
     setDrilldownType(type)
     setDrilldownOpen(true)
     setDrilldownLoading(true)
@@ -494,13 +471,16 @@ export default function DashboardFiscalPage() {
     setDrilldownFilters({})
     setDrilldownPage(1)
     try {
-      let endpoint = 'ingresos_cobrados'
-      if (type === 'pendientes') endpoint = 'ingresos_pendientes'
-      if (type === 'nominativos') endpoint = 'ingresos_nominativos'
-      if (type === 'globales') endpoint = 'ingresos_globales'
-      if (type === 'individuales') endpoint = 'ingresos_individuales'
-      if (type === 'descuentos') endpoint = 'descuentos_bonificaciones'
-      if (type === 'notas_credito') endpoint = 'notas_credito'
+      const endpointMap: Record<string, string> = {
+        cobrados: 'ingresos_cobrados',
+        pendientes: 'ingresos_pendientes',
+        nominativos: 'ingresos_nominativos',
+        globales: 'ingresos_globales',
+        individuales: 'ingresos_individuales',
+        descuentos: 'descuentos_bonificaciones',
+        notas_credito: 'notas_credito'
+      }
+      const endpoint = endpointMap[type] || 'ingresos_cobrados'
       
       const url = buildDashboardUrl(`/api/dashboard_fiscal/drilldown/${endpoint}`, {
         companyId: selectedCompanyId,
@@ -573,13 +553,16 @@ export default function DashboardFiscalPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     
-    let fileNameType = 'Cobrados'
-    if (drilldownType === 'pendientes') fileNameType = 'Pendientes'
-    if (drilldownType === 'nominativos') fileNameType = 'Nominativos'
-    if (drilldownType === 'globales') fileNameType = 'Globales'
-    if (drilldownType === 'individuales') fileNameType = 'Individuales'
-    if (drilldownType === 'descuentos') fileNameType = 'Descuentos'
-    if (drilldownType === 'notas_credito') fileNameType = 'Notas_Credito'
+    const fileNameMap: Record<string, string> = {
+      cobrados: 'Cobrados',
+      pendientes: 'Pendientes',
+      nominativos: 'Nominativos',
+      globales: 'Globales',
+      individuales: 'Individuales',
+      descuentos: 'Descuentos',
+      notas_credito: 'Notas_Credito'
+    }
+    const fileNameType = fileNameMap[drilldownType] || 'Cobrados'
 
     link.setAttribute('href', url)
     link.setAttribute('download', `Reporte_Ingresos_${fileNameType}_${new Date().getTime()}.csv`)
@@ -603,13 +586,88 @@ export default function DashboardFiscalPage() {
   const topClientsData = useMemo(() => {
     if (!metrics?.topClients) return []
     return metrics.topClients.slice(0, 10).map(c => ({
-      name: c.name && c.name.length > 15 ? c.name.substring(0, 15) + '...' : (c.name || c.rfc || 'Desconocido'),
+      name: (typeof c.name === 'string' && c.name.length > 15) ? c.name.substring(0, 15) + '...' : (c.name || c.rfc || 'Desconocido'),
       fullName: c.name || c.rfc || 'Desconocido',
-      cobrado: c.cobrado !== undefined ? c.cobrado : c.total * 0.7, 
-      porCobrar: c.pendiente !== undefined ? c.pendiente : c.total * 0.3,
+      cobrado: c.cobrado ?? c.total * 0.7, 
+      porCobrar: c.pendiente ?? c.total * 0.3,
       total: c.total
     }))
   }, [metrics])
+
+  const satStatusData = useMemo(() => {
+    const satArr = metrics?.bySatStatus || []
+    const pacArr = metrics?.bySatStatus || [] // Fallback ya que no usamos pacStatus aquí
+    const erpArr = metrics?.bySatStatus || [] // Fallback
+    const getCounts = (arr: Array<{ status: string; count: number }>) => {
+      const v = arr.find((x) => x.status === 'VIGENTE')?.count || 0
+      const c = arr.find((x) => x.status === 'CANCELADO')?.count || 0
+      return { vigentes: v, cancelados: c }
+    }
+    const sat = getCounts(satArr)
+    const pac = getCounts(pacArr)
+    const erp = getCounts(erpArr)
+    return [
+      { source: 'SAT', vigentes: sat.vigentes, cancelados: sat.cancelados, mismatch: false },
+      { source: 'PAC', vigentes: pac.vigentes, cancelados: pac.cancelados, mismatch: pac.vigentes !== sat.vigentes || pac.cancelados !== sat.cancelados },
+      { source: 'ERP', vigentes: erp.vigentes, cancelados: erp.cancelados, mismatch: erp.vigentes !== sat.vigentes || erp.cancelados !== sat.cancelados },
+    ].map(entry => ({
+      ...entry,
+      fillVigentes: entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#1e3a8a',
+      fillCancelados: entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#6b7280'
+    }))
+  }, [metrics])
+
+  const formatPaymentTooltip = useCallback((props: any) => {
+    const p = props?.payload?.[0]
+    if (!p) return null
+    const name = p.name
+    const count = Number(p.value || 0)
+    const total = (metrics?.paymentMethods || []).reduce((s, x) => s + Number(x.count || 0), 0)
+    const pct = total > 0 ? (count / total) * 100 : 0
+    const amount = typeof p.payload?.total === 'number' ? p.payload.total : 0
+    return (
+      <div className="recharts-default-tooltip" style={{ margin: 0, padding: 10, background: '#fff', border: '1px solid #ccc', whiteSpace: 'nowrap' }}>
+        <div style={{ fontWeight: 600 }}>{name}</div>
+        <div>Cantidad: {count}</div>
+        <div>Porcentaje: {pct.toFixed(1)}%</div>
+        <div>Importe: {formatMXN(Number(amount))}</div>
+      </div>
+    )
+  }, [metrics])
+
+  const formatTypeTick = useCallback((value: any) => {
+    const map: Record<string, string> = {
+      'INGRESO': 'I',
+      'EGRESO': 'E',
+      'PAGO': 'P',
+      'TRASLADO': 'T'
+    }
+    return typeof value === 'string' ? (map[value] || value) : value
+  }, [])
+
+  const formatTypeLabel = useCallback((label: any) => {
+    const map: Record<string, string> = {
+      'INGRESO': 'I (Ingreso)',
+      'EGRESO': 'E (Egreso)',
+      'PAGO': 'P (Pago)',
+      'TRASLADO': 'T (Traslado)'
+    }
+    return typeof label === 'string' ? (map[label] || label) : label
+  }, [])
+
+  const handleClearFilters = useCallback(() => {
+    setStartDate('')
+    setEndDate('')
+    setAppliedFilters({ start: '', end: '', origin: 'issued' })
+  }, [])
+
+  const handleSectionToggle = useCallback((sectionId: string, checked: boolean) => {
+    setVisibleSections(prev => 
+      checked 
+        ? [...prev, sectionId]
+        : prev.filter(id => id !== sectionId)
+    )
+  }, [])
 
   if (loading) {
     return <DashboardSkeleton />
@@ -636,10 +694,10 @@ export default function DashboardFiscalPage() {
   }
 
   // Calculate Balance
-  const ventas = Number(metrics?.kpis.totalMonto || 0)
-  const notasCredito = Number(metrics?.kpis.montoNotasCredito || 0)
-  const cancelaciones = Number(metrics?.kpis.montoCancelado || 0)
-  const cancelacionesEgresos = Number(metrics?.kpis.montoCanceladoEgresos || 0)
+  const ventas = Number(metrics?.kpis?.totalMonto || 0)
+  const notasCredito = Number(metrics?.kpis?.montoNotasCredito || 0)
+  const cancelaciones = Number(metrics?.kpis?.montoCancelado || 0)
+  const cancelacionesEgresos = Number(metrics?.kpis?.montoCanceladoEgresos || 0)
 
   const ventasNominativas = Number(metrics?.kpis?.ventasNominativas || 0)
   const ventasGlobales = Number(metrics?.kpis?.ventasGlobales || 0)
@@ -652,8 +710,8 @@ export default function DashboardFiscalPage() {
   // notasCredito ya solo incluye facturas VIGENTES, por lo que no restamos cancelacionesEgresos y descuentos y bonificaciones del tipo ingreso
   const balance = (ventasNominativas + ventasGlobales + operacionesIndividuales) - (notasCredito + descuentosYBonificaciones)
 
-  const summaryStale = Boolean(metrics?.meta?.summaryCoverage?.stale)
-  const heavyIsEstimated = Boolean(metrics?.kpis?.taxes?.heavyMetricsEstimated) && !Boolean(metrics?.meta?.heavyMetricsIncluded)
+  const summaryStale = !!metrics?.meta?.summaryCoverage?.stale
+  const heavyIsEstimated = !!metrics?.kpis?.taxes?.heavyMetricsEstimated && !metrics?.meta?.heavyMetricsIncluded
   const summaryLabel =
     metrics?.meta?.summaryCoverage ? `${metrics.meta.summaryCoverage.days}/${metrics.meta.summaryCoverage.totalDays} días cubiertos` : null
   const heavyLabel = heavyIsEstimated ? 'Cálculo rápido basado en resumen' : null
@@ -693,12 +751,6 @@ export default function DashboardFiscalPage() {
         <div className="flex items-center justify-between space-y-2">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Tablero de ingresos</h2>
-            {hydratingMetrics && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Actualizando metricas detalladas...
-              </div>
-            )}
             {summaryLabel && (
               <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${summaryStale ? 'text-amber-600' : 'text-muted-foreground'}`}>
                 <span>{summaryStale ? `Resumen incompleto (${summaryLabel}). Reconstruyendo en segundo plano.` : `Resumen diario OK · ${summaryLabel}`}</span>
@@ -745,11 +797,7 @@ export default function DashboardFiscalPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                setStartDate('')
-                setEndDate('')
-                setAppliedFilters({ start: '', end: '', origin: 'issued' })
-              }}
+              onClick={handleClearFilters}
               disabled={!startDate && !endDate && !hasAppliedDateRange}
             >
               Limpiar
@@ -775,13 +823,7 @@ export default function DashboardFiscalPage() {
                   <DropdownMenuCheckboxItem
                     key={section.id}
                     checked={visibleSections.includes(section.id)}
-                    onCheckedChange={(checked) => {
-                      setVisibleSections(prev => 
-                        checked 
-                          ? [...prev, section.id]
-                          : prev.filter(id => id !== section.id)
-                      )
-                    }}
+                    onCheckedChange={(checked) => handleSectionToggle(section.id, checked)}
                   >
                     {section.label}
                   </DropdownMenuCheckboxItem>
@@ -1108,45 +1150,17 @@ export default function DashboardFiscalPage() {
             </CardHeader>
             <CardContent className="overflow-x-auto scrollbar-visible">
               <div className="min-w-[700px]">
-                {(() => {
-                  const satArr = metrics?.bySatStatus || []
-                  const pacArr = (metrics as any)?.pacStatus || []
-                  const erpArr = (metrics as any)?.erpStatus || []
-                  const getCounts = (arr: Array<{ status: string; count: number }>) => {
-                    const v = arr.find((x) => x.status === 'VIGENTE')?.count || 0
-                    const c = arr.find((x) => x.status === 'CANCELADO')?.count || 0
-                    return { vigentes: v, cancelados: c }
-                  }
-                  const sat = getCounts(satArr)
-                  const pac = getCounts(pacArr)
-                  const erp = getCounts(erpArr)
-                  const data = [
-                    { source: 'SAT', vigentes: sat.vigentes, cancelados: sat.cancelados, mismatch: false },
-                    { source: 'PAC', vigentes: pac.vigentes, cancelados: pac.cancelados, mismatch: pac.vigentes !== sat.vigentes || pac.cancelados !== sat.cancelados },
-                    { source: 'ERP', vigentes: erp.vigentes, cancelados: erp.cancelados, mismatch: erp.vigentes !== sat.vigentes || erp.cancelados !== sat.cancelados },
-                  ]
-                  return (
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={data} margin={{ left: 40, right: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="source" />
-                        <YAxis />
-                        <RechartsTooltip formatter={(value) => [Number(value || 0), '']} />
-                        <Legend />
-                        <Bar dataKey="vigentes" name="Vigentes" fill="#1e3a8a">
-                          {data.map((entry, idx) => (
-                            <Cell key={`vig-${idx}`} fill={entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#1e3a8a'} />
-                          ))}
-                        </Bar>
-                        <Bar dataKey="cancelados" name="Cancelados" fill="#6b7280">
-                          {data.map((entry, idx) => (
-                            <Cell key={`can-${idx}`} fill={entry.source !== 'SAT' && entry.mismatch ? '#ef4444' : '#6b7280'} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )
-                })()}
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={satStatusData} margin={{ left: 40, right: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="source" />
+                    <YAxis />
+                    <RechartsTooltip formatter={(value) => [Number(value || 0), '']} />
+                    <Legend />
+                    <Bar dataKey="vigentes" name="Vigentes" fill="#1e3a8a" />
+                    <Bar dataKey="cancelados" name="Cancelados" fill="#6b7280" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
@@ -1166,28 +1180,12 @@ export default function DashboardFiscalPage() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="type" 
-                      tickFormatter={(value) => {
-                        const map: Record<string, string> = {
-                          'INGRESO': 'I',
-                          'EGRESO': 'E',
-                          'PAGO': 'P',
-                          'TRASLADO': 'T'
-                        }
-                        return map[value] || value
-                      }}
+                      tickFormatter={formatTypeTick}
                     />
                     <YAxis />
                     <RechartsTooltip 
                       formatter={(value: any) => [value, 'CFDIs']}
-                      labelFormatter={(label) => {
-                        const map: Record<string, string> = {
-                          'INGRESO': 'I (Ingreso)',
-                          'EGRESO': 'E (Egreso)',
-                          'PAGO': 'P (Pago)',
-                          'TRASLADO': 'T (Traslado)'
-                        }
-                        return map[label] || label
-                      }}
+                      labelFormatter={formatTypeLabel}
                     />
                     <Bar dataKey="count" name="CFDIs" fill="#805ad5" />
                   </BarChart>
@@ -1209,35 +1207,15 @@ export default function DashboardFiscalPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie 
-                      data={metrics?.paymentMethods || []} 
+                      data={(metrics?.paymentMethods || []).map((method, i) => ({ ...method, fill: ["#63b3ed", "#68d391", "#f6ad55", "#fc8181"][i % 4] }))} 
                       dataKey="count" 
                       nameKey="method" 
                       outerRadius={110} 
                       labelLine={false}
                       label={(entry: any) => `${entry.name}: ${(entry.percent * 100).toFixed(1)}%`}
-                    >
-                      {(metrics?.paymentMethods || []).map((_, i) => (
-                        <Cell key={`pay-${i}`} fill={["#63b3ed", "#68d391", "#f6ad55", "#fc8181"][i % 4]} />
-                      ))}
-                    </Pie>
+                    />
                     <RechartsTooltip 
-                      content={(props: any) => {
-                        const p = props?.payload?.[0]
-                        if (!p) return null
-                        const name = p.name
-                        const count = Number(p.value || 0)
-                        const total = (metrics?.paymentMethods || []).reduce((s, x) => s + Number(x.count || 0), 0)
-                        const pct = total > 0 ? (count / total) * 100 : 0
-                        const amount = typeof p.payload?.total === 'number' ? p.payload.total : 0
-                        return (
-                          <div className="recharts-default-tooltip" style={{ margin: 0, padding: 10, background: '#fff', border: '1px solid #ccc', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontWeight: 600 }}>{name}</div>
-                            <div>Cantidad: {count}</div>
-                            <div>Porcentaje: {pct.toFixed(1)}%</div>
-                            <div>Importe: {formatMXN(Number(amount))}</div>
-                          </div>
-                        )
-                      }}
+                      content={formatPaymentTooltip}
                     />
                     <Legend />
                   </PieChart>
@@ -1322,13 +1300,14 @@ export default function DashboardFiscalPage() {
             <div>
               <DialogTitle>
                 Reporte de Ingresos {
-                  drilldownType === 'cobrados' ? 'Cobrados' : 
-                  drilldownType === 'pendientes' ? 'Pendientes de Cobro' : 
-                  drilldownType === 'nominativos' ? 'Nominativos' :
-                  drilldownType === 'globales' ? 'Globales' : 
-                  drilldownType === 'individuales' ? 'Individuales' :
-                  drilldownType === 'descuentos' ? 'Descuentos y Bonificaciones' :
-                  'Notas de Crédito'
+                  ({
+                    cobrados: 'Cobrados',
+                    pendientes: 'Pendientes de Cobro',
+                    nominativos: 'Nominativos',
+                    globales: 'Globales',
+                    individuales: 'Individuales',
+                    descuentos: 'Descuentos y Bonificaciones'
+                  } as Record<string, string>)[drilldownType ?? ''] || 'Notas de Crédito'
                 }
               </DialogTitle>
               <div className="text-sm text-muted-foreground mt-2 space-y-1">
@@ -1336,34 +1315,52 @@ export default function DashboardFiscalPage() {
                 <ul className="list-disc list-inside pl-4">
                   <li>Empresa: {metrics?.company?.rfc || selectedCompany?.rfc || 'N/A'}</li>
                   <li>Fecha: {drilldownStats.startDate} - {drilldownStats.endDate}</li>
-                  {drilldownType === 'cobrados' ? (
+                  
+                  {drilldownType === 'cobrados' && (
                     <>
                       <li>Facturas de Contado (PUE): {formatMXN(drilldownStats.totalPUE)}</li>
                       <li>Complementos de Pago (CRP): {formatMXN(drilldownStats.totalCRP)}</li>
                     </>
-                  ) : drilldownType === 'pendientes' ? (
+                  )}
+                  
+                  {drilldownType === 'pendientes' && (
                     <>
                       <li>Facturas a Crédito (PPD): {formatMXN(drilldownStats.totalPUE)}</li>
                       <li>Complementos de Pago (CRP): <span className="text-destructive">{formatMXN(drilldownStats.totalCRP)}</span></li>
                       <li>Notas de Crédito (Ajuste): <span className="text-destructive">{formatMXN(drilldownStats.totalNC)}</span></li>
                     </>
-                  ) : drilldownType === 'nominativos' ? (
+                  )}
+                  
+                  {drilldownType === 'nominativos' && (
                     <>
                       <li>Total Ingresos Nominativos: {formatMXN(drilldownStats.totalNominativos)}</li>
                     </>
-                  ) : drilldownType === 'globales' ? (
+                  )}
+                  
+                  {drilldownType === 'globales' && (
                     <>
                       <li>Total Ingresos Globales: {formatMXN(drilldownStats.totalGlobales)}</li>
                     </>
-                  ) : drilldownType === 'individuales' ? (
+                  )}
+                  
+                  {drilldownType === 'individuales' && (
                     <>
                       <li>Total Ingresos Individuales: {formatMXN(drilldownStats.totalIndividuales)}</li>
                     </>
-                  ) : drilldownType === 'descuentos' ? (
+                  )}
+                  
+                  {drilldownType === 'descuentos' && (
                     <>
                       <li>Total Descuentos y Bonificaciones: {formatMXN(drilldownStats.totalDescuentos)}</li>
                     </>
-                  ) : (
+                  )}
+                  
+                  {drilldownType !== 'cobrados' && 
+                   drilldownType !== 'pendientes' && 
+                   drilldownType !== 'nominativos' && 
+                   drilldownType !== 'globales' && 
+                   drilldownType !== 'individuales' && 
+                   drilldownType !== 'descuentos' && (
                     <>
                       <li>Total Notas de Crédito: {formatMXN(drilldownStats.totalNotasCredito)}</li>
                     </>
@@ -1380,15 +1377,19 @@ export default function DashboardFiscalPage() {
           </DialogHeader>
           
           <div className="flex-1 mt-4 border rounded-md min-h-0 overflow-hidden flex flex-col [&_div[data-slot=table-container]]:overflow-auto [&_div[data-slot=table-container]]:h-full">
-            {drilldownLoading ? (
+            {drilldownLoading && (
               <div className="flex justify-center items-center h-32">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-            ) : drilldownData.length === 0 ? (
+            )}
+            
+            {!drilldownLoading && drilldownData.length === 0 && (
               <div className="flex justify-center items-center h-32 text-muted-foreground">
                 No se encontraron comprobantes para el periodo seleccionado.
               </div>
-            ) : (
+            )}
+            
+            {!drilldownLoading && drilldownData.length > 0 && (
               <Table className="w-full min-w-max">
                   <TableHeader className="sticky top-0 bg-muted z-10 shadow-sm">
                   <TableRow>

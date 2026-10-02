@@ -1,0 +1,5 @@
+ID,Módulo,Submódulo,Caso de Prueba,Estado,Fecha de Ejecución,Observaciones
+1,Descargas Masivas,Control Fiscal,1. Renderizado Sin Empresa: Mensaje restrictivo,PASS,2026-09-29,La seguridad de acceso por empresa funciona correctamente ocultando el dashboard.
+2,Descargas Masivas,Control Fiscal,2. Carga Inicial KPIs y Alerta de Discrepancia,PASS,2026-09-29,Cálculos porcentuales precisos y renderizado visual del estado de alerta validado.
+3,Descargas Masivas,Control Fiscal,3. Autocompletado de RFCs,PASS,2026-09-29,El input reacciona a sugerencias y autocompleta la caja de búsqueda.
+4,Descargas Masivas,Control Fiscal,4. Interacción del Data Grid Columnas y Footer Sumatorio,PASS,2026-09-29,La abstracción XML vía Regex y la sumatoria dinámica reaccionando al panel de columnas funcionan con precisión.

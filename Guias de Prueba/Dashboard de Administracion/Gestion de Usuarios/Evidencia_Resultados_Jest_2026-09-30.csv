@@ -1,0 +1,6 @@
+"Caso de Prueba","Módulo","Estado","Tiempo (ms)","Fecha Ejecución"
+"CP01: Cancela invitaciones pendientes correctamente","Gestión de Usuarios (/admin/users)","PASS","86","2026-09-30"
+"CP02: Activa y suspende usuarios (Switch)","Gestión de Usuarios (/admin/users)","PASS","62","2026-09-30"
+"CP03: Abre modal de edición y permite guardar cambios","Gestión de Usuarios (/admin/users)","PASS","62","2026-09-30"
+"CP04: Elimina definitivamente a un usuario activo","Gestión de Usuarios (/admin/users)","PASS","47","2026-09-30"
+"CP05: Bloquea el acceso a usuarios sin privilegios","Gestión de Usuarios (/admin/users)","PASS","14","2026-09-30"

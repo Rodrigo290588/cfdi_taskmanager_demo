@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { decryptInvoiceXmlContent } from '@/lib/invoice-xml-storage'
 import { buildDashboardScopedContext, dashboardJsonErrorResponse } from '@/lib/dashboard-fiscal-route-utils'
 import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
 
@@ -10,40 +9,72 @@ export const maxDuration = 30
 
 const DRILLDOWN_BATCH_SIZE = 500
 
-function resolveInvoiceXmlFromBlob(blob: {
-  xmlCiphertext: string
-  xmlIv: string
-  xmlAuthTag: string
-  xmlEncryptionAlg: string
-} | null | undefined) {
-  if (!blob) {
-    return ''
-  }
+function formatDrilldownData(invoices: Array<Record<string, unknown>>, originParam: string, rfc: string) {
+  const drilldownData: Array<Record<string, unknown>> = []
+  invoices.forEach(inv => {
+    const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
+    const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
+    const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
 
-  try {
-    return decryptInvoiceXmlContent({
-      ciphertext: blob.xmlCiphertext,
-      iv: blob.xmlIv,
-      authTag: blob.xmlAuthTag,
-      algorithm: blob.xmlEncryptionAlg
+    drilldownData.push({
+      uuid: inv.uuid,
+      uuidRelacionado: '',
+      tipo: 'Ingreso Global',
+      fecha: inv.issuanceDate,
+      serie: inv.series || '',
+      folio: inv.folio || '',
+      rfc: rfcOponente,
+      razonSocial: nombreOponente || 'Desconocido',
+      moneda: inv.currency || 'MXN',
+      tipoCambio: Number(inv.exchangeRate) || 1,
+      importe: Number(inv.subtotal) || 0
     })
-  } catch {
-    return ''
-  }
+  })
+  return drilldownData
 }
 
-function isGlobalPublicInvoice(xmlContent: string) {
-  return /InformacionGlobal/i.test(xmlContent)
+async function fetchInvoicesBatch(baseWhere: Record<string, unknown>, cursor: string | undefined) {
+  return await prisma.invoice.findMany({
+    where: {
+      ...baseWhere,
+      cfdiType: 'INGRESO',
+      satStatus: 'VIGENTE',
+      receiverRfc: 'XAXX010101000',
+      isPublicGlobal: true
+    },
+    take: DRILLDOWN_BATCH_SIZE,
+    skip: cursor ? 1 : 0,
+    cursor: cursor ? { id: cursor } : undefined,
+    select: {
+      id: true,
+      uuid: true,
+      folio: true,
+      series: true,
+      issuanceDate: true,
+      issuerRfc: true,
+      receiverRfc: true,
+      issuerName: true,
+      receiverName: true,
+      currency: true,
+      exchangeRate: true,
+      subtotal: true
+    },
+    orderBy: { issuanceDate: 'desc' }
+  })
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const { ctx, searchParams, systemRole: _sr } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
-    void _sr
+    const { ctx, searchParams } = await buildDashboardScopedContext(request, { routeKey: 'drilldown', requireCompanyId: true })
 
     const companyId = searchParams.get('companyId')!
     const startDateParam = searchParams.get('startDate')
     const endDateParam = searchParams.get('endDate')
+    
+    if (!startDateParam || !endDateParam) {
+      return NextResponse.json({ data: [] }, { headers: SECURITY_HEADERS })
+    }
+
     const originParam = searchParams.get('origin') || 'issued'
 
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { rfc: true } })
@@ -56,9 +87,13 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dateFilter: any = {}
     if (startDateParam && endDateParam) {
-      const end = new Date(endDateParam)
-      end.setHours(23, 59, 59, 999)
-      dateFilter.issuanceDate = { gte: new Date(startDateParam), lte: end }
+      const startParts = startDateParam.split('-')
+      const endParts = endDateParam.split('-')
+      
+      const start = new Date(Date.UTC(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]), 0, 0, 0, 0))
+      const end = new Date(Date.UTC(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]), 23, 59, 59, 999))
+      
+      dateFilter.issuanceDate = { gte: start, lte: end }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -71,80 +106,29 @@ export async function GET(request: NextRequest) {
       baseWhere = { issuerFiscalEntityId: fiscalEntity.id, issuerRfc: rfc, ...dateFilter }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const drilldownData: any[] = []
+    const allDrilldownData: Array<Record<string, unknown>> = []
     let cursor: string | undefined
 
     do {
-      const invoices = await prisma.invoice.findMany({
-        where: {
-          ...baseWhere,
-          cfdiType: 'INGRESO',
-          satStatus: 'VIGENTE',
-          receiverRfc: 'XAXX010101000'
-        },
-        orderBy: { id: 'asc' },
-        take: DRILLDOWN_BATCH_SIZE,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: {
-          id: true,
-          uuid: true,
-          folio: true,
-          series: true,
-          issuanceDate: true,
-          issuerRfc: true,
-          receiverRfc: true,
-          issuerName: true,
-          receiverName: true,
-          currency: true,
-          exchangeRate: true,
-          subtotal: true,
-          blob: {
-            select: {
-              xmlCiphertext: true,
-              xmlIv: true,
-              xmlAuthTag: true,
-              xmlEncryptionAlg: true
-            }
-          }
-        }
-      })
+      const invoices = await fetchInvoicesBatch(baseWhere, cursor)
 
       if (invoices.length === 0) {
         break
       }
 
-      invoices.forEach(inv => {
-        const xmlContent = resolveInvoiceXmlFromBlob(inv.blob)
-        if (!isGlobalPublicInvoice(xmlContent)) {
-          return
-        }
+      const formattedData = formatDrilldownData(invoices, originParam, rfc)
+      allDrilldownData.push(...formattedData)
 
-        const isIssuer = originParam === 'issued' || inv.issuerRfc === rfc
-        const rfcOponente = isIssuer ? inv.receiverRfc : inv.issuerRfc
-        const nombreOponente = isIssuer ? inv.receiverName : inv.issuerName
-
-        drilldownData.push({
-          uuid: inv.uuid,
-          uuidRelacionado: '',
-          tipo: 'Ingreso Global',
-          fecha: inv.issuanceDate,
-          serie: inv.series || '',
-          folio: inv.folio || '',
-          rfc: rfcOponente,
-          razonSocial: nombreOponente || 'Desconocido',
-          moneda: inv.currency || 'MXN',
-          tipoCambio: Number(inv.exchangeRate) || 1,
-          importe: Number(inv.subtotal) || 0
-        })
-      })
-
-      cursor = invoices[invoices.length - 1]?.id
+      if (invoices.length === DRILLDOWN_BATCH_SIZE) {
+        cursor = invoices.at(-1)?.id
+      } else {
+        cursor = undefined
+      }
     } while (cursor)
 
-    drilldownData.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+    allDrilldownData.sort((a, b) => new Date(b.fecha as string).getTime() - new Date(a.fecha as string).getTime())
 
-    return NextResponse.json({ data: drilldownData }, { headers: SECURITY_HEADERS })
+    return NextResponse.json({ data: allDrilldownData }, { headers: SECURITY_HEADERS })
 
   } catch (error) {
     return dashboardJsonErrorResponse(error)

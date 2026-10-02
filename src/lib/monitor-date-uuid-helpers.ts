@@ -31,9 +31,11 @@ export function parseDateFilterStrict(
 
   const parsed = schema.parse(raw)
   const [y, m, d] = parsed.split('-').map(Number)
+  // Se aplica un offset de +6 horas para alinear UTC con America/Mexico_City (UTC-6)
+  // Así, el inicio del día es 06:00:00 UTC y el fin es 05:59:59 UTC del día siguiente
   return bound === 'start'
-    ? new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0))
-    : new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999))
+    ? new Date(Date.UTC(y, m - 1, d, 6, 0, 0, 0))
+    : new Date(Date.UTC(y, m - 1, d, 29, 59, 59, 999))
 }
 
 // MON-006 · UUID RFC 4122 versión 4 (variante RFC 4122, 89ab) case-insensitive.

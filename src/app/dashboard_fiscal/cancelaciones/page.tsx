@@ -363,14 +363,14 @@ export default function CancelacionesPage() {
     setUploadingLayout(true)
 
     try {
-      const formData = new FormData()
-      formData.append('file', layoutFile)
-      formData.append('companyId', selectedCompanyId)
+        const formData = new FormData()
+        formData.append('file', layoutFile)
+        formData.append('companyId', selectedCompanyId)
 
-      const res = await fetch('/api/dashboard_fiscal/cancelaciones/import-layout', {
-        method: 'POST',
-        body: formData
-      })
+        const res = await fetch(`/api/dashboard_fiscal/cancelaciones/import-layout?companyId=${selectedCompanyId}`, {
+          method: 'POST',
+          body: formData
+        })
 
       const data = await res.json()
 

@@ -1,0 +1,6 @@
+ID,Módulo,Submódulo,Caso de Prueba,Estado,Fecha de Ejecución,Observaciones
+1,Descargas Masivas,Solicitudes,1. Renderizado y Dinamismo de UI (Cambio de Tipo de Solicitud),PASS,2026-09-29,El formulario se adapta correctamente al cambiar de Emitidos a Por Folio.
+2,Descargas Masivas,Solicitudes,2. Escenario de Error: Fechas Faltantes y Año Inválido,PASS,2026-09-29,Zod captura correctamente la omisión y el año < 2011.
+3,Descargas Masivas,Solicitudes,3. Escenario de Error: UUID Incompleto,PASS,2026-09-29,El formato de UUID es rechazado si está incompleto.
+4,Descargas Masivas,Solicitudes,4. Escenario de Error: Rechazo del Backend (SAT),PASS,2026-09-29,Se muestran las notificaciones toast de error apropiadas.
+5,Descargas Masivas,Solicitudes,5. Escenario de Éxito Total (Happy Path),PASS,2026-09-29,Se muestran las notificaciones de éxito con los IDs SAT e Internos.

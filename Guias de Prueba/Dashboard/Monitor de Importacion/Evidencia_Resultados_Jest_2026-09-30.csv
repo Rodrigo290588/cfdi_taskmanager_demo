@@ -1,0 +1,6 @@
+"Suite","Caso de Prueba","Estatus","Tiempo (ms)","Detalle"
+"Monitor de Importacion (ImportMonitorPage)","CP01: Renderiza la interfaz principal y muestra KPIs en tiempo real","PASS","192","Las tarjetas y el badge de 'EN VIVO' se cargan correctamente con la respuesta asíncrona simulada."
+"Monitor de Importacion (ImportMonitorPage)","CP02: Muestra Cifras de Control de Directorio y resalta brechas (ámbar)","PASS","78","Valida correctamente que si el número es mayor a cero se pinte de color text-amber-600 para resaltar anomalías físicas vs BD."
+"Monitor de Importacion (ImportMonitorPage)","CP03: Permite buscar y filtrar la tabla de corridas con botones rápidos","PASS","182","Simula clics en fechas y busqueda, comprobando que se regeneran las peticiones API con search=BATCH-99."
+"Monitor de Importacion (ImportMonitorPage)","CP04: Abre el detalle de documentos (Drilldown Modal) y filtra solo errores","PASS","345","Confirma la apertura del modal a pantalla completa y el filtro hasErrors=true en la API de items."
+"Monitor de Importacion (ImportMonitorPage)","CP05: Protege contra inyección de fórmulas (CWE-1236) al exportar CSV de errores","PASS","73","Bypass exitoso: Valida la mitigación de inyección CSV verificando que el string neutralizado se renderice seguro en pantalla (CWE-1236)."

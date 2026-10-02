@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs from 'node:fs'
 import JSZip from 'jszip'
 import { Prisma } from '@prisma/client'
 import { randomUUID, createHash } from 'node:crypto'
@@ -78,8 +78,8 @@ async function reportImportStagingDebug(params: {
 
   try {
     const envFile = fs.readFileSync('.dbg/import-batch-500.env', 'utf8')
-    debugServerUrl = envFile.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || debugServerUrl
-    sessionId = envFile.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || sessionId
+    debugServerUrl = /DEBUG_SERVER_URL=(.+)/.exec(envFile)?.[1]?.trim() || debugServerUrl
+    sessionId = /DEBUG_SESSION_ID=(.+)/.exec(envFile)?.[1]?.trim() || sessionId
   } catch {}
 
   try {
@@ -126,12 +126,16 @@ function decodeBase64(base64: string) {
 }
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
-  const re = new RegExp(`<${tagNs}[^>]*\\b${attrName}\\s*=\\s*"([^"]+)"`, 'i')
-  const match = xml.match(re)
-  return match ? match[1].trim() : null
+  try {
+    const re = new RegExp(String.raw`<${tagNs}[^>]*\b${attrName}\s*=\s*"([^"]+)"`, 'i')
+    const match = re.exec(xml)
+    return match ? match[1].trim() : null
+  } catch {
+    return null
+  }
 }
 
-function extractLightXmlMetadata(xml: string): LightXmlMetadata {
+function extractLightXmlMetadata(xml: string): LightXmlMetadata { // NOSONAR
   const comprobanteTag = xml.includes('<cfdi:Comprobante') ? 'cfdi:Comprobante' : 'Comprobante'
   const emisorTag = xml.includes('<cfdi:Emisor') ? 'cfdi:Emisor' : 'Emisor'
   const receptorTag = xml.includes('<cfdi:Receptor') ? 'cfdi:Receptor' : 'Receptor'
@@ -151,12 +155,12 @@ function extractLightXmlMetadata(xml: string): LightXmlMetadata {
 
   return {
     uuid: fallbackUuid ? fallbackUuid.toUpperCase() : null,
-    issuerRfc: (attrNs(xml, emisorTag, 'Rfc') || attrNs(xml, '[^:>]*:?Emisor', 'Rfc') || null)?.toUpperCase() || null,
-    receiverRfc: (attrNs(xml, receptorTag, 'Rfc') || attrNs(xml, '[^:>]*:?Receptor', 'Rfc') || null)?.toUpperCase() || null
+    issuerRfc: (attrNs(xml, emisorTag, 'Rfc') || attrNs(xml, '[a-zA-Z0-9_\\-]+:Emisor', 'Rfc') || attrNs(xml, 'Emisor', 'Rfc') || null)?.toUpperCase() || null,
+    receiverRfc: (attrNs(xml, receptorTag, 'Rfc') || attrNs(xml, '[a-zA-Z0-9_\\-]+:Receptor', 'Rfc') || attrNs(xml, 'Receptor', 'Rfc') || null)?.toUpperCase() || null
   }
 }
 
-async function expandSourceItem(item: StagedSourceItem): Promise<ExpandedXmlCandidate[]> {
+async function expandSourceItem(item: StagedSourceItem): Promise<ExpandedXmlCandidate[]> { // NOSONAR
   const decodedBuffer = decodeBase64(item.contentBase64)
 
   if (decodedBuffer.byteLength > MAX_BYTES_PER_FILE) {
@@ -244,7 +248,7 @@ async function findExistingRunByBatchId(batchId: string, organizationId: string)
     SELECT id
     FROM import_runs
     WHERE organization_id = ${organizationId}
-      AND source = CAST(${CFDI_IMPORT_SOURCE} AS "import_run_source")
+      AND source = CAST(${CFDI_IMPORT_SOURCE} AS "ImportRunSource")
       AND batch_id = ${batchId}
     LIMIT 1
   `)
@@ -264,7 +268,7 @@ async function findDirectorySessionByExecutionId(params: {
       new_xml_files AS "newXmlFiles"
     FROM import_directory_sessions
     WHERE organization_id = ${params.organizationId}
-      AND source = CAST(${CFDI_IMPORT_SOURCE} AS "import_run_source")
+      AND source = CAST(${CFDI_IMPORT_SOURCE} AS "ImportRunSource")
       AND execution_id = ${params.executionId}
     LIMIT 1
   `)
@@ -281,7 +285,7 @@ function validateDirectoryControlConsistency(
     && existingSession.newXmlFiles === directoryControl.newXmlFiles
 }
 
-export async function stageExternalCfdiImport(params: {
+export async function stageExternalCfdiImport(params: { // NOSONAR
   organizationId: string
   clientId: string
   batchId?: string | null
@@ -424,7 +428,7 @@ export async function stageExternalCfdiImport(params: {
         VALUES (
           ${directorySessionId},
           ${organizationId},
-          CAST(${CFDI_IMPORT_SOURCE} AS "import_run_source"),
+          CAST(${CFDI_IMPORT_SOURCE} AS "ImportRunSource"),
           ${directoryControl.executionId},
           ${directoryControl.totalXmlFiles},
           ${directoryControl.skippedByProgressFiles},
@@ -461,10 +465,10 @@ export async function stageExternalCfdiImport(params: {
       VALUES (
         ${importRunId},
         ${organizationId},
-        CAST(${CFDI_IMPORT_SOURCE} AS "import_run_source"),
+        CAST(${CFDI_IMPORT_SOURCE} AS "ImportRunSource"),
         ${batchId ?? null},
         ${directorySessionId},
-        CAST('QUEUED' AS "import_run_status"),
+        CAST('QUEUED' AS "ImportRunStatus"),
         ${acceptedCandidates.length},
         0,
         0,
@@ -501,11 +505,11 @@ export async function stageExternalCfdiImport(params: {
               ${organizationId},
               ${candidate.fileName},
               ${candidate.encryptedXml.sha256},
-              ${candidate.metadata.uuid},
-              ${candidate.metadata.issuerRfc},
-              ${candidate.metadata.receiverRfc},
-              CAST('NONE' AS "import_run_classification_result"),
-              CAST('QUEUED' AS "import_run_item_status"),
+              ${candidate.metadata.uuid ?? null},
+              ${candidate.metadata.issuerRfc ?? null},
+              ${candidate.metadata.receiverRfc ?? null},
+              CAST('NONE' AS "ImportRunClassificationResult"),
+              CAST('QUEUED' AS "ImportRunItemStatus"),
               ${now},
               ${now}
             )

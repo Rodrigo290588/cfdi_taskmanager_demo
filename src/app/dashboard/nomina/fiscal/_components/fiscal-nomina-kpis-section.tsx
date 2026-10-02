@@ -14,7 +14,7 @@ import { fmtMxn, fmtNum } from '@/lib/fiscal-nomina-formatters';
 import type { FiscalNomTableParams } from '@/lib/fiscal-nomina-types';
 import {
     KpiCardFiscal, KpiCanceladosTriggerClient, KpiUuidDuplicadosTriggerClient, KpiRetrasosTimbradoTriggerClient,
-    KpiAlertasSbcSdiTriggerClient, KpiIsrRetenidoTriggerClient,
+    KpiAlertasSbcSdiTriggerClient, KpiIsrRetenidoTriggerClient, KpiCuotasTercerosTriggerClient,
 } from './fiscal-nomina-shared';
 
 export type FiscalNominaKpisRow = {
@@ -187,13 +187,16 @@ export async function KpisSection(params: FiscalNomTableParams) {
                     />
                     <KpiIsrRetenidoTriggerClient />
                 </div>
-                <KpiCardFiscal
-                    title="Cuotas Terceros"
-                    tone="emerald"
-                    icon={<Users2 className="h-12 w-12" />}
-                    value={fmtMxn(cuotasTerceros)}
-                    sublabel="INFONAVIT · FONACOT · Pensión · Sindicato"
-                />
+                <div className="relative">
+                    <KpiCardFiscal
+                        title="Cuotas Terceros"
+                        tone="emerald"
+                        icon={<Users2 className="h-12 w-12" />}
+                        value={fmtMxn(cuotasTerceros)}
+                        sublabel="INFONAVIT · FONACOT · Pensión · Sindicato"
+                    />
+                    <KpiCuotasTercerosTriggerClient />
+                </div>
                 <div className="relative">
                     <KpiCardFiscal
                         title="Cancelados"

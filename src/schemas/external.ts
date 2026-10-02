@@ -118,7 +118,7 @@ export const ExternalCfdiDirectoryControlSchema = z.strictObject({
 
 export const ExternalCfdiImportCreateSchema = z.strictObject({
   batchId: z.string().trim().min(1).max(191).optional(),
-  source: z.literal('M2M_JAVA_CLIENT').default('M2M_JAVA_CLIENT'),
+  source: z.enum(['M2M_JAVA_CLIENT', 'JAVA_M2M']).default('JAVA_M2M'),
   directoryControl: ExternalCfdiDirectoryControlSchema.optional(),
   items: z.array(ExternalCfdiImportItemSchema).min(1).max(MAX_EXTERNAL_CFDI_IMPORT_FILES)
 }).strict()

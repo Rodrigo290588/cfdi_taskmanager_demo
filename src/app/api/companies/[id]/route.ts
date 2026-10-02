@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import type { Prisma, SystemRole } from '@prisma/client'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { hasPermission, Permission, enrichUserWithMemberships, canUserAccessCompany } from '@/lib/permissions'
@@ -19,7 +19,7 @@ const LOGO_DIR = (): string => {
   return /*turbopackIgnore: true*/ path.join(base, 'public', 'uploads', 'company-logos')
 }
 const LOGO_ALLOWED_EXTS = new Set(['.webp', '.png', '.jpg', '.jpeg', '.gif'])
-const LOGO_FILE_PATTERN = /^[0-9a-zA-Z_-]+\-[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}\.(webp|png|jpg|jpeg|gif)$/
+const LOGO_FILE_PATTERN = /^[0-9a-zA-Z_-]+-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(webp|png|jpg|jpeg|gif)$/
 
 const WEBSITE_ALLOWED_SCHEMES = new Set(['https:', 'http:'])
 
@@ -31,15 +31,14 @@ const approveCompanySchema = z.strictObject({
 const safeNullableUrlSchema = z.preprocess(
   (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
   z
-    .string()
-    .url('URL inválida')
-    .refine((val) => {
-      try {
-        return WEBSITE_ALLOWED_SCHEMES.has(new URL(val).protocol)
-      } catch {
-        return false
-      }
-    }, 'Solo se permiten URLs con esquema https o http')
+      .string()
+      .refine((val) => {
+        try {
+          return WEBSITE_ALLOWED_SCHEMES.has(new URL(val).protocol)
+        } catch {
+          return false
+        }
+      }, 'Solo se permiten URLs con esquema https o http')
     .optional()
     .nullable()
     .transform((v) => (v === null ? undefined : v))
@@ -66,14 +65,21 @@ const updateCompanySchema = z.strictObject({
   state: z.string().max(120).optional().nullable().transform((v) => (v === null ? undefined : v)),
   country: z.string().optional().default('México'),
   phone: z.string().max(50).optional().nullable().transform((v) => (v === null ? undefined : v)),
-  email: z.string().email().max(200).optional().nullable().transform((v) => (v === null ? undefined : v)),
+  email: z.string().max(200).optional().nullable()
+    .transform((v) => (v === null ? undefined : v))
+    .refine((v) => {
+      if (!v) return true
+      const parts = v.split('@')
+      return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && parts[1].length > 2
+    }, { message: 'Correo electrónico inválido' }),
   website: safeNullableUrlSchema,
   industry: z.string().max(200).optional().nullable().transform((v) => (v === null ? undefined : v)),
   employeesCount: optionalNullablePositiveIntSchema,
-  incorporationDate: z.string().max(100).optional().nullable().transform((v) => (v === null ? undefined : v))
+  incorporationDate: z.string().max(100).optional().nullable().transform((v) => (v === null ? undefined : v)),
+  notes: z.string().optional().nullable().transform((v) => (v === null ? undefined : v))
 })
 
-function safeZodHumanFriendly(issues: Array<z.ZodIssue>): Array<{ field: string; message: string }> {
+function safeZodHumanFriendly(issues: Array<{ path: PropertyKey[], message?: string }>): Array<{ field: string; message: string }> {
   return issues.map((issue) => ({
     field: issue.path.join('.'),
     message: issue.message || 'Valor inválido'
@@ -83,8 +89,9 @@ function safeZodHumanFriendly(issues: Array<z.ZodIssue>): Array<{ field: string;
 function maskEmail(email: string | null | undefined): string {
   if (!email || typeof email !== 'string') return ''
   const e = email.trim().toLowerCase()
-  if (!/^[^@]+@[^@]+\.[^@]+$/.test(e)) return ''
-  const [local, domain] = e.split('@') as [string, string]
+  const parts = e.split('@')
+  if (parts.length !== 2 || parts[0].length === 0 || !parts[1].includes('.') || parts[1].length < 3) return ''
+  const [local, domain] = parts as [string, string]
   const pre = local.slice(0, Math.min(3, Math.max(1, local.length)))
   const masked = local.length <= 3
     ? `${pre}****`
@@ -92,29 +99,35 @@ function maskEmail(email: string | null | undefined): string {
   return `${masked}@${domain}`
 }
 
+function normalizeNumber(value: number): string {
+  if (Number.isNaN(value)) return 'NaN'
+  if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity'
+  return String(value)
+}
+
+function normalizeObject(value: object): string {
+  const tag = Object.prototype.toString.call(value)
+  if (tag === '[object Date]' && !Number.isNaN((value as Date).getTime())) {
+    return (value as Date).toISOString()
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return tag
+  }
+}
+
 type ComparableScalar = null | boolean | number | string | Date
 function normalizeForComparison(value: unknown): string {
   if (value === undefined || value === null) return 'null'
-  if (typeof value === 'number') {
-    if (Number.isNaN(value)) return 'NaN'
-    if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity'
-    return String(value)
-  }
+  if (typeof value === 'number') return normalizeNumber(value)
   if (typeof value === 'bigint') return `${value.toString()}n`
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'string') return JSON.stringify(value)
-  if (typeof value === 'object') {
-    const tag = Object.prototype.toString.call(value) as string
-    if (tag === '[object Date]' && !Number.isNaN((value as Date).getTime())) {
-      return (value as Date).toISOString()
-    }
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return tag
-    }
-  }
-  return String(value)
+  if (typeof value === 'object') return normalizeObject(value)
+  
+  // Para funciones o símbolos
+  return Object.prototype.toString.call(value)
 }
 function buildAuditDiff<T extends Record<string, unknown>>(
   oldObj: T,
@@ -175,21 +188,173 @@ async function findLatestLogoSafe(companyId: string): Promise<string | null> {
   }
 }
 
+function applyActionRateLimits(userId: string, action: 'approve' | 'update', reqId: string) {
+  try {
+    enforceCompaniesRateLimit(userId, action)
+  } catch (rlErr) {
+    if (rlErr instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: rlErr.message, reqId },
+        {
+          status: rlErr.statusCode,
+          headers: {
+            'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
+            'X-Request-Id': reqId,
+            ...SAT_SECURITY_HEADERS
+          }
+        }
+      )
+    }
+    throw rlErr
+  }
+  return null
+}
+
+async function parseAndValidateRequest<T>(
+  request: NextRequest,
+  reqId: string,
+  schema: z.ZodType<T>
+): Promise<{ data?: T; errorResponse?: NextResponse }> {
+  const clRaw = request.headers.get('content-length')
+  const cl = clRaw ? Number(clRaw) : null
+  if (cl !== null && (Number.isNaN(cl) || cl > bodySizeLimit)) {
+    return { errorResponse: NextResponse.json(
+      { error: 'Solicitud demasiado grande', reqId },
+      { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )}
+  }
+
+  const bodyBuf = await request.arrayBuffer()
+  if (bodyBuf.byteLength > bodySizeLimit) {
+    return { errorResponse: NextResponse.json(
+      { error: 'Solicitud demasiado grande', reqId },
+      { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )}
+  }
+  
+  let body: unknown
+  try {
+    body = JSON.parse(new TextDecoder('utf-8').decode(bodyBuf))
+  } catch {
+    return { errorResponse: NextResponse.json(
+      { error: 'JSON inválido', reqId },
+      { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )}
+  }
+  
+  const validationResult = schema.safeParse(body)
+  if (!validationResult.success) {
+    return { errorResponse: NextResponse.json(
+      { error: 'Datos inválidos', reqId, details: safeZodHumanFriendly(validationResult.error.issues) },
+      { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )}
+  }
+  
+  return { data: validationResult.data }
+}
+
+async function validateApprovePermissions(
+  userId: string,
+  systemRole: SystemRole,
+  companyId: string,
+  action: 'approve' | 'reject',
+  reqId: string
+): Promise<NextResponse | null> {
+  const access = await canUserAccessCompany(userId, systemRole, companyId)
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: 'Permisos insuficientes para procesar esta empresa', reqId },
+      { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )
+  }
+
+  const requiredPermission = action === 'approve' ? Permission.COMPANY_APPROVE : Permission.COMPANY_REJECT
+  const enrichedUser = await enrichUserWithMemberships({ id: userId, systemRole })
+  if (!hasPermission(enrichedUser, requiredPermission, access.organizationId)) {
+    return NextResponse.json(
+      { error: 'No tienes permisos para procesar empresas', reqId },
+      { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )
+  }
+  return null
+}
+
+async function executeCompanyApprovalTx(
+  id: string,
+  action: 'approve' | 'reject',
+  rejectionReason: string | undefined,
+  userId: string,
+  userEmail: string,
+  reqId: string
+): Promise<NextResponse> {
+  const newStatus = action === 'approve' ? 'APPROVED' : 'REJECTED'
+  const now = new Date()
+
+  const [updateCount] = await prisma.$transaction([
+    prisma.company.updateMany({
+      where: { id, status: 'PENDING' },
+      data: {
+        status: newStatus,
+        approvedBy: userId,
+        approvedAt: now,
+        rejectionReason: action === 'reject' ? rejectionReason ?? null : null,
+        updatedBy: userId
+      }
+    })
+  ])
+
+  if (updateCount.count === 0) {
+    const verify = await prisma.company.findUnique({ where: { id }, select: { id: true, status: true } })
+    if (!verify) return NextResponse.json(
+      { error: 'Empresa no encontrada', reqId },
+      { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )
+    return NextResponse.json(
+      { error: 'La empresa ya ha sido procesada', reqId },
+      { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
+    )
+  }
+
+  const updatedCompany = await prisma.company.findUniqueOrThrow({ where: { id } })
+  await prisma.auditLog.create({
+    data: {
+      tableName: 'companies',
+      recordId: id,
+      action: action === 'approve' ? 'APPROVE' : 'REJECT',
+      oldValues: { status: 'PENDING' },
+      newValues: {
+        status: newStatus,
+        approvedBy: userId,
+        approvedAt: now,
+        rejectionReason: action === 'reject' ? rejectionReason ?? null : null
+      },
+      userId: userId,
+      userEmail: maskEmail(userEmail),
+      description: `Company "${updatedCompany.name}" ${action === 'approve' ? 'approved' : 'rejected'}`,
+      companyId: id,
+    }
+  })
+
+  return NextResponse.json({
+    message: `Empresa ${action === 'approve' ? 'aprobada' : 'rechazada'} exitosamente`,
+    reqId,
+    company: {
+      id: updatedCompany.id,
+      name: updatedCompany.name,
+      rfc: updatedCompany.rfc,
+      status: updatedCompany.status,
+      approvedAt: updatedCompany.approvedAt,
+      rejectionReason: updatedCompany.rejectionReason,
+    }
+  }, { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } })
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const reqId = crypto.randomUUID()
   try {
-    const clRaw = request.headers.get('content-length')
-    const cl = clRaw ? Number(clRaw) : null
-    if (cl !== null && (Number.isNaN(cl) || cl > bodySizeLimit)) {
-      return NextResponse.json(
-        { error: 'Solicitud demasiado grande', reqId },
-        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
     const session = await auth()
     if (!session?.user?.email || !session.user.id) {
       return NextResponse.json(
@@ -198,24 +363,8 @@ export async function POST(
       )
     }
 
-    try {
-      enforceCompaniesRateLimit(session.user.id, 'approve')
-    } catch (rlErr) {
-      if (rlErr instanceof RateLimitError) {
-        return NextResponse.json(
-          { error: rlErr.message, reqId },
-          {
-            status: rlErr.statusCode,
-            headers: {
-              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
-              'X-Request-Id': reqId,
-              ...SAT_SECURITY_HEADERS
-            }
-          }
-        )
-      }
-      throw rlErr
-    }
+    const rateLimitError = applyActionRateLimits(session.user.id, 'approve', reqId)
+    if (rateLimitError) return rateLimitError
 
     const { id } = await params
     if (!id) return NextResponse.json(
@@ -223,30 +372,9 @@ export async function POST(
       { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
     )
 
-    const bodyBuf = await request.arrayBuffer()
-    if (bodyBuf.byteLength > bodySizeLimit) {
-      return NextResponse.json(
-        { error: 'Solicitud demasiado grande', reqId },
-        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    let body: unknown
-    try {
-      body = JSON.parse(new TextDecoder('utf-8').decode(bodyBuf))
-    } catch {
-      return NextResponse.json(
-        { error: 'JSON inválido', reqId },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    const validationResult = approveCompanySchema.safeParse(body)
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: 'Datos inválidos', reqId, details: safeZodHumanFriendly(validationResult.error.issues) },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    const { action, rejectionReason } = validationResult.data
+    const { data, errorResponse } = await parseAndValidateRequest(request, reqId, approveCompanySchema)
+    if (errorResponse) return errorResponse
+    const { action, rejectionReason } = data!
 
     const user = await prisma.user.findUnique({ where: { email: session.user.email } })
     if (!user) return NextResponse.json(
@@ -254,83 +382,10 @@ export async function POST(
       { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
     )
 
-    const access = await canUserAccessCompany(user.id, user.systemRole, id)
-    if (!access.allowed) {
-      return NextResponse.json(
-        { error: 'Permisos insuficientes para procesar esta empresa', reqId },
-        { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
+    const permError = await validateApprovePermissions(user.id, user.systemRole, id, action, reqId)
+    if (permError) return permError
 
-    const requiredPermission = action === 'approve' ? Permission.COMPANY_APPROVE : Permission.COMPANY_REJECT
-    const enrichedUser = await enrichUserWithMemberships({ id: user.id, systemRole: user.systemRole })
-    if (!hasPermission(enrichedUser, requiredPermission, access.organizationId)) {
-      return NextResponse.json(
-        { error: 'No tienes permisos para procesar empresas', reqId },
-        { status: 403, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const newStatus = action === 'approve' ? 'APPROVED' : 'REJECTED'
-    const now = new Date()
-
-    const [updateCount] = await prisma.$transaction([
-      prisma.company.updateMany({
-        where: { id, status: 'PENDING' },
-        data: {
-          status: newStatus,
-          approvedBy: user.id,
-          approvedAt: now,
-          rejectionReason: action === 'reject' ? rejectionReason ?? null : null,
-          updatedBy: user.id
-        }
-      })
-    ])
-
-    if (updateCount.count === 0) {
-      const verify = await prisma.company.findUnique({ where: { id }, select: { id: true, status: true } })
-      if (!verify) return NextResponse.json(
-        { error: 'Empresa no encontrada', reqId },
-        { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-      return NextResponse.json(
-        { error: 'La empresa ya ha sido procesada', reqId },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
-    const updatedCompany = await prisma.company.findUniqueOrThrow({ where: { id } })
-    await prisma.auditLog.create({
-      data: {
-        tableName: 'companies',
-        recordId: id,
-        action: action === 'approve' ? 'APPROVE' : 'REJECT',
-        oldValues: { status: 'PENDING' },
-        newValues: {
-          status: newStatus,
-          approvedBy: user.id,
-          approvedAt: now,
-          rejectionReason: action === 'reject' ? rejectionReason ?? null : null
-        },
-        userId: user.id,
-        userEmail: maskEmail(user.email),
-        description: `Company "${updatedCompany.name}" ${action === 'approve' ? 'approved' : 'rejected'}`,
-        companyId: id,
-      }
-    })
-
-    return NextResponse.json({
-      message: `Empresa ${action === 'approve' ? 'aprobada' : 'rechazada'} exitosamente`,
-      reqId,
-      company: {
-        id: updatedCompany.id,
-        name: updatedCompany.name,
-        rfc: updatedCompany.rfc,
-        status: updatedCompany.status,
-        approvedAt: updatedCompany.approvedAt,
-        rejectionReason: updatedCompany.rejectionReason,
-      }
-    }, { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } })
+    return await executeCompanyApprovalTx(id, action, rejectionReason, user.id, user.email, reqId)
   } catch (error) {
     const safe = safeErrSummarySat(error)
     console.error('[companies POST approve/reject] 500:', { reqId, fp: safe.incidentFingerprint, name: safe.name })
@@ -345,7 +400,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  void request
+  // Eliminar uso de void
   const reqId = crypto.randomUUID()
   try {
     const session = await auth()
@@ -465,15 +520,6 @@ export async function PUT(
 ) {
   const reqId = crypto.randomUUID()
   try {
-    const clRaw = request.headers.get('content-length')
-    const cl = clRaw ? Number(clRaw) : null
-    if (cl !== null && (Number.isNaN(cl) || cl > bodySizeLimit)) {
-      return NextResponse.json(
-        { error: 'Solicitud demasiado grande', reqId },
-        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-
     const session = await auth()
     if (!session?.user?.email || !session.user.id) {
       return NextResponse.json(
@@ -482,24 +528,8 @@ export async function PUT(
       )
     }
 
-    try {
-      enforceCompaniesRateLimit(session.user.id, 'update')
-    } catch (rlErr) {
-      if (rlErr instanceof RateLimitError) {
-        return NextResponse.json(
-          { error: rlErr.message, reqId },
-          {
-            status: rlErr.statusCode,
-            headers: {
-              'Retry-After': String(Math.ceil(rlErr.retryAfterMs / 1000)),
-              'X-Request-Id': reqId,
-              ...SAT_SECURITY_HEADERS
-            }
-          }
-        )
-      }
-      throw rlErr
-    }
+    const rateLimitError = applyActionRateLimits(session.user.id, 'update', reqId)
+    if (rateLimitError) return rateLimitError
 
     const { id } = await params
     if (!id) return NextResponse.json(
@@ -507,29 +537,8 @@ export async function PUT(
       { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
     )
 
-    const bodyBuf = await request.arrayBuffer()
-    if (bodyBuf.byteLength > bodySizeLimit) {
-      return NextResponse.json(
-        { error: 'Solicitud demasiado grande', reqId },
-        { status: 413, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    let body: unknown
-    try {
-      body = JSON.parse(new TextDecoder('utf-8').decode(bodyBuf))
-    } catch {
-      return NextResponse.json(
-        { error: 'JSON inválido', reqId },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
-    const validationResult = updateCompanySchema.safeParse(body)
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: 'Datos inválidos', reqId, details: safeZodHumanFriendly(validationResult.error.issues) },
-        { status: 400, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
-      )
-    }
+    const { data, errorResponse } = await parseAndValidateRequest(request, reqId, updateCompanySchema)
+    if (errorResponse) return errorResponse
 
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, systemRole: true, email: true } })
     if (!user) return NextResponse.json(
@@ -559,24 +568,24 @@ export async function PUT(
       { status: 404, headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS } }
     )
 
-    const data = validationResult.data
     const updatePayload: Prisma.CompanyUncheckedUpdateInput = {
-      name: data.name,
-      rfc: data.rfc.toUpperCase(),
-      businessName: data.businessName,
-      legalRepresentative: data.legalRepresentative ?? null,
-      taxRegime: data.taxRegime,
-      postalCode: data.postalCode,
-      address: data.address ?? null,
-      city: data.city ?? null,
-      state: data.state ?? null,
-      country: data.country ?? 'México',
-      phone: data.phone ?? null,
-      email: data.email ?? null,
-      website: data.website ?? null,
-      industry: data.industry ?? null,
-      employeesCount: data.employeesCount ?? null,
-      incorporationDate: data.incorporationDate ? new Date(data.incorporationDate) : null,
+      name: data!.name,
+      rfc: data!.rfc.toUpperCase(),
+      businessName: data!.businessName,
+      legalRepresentative: data!.legalRepresentative ?? null,
+      taxRegime: data!.taxRegime,
+      postalCode: data!.postalCode,
+      address: data!.address ?? null,
+      city: data!.city ?? null,
+      state: data!.state ?? null,
+      country: data!.country ?? 'México',
+      phone: data!.phone || null,
+      email: data!.email || null,
+      website: data!.website || null,
+      industry: data!.industry || null,
+      employeesCount: data!.employeesCount ?? null,
+      incorporationDate: data!.incorporationDate ? new Date(data!.incorporationDate) : null,
+      notes: data!.notes || null,
       updatedBy: user.id
     }
 
@@ -618,6 +627,7 @@ export async function PUT(
         industry: updated.industry,
         employeesCount: updated.employeesCount,
         incorporationDate: updated.incorporationDate,
+        notes: updated.notes,
         status: updated.status
       }
     }, { headers: { 'X-Request-Id': reqId, ...SAT_SECURITY_HEADERS, 'Cache-Control': 'no-store, private' } })

@@ -364,22 +364,22 @@ async function buildPaymentBalanceDetails(params: {
   invoices.forEach((invoice) => {
     if (invoice.paymentMethod === 'PUE' && isDateWithinRange(invoice.issuanceDate, params.startDate, params.endDate)) {
       paidRows.push({
-        paymentDate: invoice.issuanceDate,
-        invoiceUuid: invoice.uuid,
-        paymentUuid: invoice.uuid,
-        issuerRfc: invoice.issuerRfc,
-        issuerName: invoice.issuerName,
-        receiverRfc: invoice.receiverRfc,
-        series: invoice.series,
-        folio: invoice.folio,
-        paymentMethod: invoice.paymentMethod,
-        paymentSource: 'PUE',
-        partialityNumber: 1,
-        amountPaid: invoice.total,
-        previousBalance: invoice.total,
-        outstandingBalance: 0,
-        currency: invoice.currency
-      })
+          paymentDate: invoice.issuanceDate,
+          invoiceUuid: invoice.uuid,
+          paymentUuid: invoice.uuid,
+          issuerRfc: invoice.issuerRfc,
+          issuerName: invoice.issuerName,
+          receiverRfc: invoice.receiverRfc,
+          series: invoice.series,
+          folio: invoice.folio,
+          paymentMethod: invoice.paymentMethod,
+          paymentSource: 'PUE',
+          partialityNumber: 1,
+          amountPaid: invoice.total,
+          previousBalance: invoice.total,
+          outstandingBalance: 0,
+          currency: invoice.currency
+        })
     }
 
     invoice.payments.forEach((payment) => {

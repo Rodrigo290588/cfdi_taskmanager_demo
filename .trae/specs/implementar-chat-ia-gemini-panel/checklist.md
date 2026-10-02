@@ -1,0 +1,8 @@
+- [x] El esquema de base de datos fue actualizado y existe `canUseAiChat` en `CustomRole` y `Member`.
+- [x] La UI de `/admin/roles` muestra la opción para habilitar "Chat de IA".
+- [x] El botón del Chat de IA **SÍ** aparece en `/dashboard_fiscal/workpaper`, `/dashboard_recibidos/workpaper` y `/nomina/workpaper` (para usuarios con permiso).
+- [x] El botón del Chat de IA **NO** aparece en el resto de las pantallas (ej. inicio, configuraciones).
+- [x] El botón del Chat de IA **NO** aparece para usuarios sin el permiso, sin importar la pantalla.
+- [x] El Chat se despliega como un Panel Lateral deslizable.
+- [x] La IA utiliza Vercel AI SDK con el adaptador de Google Gemini.
+- [x] La IA responde de manera segura basándose en los resúmenes de facturación e impuestos, aislando los datos mediante `companyId`.

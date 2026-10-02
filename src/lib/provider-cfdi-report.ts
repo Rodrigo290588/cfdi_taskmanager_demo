@@ -362,19 +362,22 @@ function hasAttribute(element: Element | null | undefined, attributeName: string
   return false
 }
 
-function validateObjetoImp02ExentoIvaTraslado(trasladoNode: Element, trasladoRef: string): string[] {
+function validateObjetoImp02IvaTraslado(trasladoNode: Element, trasladoRef: string): string[] {
   const errors: string[] = []
   const tipoFactor = normalizeText(getAttributeValue(trasladoNode, 'TipoFactor')).toUpperCase()
   const baseRaw = normalizeText(getAttributeValue(trasladoNode, 'Base'))
   const impuesto = normalizeText(getAttributeValue(trasladoNode, 'Impuesto')).toUpperCase()
+  const tasaRaw = normalizeText(getAttributeValue(trasladoNode, 'TasaOCuota'))
+  const importeRaw = normalizeText(getAttributeValue(trasladoNode, 'Importe'))
   const hasTasaOCuota = hasAttribute(trasladoNode, 'TasaOCuota')
   const hasImporte = hasAttribute(trasladoNode, 'Importe')
 
-  if (tipoFactor !== 'EXENTO') {
-    errors.push(`${trasladoRef} el campo TipoFactor del Traslado IVA debe contener estrictamente el valor 'Exento' (valor recibido: '${tipoFactor || '(vacío)'}').`)
+  if (!tipoFactor) {
+    errors.push(`${trasladoRef} el campo TipoFactor del Traslado IVA es obligatorio y no está presente.`)
   }
+
   if (!baseRaw) {
-    errors.push(`${trasladoRef} el campo Base del Traslado IVA (monto sobre el cual aplica la exención) es obligatorio y no está presente.`)
+    errors.push(`${trasladoRef} el campo Base del Traslado IVA es obligatorio y no está presente.`)
   } else {
     try {
       parseStrictCfdiNumber(baseRaw, 'Base', trasladoRef)
@@ -382,15 +385,41 @@ function validateObjetoImp02ExentoIvaTraslado(trasladoNode: Element, trasladoRef
       errors.push(parseErr instanceof Error ? parseErr.message : `${trasladoRef} el campo Base del Traslado IVA debe ser un valor numérico válido (valor recibido: '${baseRaw}').`)
     }
   }
-  if (impuesto !== '002') {
+
+  if (impuesto !== '002' && impuesto !== 'IVA') {
     errors.push(`${trasladoRef} el campo Impuesto del Traslado IVA debe contener exactamente el valor '002' (valor recibido: '${impuesto || '(vacío)'}').`)
   }
-  if (hasTasaOCuota) {
-    errors.push(`${trasladoRef} el campo TasaOCuota no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
+
+  if (tipoFactor === 'EXENTO') {
+    if (hasTasaOCuota) {
+      errors.push(`${trasladoRef} el campo TasaOCuota no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
+    }
+    if (hasImporte) {
+      errors.push(`${trasladoRef} el campo Importe no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
+    }
+  } else if (tipoFactor === 'TASA' || tipoFactor === 'CUOTA') {
+    if (!hasTasaOCuota) {
+      errors.push(`${trasladoRef} el campo TasaOCuota es obligatorio cuando el TipoFactor es '${tipoFactor}'.`)
+    } else {
+      try {
+        parseStrictCfdiNumber(tasaRaw, 'TasaOCuota', trasladoRef)
+      } catch (parseErr) {
+        errors.push(parseErr instanceof Error ? parseErr.message : `${trasladoRef} el campo TasaOCuota del Traslado IVA debe ser un valor numérico válido.`)
+      }
+    }
+    if (!hasImporte) {
+      errors.push(`${trasladoRef} el campo Importe es obligatorio cuando el TipoFactor es '${tipoFactor}'.`)
+    } else {
+      try {
+        parseStrictCfdiNumber(importeRaw, 'Importe', trasladoRef)
+      } catch (parseErr) {
+        errors.push(parseErr instanceof Error ? parseErr.message : `${trasladoRef} el campo Importe del Traslado IVA debe ser un valor numérico válido.`)
+      }
+    }
+  } else if (tipoFactor) {
+    errors.push(`${trasladoRef} el campo TipoFactor del Traslado IVA tiene un valor inválido: '${tipoFactor}'.`)
   }
-  if (hasImporte) {
-    errors.push(`${trasladoRef} el campo Importe no debe existir en el Traslado IVA exento (ObjetoImp=02 y TipoFactor=Exento).`)
-  }
+
   return errors
 }
 
@@ -479,7 +508,7 @@ function evaluateObjetoImpTaxMismatch(root: Document | Element) {
         if (hasAnyIvaTraslado) {
           ivaTraslados.forEach((trasladoNode, tIdx) => {
             const trasladoRef = `${conceptoRef}[Traslado #${tIdx + 1}]`
-            const specificErrors = validateObjetoImp02ExentoIvaTraslado(trasladoNode, trasladoRef)
+            const specificErrors = validateObjetoImp02IvaTraslado(trasladoNode, trasladoRef)
             specificErrors.forEach(msg => reasons.add(msg))
           })
         }
