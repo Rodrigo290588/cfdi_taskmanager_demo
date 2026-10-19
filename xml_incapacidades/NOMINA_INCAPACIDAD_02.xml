@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:nomina12="http://www.sat.gob.mx/nomina12" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd" Version="4.0" Fecha="2026-01-03T12:00:00" Sello="SELLO_TEST_02" FormaPago="99" NoCertificado="00001000000500000000" Certificado="CERTIFICADO_TEST" SubTotal="12000.00" Descuento="1500.00" Moneda="MXN" Total="10500.00" TipoDeComprobante="N" Exportacion="01" MetodoPago="PUE" LugarExpedicion="12345">
+  <cfdi:Emisor Rfc="NMP7502257ZA" Nombre="NOMBREMPRESA SA DE CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Nombre="ANTONIO LEON LEON" Rfc="LELA711222QB7" DomicilioFiscalReceptor="12345" RegimenFiscalReceptor="605" UsoCFDI="CN01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111505" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago de nómina" ValorUnitario="12000.00" Importe="12000.00" ObjetoImp="01" Descuento="1500.00"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <nomina12:Nomina Version="1.2" TipoNomina="O" FechaPago="2026-01-03" FechaInicialPago="2026-01-01" FechaFinalPago="2026-01-15" NumDiasPagados="15" TotalPercepciones="12000.00" TotalDeducciones="1500.00">
+      <nomina12:Emisor RegistroPatronal="A1234567890"/>
+      <nomina12:Receptor Curp="XAXX010102XXX12345" NumSeguridadSocial="12345678902" FechaInicioRelLaboral="2018-05-10" Antigüedad="P7Y" TipoContrato="01" Sindicalizado="No" TipoJornada="01" TipoRegimen="02" NumEmpleado="002" Departamento="Ventas" Puesto="Asesora" RiesgoPuesto="1" PeriodicidadPago="04" ClaveEntFed="CM"/>
+      <nomina12:Percepciones TotalSueldos="12000.00" TotalGravado="12000.00" TotalExento="0.00">
+        <nomina12:Percepcion TipoPercepcion="001" Clave="001" Concepto="Sueldo" ImporteGravado="12000.00" ImporteExento="0.00"/>
+      </nomina12:Percepciones>
+      <nomina12:Deducciones TotalOtrasDeducciones="1500.00" TotalImpuestosRetenidos="0.00">
+        <nomina12:Deduccion TipoDeduccion="006" Clave="006" Concepto="Descuento por incapacidad" Importe="1500.00"/>
+      </nomina12:Deducciones>
+      <nomina12:Incapacidades>
+        <nomina12:Incapacidad DiasIncapacidad="5" TipoIncapacidad="02" ImporteMonetario="1500.00"/>
+      </nomina12:Incapacidades>
+    </nomina12:Nomina>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2020-09-11T10:32:30" NoCertificadoSAT="00001000000406144089" RfcProvCertif="CAD100607RY8" SelloCFD="D3bkzuIzyqWqpRVjR5pH2YbDQ4qf1u9H2HMKLY+8LGgnKXLAzI+de+svqMrLxdcfS3MiL0gtNbYhqwCDtKavgzWL5fi5ntsVv/12IYz8nkUAl6FfmKdDw5c6vzfe085hDwBwuRliCqq5TGxeoL7twYLqXBDP2vXY0SXwHfnyGf1Hx5r+Gdt5z7sEYBGlmk7lpRwfML9PA7lSyFHzZH6t91TJB/elVUb99fI9D26pCaT86uRNujfon2dtiu6l8oaRm3xSGj35o5wriGPwi+Sv5fLpYAPMSwoY1TOXULo5crhdhmC5AX/QEtnx3upWRI4jdME0gU9/CSJh9+rb+7r3ig==" SelloSAT="OZdJTWmzKRNCLbqLLuPle7/ng3pCuJS85Lq4LbJzPPfzYu93pWXNOs0eMn1XCFtgYHw0DGcZw835xd+7uI42guxfDJ8wHIE6kp9Zbqcf9c6binOR2FOlsCpcAtSirpBVFwT7hTqB7mQYS7YlSRFlbpRPj+f+TKIxCTyPanDlkq/yB5gnd/R9VEXfJX6isbbnawMpxS9+WnJ5CzMSE8vXNfSSokbqOmwZb0OBwNGw5bg5cuwBN8208tGRh/HRU36Ri/M3t0x230V9sZFnW3pyBE1xsBIU15J2kiktKfz7CIujHW+ncdYS3RvUx0fl2pZ1xtjgMuTYbbEvMZhnIR/eDg==" UUID="57763d4e-6b89-4c48-b7d3-898b11ea9428" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

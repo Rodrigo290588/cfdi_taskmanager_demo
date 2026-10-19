@@ -1,0 +1,6 @@
+- [x] La función `createInvoiceFromXml` detecta correctamente los CFDI de tipo 'N'.
+- [x] El complemento `<nomina12:Nomina>` se parsea extrayendo información clave (Receptor, Percepciones, Deducciones, Fechas de pago).
+- [x] Se crea un registro en `PayrollReceipt` asociado al `Invoice` importado.
+- [x] Se crean los registros hijos en `PayrollReceptor`, `PayrollPercepcion`, etc., según correspondan.
+- [x] Se llama a la función de base de datos `refresh_hr_materialized_views` para actualizar la información de los tableros analíticos.
+- [x] El proceso sigue siendo transaccional (si falla el guardado de nómina, falla todo el guardado del CFDI, evitando inconsistencias).

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:nomina12="http://www.sat.gob.mx/nomina12" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd" Version="4.0" Fecha="2026-01-05T12:00:00" Sello="SELLO_TEST_HE_04" FormaPago="99" NoCertificado="00001000000500000000" Certificado="CERTIFICADO_TEST" SubTotal="17000.00" Descuento="0.00" Moneda="MXN" Total="17000.00" TipoDeComprobante="N" Exportacion="01" MetodoPago="PUE" LugarExpedicion="12345">
+  <cfdi:Emisor Rfc="NMP7502257ZA" Nombre="NOMBREMPRESA SA DE CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Nombre="MARGARITA ANAYELI ONOFRE REYES" Rfc="OORM781007E23" DomicilioFiscalReceptor="12345" RegimenFiscalReceptor="605" UsoCFDI="CN01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111505" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago de nómina" ValorUnitario="17000.00" Importe="17000.00" ObjetoImp="01" Descuento="0.00"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <nomina12:Nomina Version="1.2" TipoNomina="O" FechaPago="2026-01-05" FechaInicialPago="2026-01-01" FechaFinalPago="2026-01-15" NumDiasPagados="15" TotalPercepciones="17000.00" TotalDeducciones="0.00">
+      <nomina12:Emisor RegistroPatronal="A1234567890"/>
+      <nomina12:Receptor Curp="XAXX010104XXX12345" NumSeguridadSocial="12345678904" FechaInicioRelLaboral="2021-09-01" Antigüedad="P4Y" TipoContrato="01" Sindicalizado="No" TipoJornada="01" TipoRegimen="02" NumEmpleado="004" Departamento="Logística" Puesto="Supervisor" RiesgoPuesto="3" PeriodicidadPago="04" ClaveEntFed="CM"/>
+      <nomina12:Percepciones TotalSueldos="15000.00" TotalGravado="16000.00" TotalExento="1000.00">
+        <nomina12:Percepcion TipoPercepcion="001" Clave="001" Concepto="Sueldo" ImporteGravado="15000.00" ImporteExento="0.00"/>
+        <nomina12:Percepcion TipoPercepcion="019" Clave="019" Concepto="Horas extras" ImporteGravado="1000.00" ImporteExento="1000.00">
+          <nomina12:HorasExtra Dias="3" TipoHoras="01" HorasExtra="6" ImportePagado="800.00"/>
+          <nomina12:HorasExtra Dias="2" TipoHoras="02" HorasExtra="4" ImportePagado="1200.00"/>
+        </nomina12:Percepcion>
+      </nomina12:Percepciones>
+    </nomina12:Nomina>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2020-09-11T10:43:00" NoCertificadoSAT="00001000000406144089" RfcProvCertif="CAD100607RY8" SelloCFD="cvFgGQ8z0cJxKt8o3zX7YQffzNVgRK/8zVcLIb8pDshkILAMJGo7Sjhdr0xCHuNrn/1n6Rbx5lM5O+gSUErIwSMNtddLx8zSHV2BSTFZr9BLMvkhAWFgpXLPtwRMjBOaWhRsN40AJ0t6yIfoRIISIzwkD+GpE5GgAd7lJnUZ/abKcv+3nF55c2TBpFqJ73pbT46kUzlyIanjNqB0DBCfFB02+HBlksylo2SPD4NaB83D+cuVfAzf+2/G7kRAZ7C7Inv4lzd7C+6RMgkfYA7s7vvTdG39EvaNsB344+Sh/Vzk3U/JZmld+IxuHMS3q7gClUvf8qmMO+b+v5nNtxc5jA==" SelloSAT="SIbNZfsacC5SVilg8Zj8Am8l0MQJ/W5I+VLXyejXGwFSm5aYXumA48GO4j8Mi2IB9P+4CiyBY0KV0P6Ujs4u1K220QDdnpOk3Fo0LyInP8oER+YDD/Fq4K9D5T/BHswQTnJ9dDdwc7OhBmqWw6crCTn2Cm+SqMGj/IJFqSRx8BDkEskSoYWrcicCRlkzUSsx/bpWqtejhgkcSV55WVnwL16l2UipMns79rf2zU+sX085miu6nR9x7giN39yLWsjRXmMn6tpORQaIiZ07kbCheBKsDQIirINL7hpT3CnhHM5Q5yb4QrHSs7SazWot98b4gxRoyEJDg5zaj2rxVPPExA==" UUID="8333cfb7-6142-4386-bc60-2ac48d49456a" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

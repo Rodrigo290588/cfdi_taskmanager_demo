@@ -1,0 +1,400 @@
+﻿commit 192f8f0862bfb728b74b82e2faa98d273fbb0cd4
+Author: Rodrigo290588 <rodrigo.torre@factronicamx.com>
+Date:   Fri Oct 2 14:52:16 2026 -0600
+
+    chore: release v1.20.0 - automatización de pruebas y resolución de deuda técnica (ESLint/SonarQube)
+
+diff --git a/src/app/dashboard/direccion/direccion-server-page.tsx b/src/app/dashboard/direccion/direccion-server-page.tsx
+new file mode 100644
+index 0000000..ac2ea1c
+--- /dev/null
++++ b/src/app/dashboard/direccion/direccion-server-page.tsx
+@@ -0,0 +1,388 @@
++import { Suspense, type ReactNode } from 'react'
++import { format, formatISO, parseISO, subMonths, startOfMonth, endOfMonth } from 'date-fns'
++import { es } from 'date-fns/locale/es'
++import { ProtectedRoute } from '@/components/protected-route'
++import { Skeleton } from '@/components/ui/skeleton'
++import { Card, CardContent, CardHeader } from '@/components/ui/card'
++import { prisma } from '@/lib/prisma'
++
++import {
++  parseDireccionSearchParams,
++  DIRECCION_SECTIONS,
++  type DireccionSectionId,
++  type DireccionViewMode,
++} from '@/lib/direccion-dashboard-url'
++import type { DireccionFetchScope } from '@/lib/direccion-analytics-service'
++
++import { DireccionFilterBar } from './_components/direccion-filter-bar'
++import { DireccionKpisSection } from './_components/direccion-kpis-section'
++import { DireccionTendenciaChart } from './_components/direccion-tendencia-chart'
++import { DireccionComposicionFijoVariable } from './_components/direccion-composicion-fv'
++import { DireccionDesviacionPresupuestal } from './_components/direccion-desviacion-presupuestal'
++
++type RawParsedDireccionFilters = ReturnType<typeof parseDireccionSearchParams>
++export type ResolvedDireccionFilters = RawParsedDireccionFilters & {
++  companyId: string
++  startDate: string
++  endDate: string
++  sections: DireccionSectionId[]
++}
++
++// ============================================================================
++// HELPERS FECHA DEFAULT (Paquete 7.1)
++// ============================================================================
++
++function defaultStartIso(): string {
++  return formatISO(subMonths(startOfMonth(new Date()), 12), { representation: 'date' })
++}
++function defaultEndIso(): string {
++  return formatISO(endOfMonth(new Date()), { representation: 'date' })
++}
++
++// ============================================================================
++// HELPER 1 · resolveFilters (Paquete 7.1 · extraído de cuerpo)
++// ============================================================================
++
++function resolveFilters(initial: RawParsedDireccionFilters): ResolvedDireccionFilters {
++  const startDateRaw = initial.startDate
++  const endDateRaw = initial.endDate
++  const startDate =
++    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : defaultStartIso()
++  const endDate =
++    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : defaultEndIso()
++  const defaultSections = DIRECCION_SECTIONS.map(s => s.id) as DireccionSectionId[]
++  return {
++    ...initial,
++    startDate,
++    endDate,
++    companyId: initial.companyId,
++    sections: initial.sections?.length ? (initial.sections as DireccionSectionId[]) : defaultSections,
++  }
++}
++
++// ============================================================================
++// SKELETONS · MARK PROPS READONLY (Paquete 7.1 · Fix warnings props)
++// ============================================================================
++
++function KpiGridSkeleton() {
++  return (
++    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
++      {[0, 1, 2, 3].map(i => (
++        <Card key={i}>
++          <CardContent className="p-5 space-y-3">
++            <div className="flex items-center justify-between">
++              <Skeleton className="h-4 w-32" />
++              <Skeleton className="h-8 w-8 rounded-lg" />
++            </div>
++            <Skeleton className="h-9 w-40" />
++            <div className="flex items-center justify-between">
++              <Skeleton className="h-4 w-28" />
++              <Skeleton className="h-3 w-20" />
++            </div>
++            <Skeleton className="h-1.5 w-full rounded-full" />
++          </CardContent>
++        </Card>
++      ))}
++    </div>
++  )
++}
++
++function ChartSkeleton({ label }: Readonly<{ label: string }>) {
++  return (
++    <Card>
++      <CardHeader>
++        <Skeleton className="h-5 w-60" />
++      </CardHeader>
++      <CardContent>
++        <div className="space-y-2">
++          <Skeleton className="h-3 w-32" />
++          <Skeleton className="h-[320px] w-full rounded-md" />
++          <p className="text-xs text-slate-500">Cargando {label}…</p>
++        </div>
++      </CardContent>
++    </Card>
++  )
++}
++
++function TableSkeleton({ label }: Readonly<{ label: string }>) {
++  return (
++    <Card>
++      <CardHeader>
++        <Skeleton className="h-5 w-60" />
++      </CardHeader>
++      <CardContent className="space-y-3">
++        <div className="grid grid-cols-12 gap-3">
++          {Array.from({ length: 12 }).map((_, i) => (
++            <Skeleton key={i} className="h-3 w-full" />
++          ))}
++        </div>
++        {Array.from({ length: 8 }).map((_, r) => (
++          <div key={r} className="grid grid-cols-12 gap-3 py-1">
++            <Skeleton className="h-4 col-span-3" />
++            <Skeleton className="h-4 col-span-2" />
++            <Skeleton className="h-4 col-span-2" />
++            <Skeleton className="h-4 col-span-2" />
++            <Skeleton className="h-4 col-span-2 w-3/4" />
++            <Skeleton className="h-6 col-span-1 rounded-full w-3/4" />
++          </div>
++        ))}
++        <p className="text-xs text-slate-500">Cargando {label}…</p>
++      </CardContent>
++    </Card>
++  )
++}
++
++function ComposicionFvSkeleton() {
++  return (
++    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
++      <ChartSkeleton label="Donut Fijo vs Variable" />
++      <TableSkeleton label="7 Rubros SAT" />
++    </div>
++  )
++}
++
++// ============================================================================
++// HELPER 2 · humanViewLabel (Paquete 7.1 · Extract nested ternario L206-211)
++// ============================================================================
++
++function humanViewLabel(view: DireccionViewMode | undefined | null): string {
++  if (!view) return 'mensual'
++  switch (view) {
++    case 'monthly':   return 'mensual'
++    case 'quarterly': return 'trimestral'
++    case 'yearly':    return 'anual'
++    default:          return 'mensual'
++  }
++}
++
++// ============================================================================
++// HELPER 3 · buildFiltersForFilterBar (Paquete 7.1 · Fix ambiguous space L138-145)
++// ============================================================================
++
++function buildFiltersForFilterBar(filters: ResolvedDireccionFilters) {
++  return {
++    startDate: filters.startDate,
++    endDate: filters.endDate,
++    departamento: filters.departamento ?? null,
++    anioComparativo: filters.anioComparativo ?? null,
++    view: (filters.view ?? 'monthly') as DireccionViewMode,
++    sections: filters.sections,
++  } as const
++}
++
++// ============================================================================
++// HELPER 4 · lookupCompanyMetadata (Paquete 7.1 · Extract prisma try/catch L148-161)
++// ============================================================================
++
++type CompanyMeta = Readonly<{ rfc: string | null; displayName: string | null }>
++
++async function lookupCompanyMetadata(companyId: string | undefined): Promise<CompanyMeta> {
++  if (!companyId) return { rfc: null, displayName: null }
++  try {
++    const company = await prisma.company.findUnique({
++      where: { id: companyId },
++      select: { rfc: true, businessName: true, name: true },
++    })
++    if (!company) return { rfc: null, displayName: null }
++    return {
++      rfc: company.rfc,
++      displayName: company.businessName || company.name || null,
++    }
++  } catch {
++    return { rfc: null, displayName: null }
++  }
++}
++
++// ============================================================================
++// HELPER 5 · resolveFetchScope (Paquete 7.1 · Fix ambiguous L163-172)
++// ============================================================================
++
++function resolveFetchScope(filters: ResolvedDireccionFilters): DireccionFetchScope | null {
++  if (!filters.companyId) return null
++  return {
++    companyId: filters.companyId,
++    organizationId: filters.organizationId ?? null,
++    fiscalEntityId: filters.fiscalEntityId ?? filters.companyId,
++    startDate: filters.startDate,
++    endDate: filters.endDate,
++    departamento: filters.departamento ?? null,
++  }
++}
++
++// ============================================================================
++// SUB-COMPONENTE 1 · HeaderDireccion (Paquete 7.1 · Extract header 179-222 inline)
++// ============================================================================
++
++function HeaderDireccion({
++  filters,
++  companyRfc,
++  companyDisplayName,
++}: Readonly<{
++  filters: ResolvedDireccionFilters
++  companyRfc: string | null
++  companyDisplayName: string | null
++}>) {
++  const s0 = filters.startDate
++  const s1 = filters.endDate
++  const startFmt = format(parseISO(s0), 'dd/MM/yyyy', { locale: es })
++  const endFmt = format(parseISO(s1), 'dd/MM/yyyy', { locale: es })
++  return (
++    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
++      <div>
++        <p className="text-xs uppercase tracking-widest text-slate-500 mb-1">
++          Tablero RH Directivo · Dirección General
++        </p>
++        <h1 className="text-3xl font-bold tracking-tight">
++          Costo Laboral Ejecutivo · Vista C-Level
++        </h1>
++        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
++          <span>Período: {startFmt} — {endFmt}</span>
++          {filters.departamento && (
++            <>
++              <span>·</span>
++              <span>Departamento: <strong>{filters.departamento}</strong></span>
++            </>
++          )}
++          <span>·</span>
++          <span>Comparativo YoY vs año <strong>{filters.anioComparativo}</strong></span>
++          <span>·</span>
++          <span>
++            Vista {humanViewLabel(filters.view)} · {filters.sections.length} / {DIRECCION_SECTIONS.length} secciones
++          </span>
++        </div>
++      </div>
++      <div className="flex items-center space-x-2">
++        {(companyRfc || companyDisplayName) && (
++          <span className="text-sm text-muted-foreground">
++            {companyRfc || 'N/A'} · {companyDisplayName || 'Empresa'}
++          </span>
++        )}
++      </div>
++    </div>
++  )
++}
++
++// ============================================================================
++// SUB-COMPONENTE 2 · CardSeleccionaEmpresa (Paquete 7.1 · Extract L230-239)
++// ============================================================================
++
++function CardSeleccionaEmpresa(): ReactNode {
++  return (
++    <Card>
++      <CardHeader>
++        <div className="text-lg font-semibold">Selecciona una empresa</div>
++      </CardHeader>
++      <CardContent className="text-sm text-muted-foreground">
++        No se pudo resolver una empresa seleccionada. Usa el selector del sidebar o agrega
++        <code className="inline-block mx-1 px-1 rounded bg-slate-100">?companyId=...</code>
++        a la URL para visualizar el Tablero Directivo.
++      </CardContent>
++    </Card>
++  )
++}
++
++// ============================================================================
++// SUB-COMPONENTE 3 · CardSinSeccionesVisibles (Paquete 7.1 · Extract L282-290)
++// ============================================================================
++
++function CardSinSeccionesVisibles(): ReactNode {
++  return (
++    <Card>
++      <CardHeader>
++        <div className="text-base font-semibold">Sin secciones visibles</div>
++      </CardHeader>
++      <CardContent className="text-sm text-muted-foreground">
++        Usa el botón <strong>Visualización</strong> de la barra de filtros para seleccionar
++        qué indicadores o gráficas deseas ver en este tablero.
++      </CardContent>
++    </Card>
++  )
++}
++
++// ============================================================================
++// HELPER 6 · renderSectionsOrEmpty (Paquete 7.1 · Extract nested sections L243-291)
++//   Early returns: 1) no secciones visibles → card 2) 4 Suspense individuales.
++// ============================================================================
++
++function renderSectionsOrEmpty(
++  filters: ResolvedDireccionFilters,
++  scope: DireccionFetchScope,
++  view: DireccionViewMode,
++  anioComparativo: number | null,
++): ReactNode {
++  if (filters.sections.length === 0) return <CardSinSeccionesVisibles />
++  const secs = filters.sections
++  return (
++    <>
++      {secs.includes('kpis') && (
++        <Suspense key="sec-kpis" fallback={<KpiGridSkeleton />}>
++          <DireccionKpisSection scope={scope} />
++        </Suspense>
++      )}
++      {secs.includes('tendencia_historica') && (
++        <Suspense key="sec-tendencia" fallback={<ChartSkeleton label="Tendencia Histórica y YoY" />}>
++          <DireccionTendenciaChart scope={scope} view={view} anioComparativo={anioComparativo} />
++        </Suspense>
++      )}
++      {secs.includes('composicion_fijo_variable') && (
++        <Suspense key="sec-fv" fallback={<ComposicionFvSkeleton />}>
++          <DireccionComposicionFijoVariable scope={scope} />
++        </Suspense>
++      )}
++      {secs.includes('desviacion_presupuestal') && (
++        <Suspense key="sec-desv" fallback={<TableSkeleton label="Desviación Presupuestal por Departamento" />}>
++          <DireccionDesviacionPresupuestal scope={scope} />
++        </Suspense>
++      )}
++    </>
++  )
++}
++
++// ============================================================================
++// HELPER 7 · renderBody (Paquete 7.1 · Extract ternario 229-293)
++//   Early return: !hasCompany || !scope → CardSeleccionaEmpresa
++// ============================================================================
++
++function renderBody(
++  filters: ResolvedDireccionFilters,
++  scope: DireccionFetchScope | null,
++): ReactNode {
++  if (!filters.companyId || !scope) return <CardSeleccionaEmpresa />
++  const view: DireccionViewMode = (filters.view ?? 'monthly') as DireccionViewMode
++  const anioComparativo = filters.anioComparativo ?? null
++  return renderSectionsOrEmpty(filters, scope, view, anioComparativo)
++}
++
++// ============================================================================
++// COMPONENTE PRINCIPAL SERVER PAGE (Paquete 7.1 · ORQUESTADOR <50 líneas)
++// ============================================================================
++
++export async function DireccionDashboardServerPage({
++  initialFilters,
++}: Readonly<{ initialFilters: ReturnType<typeof parseDireccionSearchParams> }>) {
++  const filters = resolveFilters(initialFilters)
++  const hasCompany = !!filters.companyId && filters.companyId.length > 0
++  const filtersForFilterBar = buildFiltersForFilterBar(filters)
++
++  const { rfc: companyRfc, displayName: companyDisplayName } = hasCompany
++    ? await lookupCompanyMetadata(filters.companyId)
++    : { rfc: null as string | null, displayName: null as string | null }
++
++  const scope = resolveFetchScope(filters)
++
++  return (
++    <ProtectedRoute>
++      <div className="flex-1 space-y-4 p-4 md:p-6 pt-6">
++        <HeaderDireccion
++          filters={filters}
++          companyRfc={companyRfc}
++          companyDisplayName={companyDisplayName}
++        />
++        <div className="flex flex-col sm:flex-row gap-4 py-4 items-end">
++          <DireccionFilterBar filters={filtersForFilterBar} />
++        </div>
++        {renderBody(filters, scope)}
++      </div>
++    </ProtectedRoute>
++  )
++}

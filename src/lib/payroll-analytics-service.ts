@@ -16,13 +16,18 @@ import { Prisma } from '@prisma/client';
 // ------------------------------------------------------------
 // Validación de parámetros de entrada (Zod tipado estricto)
 // ------------------------------------------------------------
+// Expresión regular compatible para CUIDs antiguos (v1)
+const cuidRegex = /^c[\w-]{24,}$/i;
+
 export const PayrollDashboardFiltersSchema = z.object({
-  organizationId: z.string().cuid().min(1),
-  companyId: z.string().cuid().min(1),
-  fiscalEntityId: z.string().cuid().optional().nullable(),
-  startDate: z.coerce.date(),
-  endDate: z.coerce.date(),
+  organizationId: z.string().regex(cuidRegex, 'Invalid CUID').optional().nullable(),
+  companyId: z.string().regex(cuidRegex, 'Invalid CUID').min(1),
+  fiscalEntityId: z.string().regex(cuidRegex, 'Invalid CUID').optional().nullable(),
+  startDate: z.coerce.date().optional().nullable(),
+  endDate: z.coerce.date().optional().nullable(),
   departamento: z.string().max(80).optional().nullable(),
+  tipoNomina: z.string().max(5).optional().nullable(),
+  periodicidad: z.string().max(5).optional().nullable(),
 });
 
 export type PayrollDashboardFilters = z.infer<typeof PayrollDashboardFiltersSchema>;
@@ -117,18 +122,32 @@ export function buildScopeClauses(filters: PayrollDashboardFilters): {
   const fragments: Prisma.Sql[] = [];
   const params: Prisma.Sql[] = [];
 
-  fragments.push(Prisma.sql`organization_id = ${filters.organizationId}::uuid`);
-  fragments.push(Prisma.sql`company_id = ${filters.companyId}::uuid`);
+  if (filters.organizationId) {
+    fragments.push(Prisma.sql`organization_id = ${filters.organizationId}`);
+  }
+  fragments.push(Prisma.sql`company_id = ${filters.companyId}`);
 
   if (filters.fiscalEntityId) {
-    fragments.push(Prisma.sql`fiscal_entity_id = ${filters.fiscalEntityId}::uuid`);
+    fragments.push(Prisma.sql`fiscal_entity_id = ${filters.fiscalEntityId}`);
   }
 
-  fragments.push(Prisma.sql`mes_pago >= ${filters.startDate.toISOString().slice(0, 10)}::date`);
-  fragments.push(Prisma.sql`mes_pago <= ${filters.endDate.toISOString().slice(0, 10)}::date`);
+  if (filters.startDate) {
+    fragments.push(Prisma.sql`mes_pago >= ${filters.startDate.toISOString().slice(0, 10)}::date`);
+  }
+  if (filters.endDate) {
+    fragments.push(Prisma.sql`mes_pago <= ${filters.endDate.toISOString().slice(0, 10)}::date`);
+  }
 
   if (filters.departamento) {
     fragments.push(Prisma.sql`departamento = ${filters.departamento}`);
+  }
+
+  if (filters.tipoNomina) {
+    fragments.push(Prisma.sql`tipo_nomina = ${filters.tipoNomina}`);
+  }
+
+  if (filters.periodicidad) {
+    fragments.push(Prisma.sql`periodicidad_pago = ${filters.periodicidad}`);
   }
 
   return { params, fragments };
@@ -140,6 +159,7 @@ export function buildScopeClauses(filters: PayrollDashboardFilters): {
 export async function fetchHeadcountKpis(
   filters: PayrollDashboardFilters,
 ): Promise<HeadcountKpiRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const { fragments } = buildScopeClauses(filters);
   const where = Prisma.join(fragments, ' AND ');
 
@@ -167,6 +187,7 @@ export async function fetchHeadcountKpis(
 export async function fetchTurnover(
   filters: PayrollDashboardFilters,
 ): Promise<TurnoverRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const { fragments } = buildScopeClauses(filters);
   const where = Prisma.join(fragments, ' AND ');
 
@@ -192,6 +213,7 @@ export async function fetchTurnover(
 export async function fetchIncapacidades(
   filters: PayrollDashboardFilters,
 ): Promise<IncapacidadRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const { fragments } = buildScopeClauses(filters);
   const where = Prisma.join(fragments, ' AND ');
 
@@ -219,6 +241,7 @@ export async function fetchIncapacidades(
 export async function fetchHorasExtra(
   filters: PayrollDashboardFilters,
 ): Promise<HorasExtraRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const { fragments } = buildScopeClauses(filters);
   const where = Prisma.join(fragments, ' AND ');
 
@@ -246,14 +269,23 @@ export async function fetchHorasExtra(
 export async function fetchPlantilla(
   filters: PayrollDashboardFilters,
 ): Promise<PlantillaRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const fragments: Prisma.Sql[] = [];
-  fragments.push(Prisma.sql`organization_id = ${filters.organizationId}::uuid`);
-  fragments.push(Prisma.sql`company_id = ${filters.companyId}::uuid`);
+  if (filters.organizationId) {
+    fragments.push(Prisma.sql`organization_id = ${filters.organizationId}`);
+  }
+  fragments.push(Prisma.sql`company_id = ${filters.companyId}`);
   if (filters.fiscalEntityId) {
-    fragments.push(Prisma.sql`fiscal_entity_id = ${filters.fiscalEntityId}::uuid`);
+    fragments.push(Prisma.sql`fiscal_entity_id = ${filters.fiscalEntityId}`);
   }
   if (filters.departamento) {
     fragments.push(Prisma.sql`departamento = ${filters.departamento}`);
+  }
+  if (filters.tipoNomina) {
+    fragments.push(Prisma.sql`tipo_nomina = ${filters.tipoNomina}`);
+  }
+  if (filters.periodicidad) {
+    fragments.push(Prisma.sql`periodicidad_pago = ${filters.periodicidad}`);
   }
   const where = Prisma.join(fragments, ' AND ');
 
@@ -278,6 +310,7 @@ export async function fetchPlantilla(
 export async function fetchBeneficios(
   filters: PayrollDashboardFilters,
 ): Promise<BeneficioRow[]> {
+  if (!filters.startDate || !filters.endDate) return [];
   const { fragments } = buildScopeClauses(filters);
   const where = Prisma.join(fragments, ' AND ');
 
@@ -307,6 +340,19 @@ export async function fetchHrDashboardAggregate(
   rawFilters: unknown,
 ): Promise<HrDashboardAggregate> {
   const filters = PayrollDashboardFiltersSchema.parse(rawFilters);
+
+  // Si no hay fechas definidas, el tablero debe iniciar vacío (sin datos)
+  // para obligar al usuario a realizar una consulta explícita.
+  if (!filters.startDate || !filters.endDate) {
+    return {
+      headcountKpis: [],
+      turnover: [],
+      incapacidades: [],
+      horasExtra: [],
+      plantilla: [],
+      beneficios: [],
+    };
+  }
 
   const [headcountKpis, turnover, incapacidades, horasExtra, plantilla, beneficios] =
     await Promise.all([

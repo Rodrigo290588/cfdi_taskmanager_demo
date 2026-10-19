@@ -15,48 +15,59 @@
 -- ------------------------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_hr_turnover_mensual AS
 WITH
-  recepciones_por_mes AS (
-    SELECT
-      pr.organization_id,
-      pr.company_id,
-      pr.fiscal_entity_id,
-      pr.departamento,
-      prre.rfc                         AS receptor_rfc,
-      DATE_TRUNC('month', pr.fecha_pago)::DATE AS mes_pago,
-      MIN(pr.fecha_pago)               AS primera_fecha_pago,
-      MAX(pr.fecha_pago)               AS ultima_fecha_pago,
-      COUNT(DISTINCT pr.uuid)          AS recibos_mes
-    FROM payroll_receipts pr
-    JOIN payroll_receptors prre ON prre.payroll_receipt_id = pr.id
-    GROUP BY 1,2,3,4,5,6
-  ),
-  lag_lead AS (
-    SELECT
-      r.*,
-      LAG(mes_pago) OVER (
-        PARTITION BY organization_id, company_id, receptor_rfc
-        ORDER BY mes_pago
-      ) AS mes_anterior,
-      LEAD(mes_pago) OVER (
-        PARTITION BY organization_id, company_id, receptor_rfc
-        ORDER BY mes_pago
-      ) AS mes_siguiente
-    FROM recepciones_por_mes r
-  )
-SELECT
-  organization_id,
-  company_id,
-  fiscal_entity_id,
-  departamento,
-  mes_pago,
-  COUNT(*) FILTER (
-    WHERE mes_anterior IS NULL
-       OR (mes_pago - mes_anterior) > 60
-  )::INT AS altas,
-  COUNT(*) FILTER (
-    WHERE mes_siguiente IS NULL
-       OR (mes_siguiente - mes_pago) > 60
-  )::INT AS bajas,
+    max_mes_company AS (
+      SELECT company_id, MAX(DATE_TRUNC('month', fecha_pago)::DATE) as max_mes_pago
+      FROM payroll_receipts
+      GROUP BY company_id
+    ),
+    recepciones_por_mes AS (
+      SELECT
+        pr.organization_id,
+        pr.company_id,
+        pr.fiscal_entity_id,
+        pr.departamento,
+        pr.tipo_nomina,
+        prre.periodicidad_pago,
+        prre.rfc                         AS receptor_rfc,
+        DATE_TRUNC('month', pr.fecha_pago)::DATE AS mes_pago,
+        MIN(pr.fecha_pago)               AS primera_fecha_pago,
+        MAX(pr.fecha_pago)               AS ultima_fecha_pago,
+        COUNT(DISTINCT pr.uuid)          AS recibos_mes
+      FROM payroll_receipts pr
+      JOIN payroll_receptors prre ON prre.payroll_receipt_id = pr.id
+      GROUP BY 1,2,3,4,5,6,7,8
+    ),
+    lag_lead AS (
+      SELECT
+        r.*,
+        LAG(r.mes_pago) OVER (
+          PARTITION BY r.organization_id, r.company_id, r.tipo_nomina, r.periodicidad_pago, r.receptor_rfc
+          ORDER BY r.mes_pago
+        ) AS mes_anterior,
+        LEAD(r.mes_pago) OVER (
+          PARTITION BY r.organization_id, r.company_id, r.tipo_nomina, r.periodicidad_pago, r.receptor_rfc
+          ORDER BY r.mes_pago
+        ) AS mes_siguiente,
+        m.max_mes_pago
+      FROM recepciones_por_mes r
+      JOIN max_mes_company m ON m.company_id = r.company_id
+    )
+  SELECT
+    organization_id,
+    company_id,
+    fiscal_entity_id,
+    departamento,
+    tipo_nomina,
+    periodicidad_pago,
+    mes_pago,
+    COUNT(*) FILTER (
+      WHERE mes_anterior IS NULL
+         OR (mes_pago - mes_anterior) > 60
+    )::INT AS altas,
+    COUNT(*) FILTER (
+      WHERE (mes_siguiente IS NULL AND (max_mes_pago - mes_pago) > 60)
+         OR (mes_siguiente - mes_pago) > 60
+    )::INT AS bajas,
   COUNT(*) FILTER (
     WHERE mes_anterior IS NOT NULL
       AND (mes_pago - mes_anterior) > 60
@@ -64,7 +75,7 @@ SELECT
   COUNT(DISTINCT receptor_rfc)     AS empleados_activos,
   SUM(recibos_mes)                 AS total_recibos
 FROM lag_lead
-GROUP BY 1,2,3,4,5
+GROUP BY 1,2,3,4,5,6,7
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_turnover_pk
@@ -85,6 +96,8 @@ SELECT
   pr.company_id,
   pr.fiscal_entity_id,
   pr.departamento,
+  pr.tipo_nomina,
+  prre.periodicidad_pago,
   DATE_TRUNC('month', pr.fecha_pago)::DATE  AS mes_pago,
   prre.rfc                                   AS receptor_rfc,
   pi.tipo_incapacidad,
@@ -102,7 +115,7 @@ SELECT
 FROM payroll_receipts pr
 JOIN payroll_incapacidades   pi   ON pi.payroll_receipt_id   = pr.id
 JOIN payroll_receptors       prre ON prre.payroll_receipt_id = pr.id
-GROUP BY 1,2,3,4,5,6,7,8
+GROUP BY 1,2,3,4,5,6,7,8,9,10
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_incapacidades_pk
@@ -125,6 +138,8 @@ SELECT
   pr.company_id,
   pr.fiscal_entity_id,
   COALESCE(pr.departamento, 'Sin Departamento') AS departamento,
+  pr.tipo_nomina,
+  prre.periodicidad_pago,
   DATE_TRUNC('month', pr.fecha_pago)::DATE       AS mes_pago,
   phe.tipo_horas,
   CASE phe.tipo_horas
@@ -140,7 +155,7 @@ SELECT
 FROM payroll_receipts pr
 JOIN payroll_horas_extra    phe  ON phe.payroll_receipt_id  = pr.id
 JOIN payroll_receptors      prre ON prre.payroll_receipt_id = pr.id
-GROUP BY 1,2,3,4,5,6,7
+GROUP BY 1,2,3,4,5,6,7,8,9
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_horas_extra_pk
@@ -169,6 +184,8 @@ WITH
       MAX(prre.fecha_inicio_rel_laboral)
         FILTER (WHERE prre.fecha_inicio_rel_laboral IS NOT NULL)
                                        AS fecha_inicio_rel_laboral,
+      MAX(pr.tipo_nomina)            AS tipo_nomina,
+      MAX(prre.periodicidad_pago)      AS periodicidad_pago,
       MAX(prre.tipo_contrato)          AS tipo_contrato,
       MAX(prre.tipo_jornada)           AS tipo_jornada,
       MAX(prre.tipo_regimen)           AS tipo_regimen,
@@ -180,13 +197,15 @@ WITH
     FROM payroll_receipts pr
     JOIN payroll_receptors prre ON prre.payroll_receipt_id = pr.id
     GROUP BY 1,2,3,4
-    HAVING MAX(pr.fecha_pago)::DATE >= (NOW() - INTERVAL '90 days')::DATE
+    HAVING MAX(pr.fecha_pago)::DATE >= (NOW() - INTERVAL '3650 days')::DATE
   )
 SELECT
   organization_id,
   company_id,
   fiscal_entity_id,
   COALESCE(departamento, 'Sin Departamento') AS departamento,
+  tipo_nomina,
+  periodicidad_pago,
   COALESCE(tipo_contrato, 'Sin Especificar') AS tipo_contrato,
   COALESCE(tipo_jornada, 'Sin Especificar') AS tipo_jornada,
   COUNT(DISTINCT rfc)                        AS num_empleados,
@@ -200,7 +219,7 @@ SELECT
   )::DECIMAL(8,2)                            AS antiguedad_promedio_anios,
   AVG(ultimo_sdi)::DECIMAL(18,6)            AS sdi_promedio
 FROM ultimo_recibo_empleado
-GROUP BY 1,2,3,4,5,6
+GROUP BY 1,2,3,4,5,6,7,8
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_plantilla_pk
@@ -223,6 +242,8 @@ SELECT
   pr.company_id,
   pr.fiscal_entity_id,
   COALESCE(pr.departamento, 'Sin Departamento') AS departamento,
+  pr.tipo_nomina,
+  prre.periodicidad_pago,
   DATE_TRUNC('month', pr.fecha_pago)::DATE       AS mes_pago,
   pp.tipo_percepcion,
   CASE pp.tipo_percepcion
@@ -242,7 +263,7 @@ FROM payroll_receipts pr
 JOIN payroll_percepciones   pp   ON pp.payroll_receipt_id   = pr.id
 JOIN payroll_receptors      prre ON prre.payroll_receipt_id = pr.id
 WHERE pp.tipo_percepcion IN ('005','010','029','049')
-GROUP BY 1,2,3,4,5,6,7,8
+GROUP BY 1,2,3,4,5,6,7,8,9,10
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_beneficios_pk
@@ -265,6 +286,8 @@ SELECT
   pr.company_id,
   pr.fiscal_entity_id,
   COALESCE(pr.departamento, 'Sin Departamento') AS departamento,
+  pr.tipo_nomina,
+  prre.periodicidad_pago,
   DATE_TRUNC('month', pr.fecha_pago)::DATE       AS mes_pago,
   COUNT(DISTINCT pr.id)                           AS recibos_procesados,
   COUNT(DISTINCT prre.rfc)                        AS empleados_pagados,
@@ -275,7 +298,7 @@ SELECT
   AVG(pr.total_percepciones)                      AS ticket_promedio_percepciones
 FROM payroll_receipts pr
 JOIN payroll_receptors prre ON prre.payroll_receipt_id = pr.id
-GROUP BY 1,2,3,4,5
+GROUP BY 1,2,3,4,5,6,7
 WITH DATA;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_kpis_pk

@@ -7,9 +7,9 @@
 // ============================================================
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  PieChart, Pie, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, CartesianGrid, XAxis, YAxis,
 } from 'recharts';
 import { AlertTriangle } from 'lucide-react';
@@ -20,6 +20,7 @@ import {
   ChartCard, KpiCardRh, TrendBadge, fmtNum, fmtMxn,
   RH_PALETTE, RhEmptyState,
 } from './rh-shared';
+import { RhDrilldownModal, RhDrilldownType } from './rh-drilldown-modal';
 
 type RechartsFormatterSafe = (value: unknown, name: unknown, extra?: unknown) => [string | number, string] | string | number;
 
@@ -43,8 +44,26 @@ const TIPO_FILL: Record<string, string> = {
 
 export function RhIncapacidadesPanel({
   rows,
-}: { rows: IncapacidadesInputRow[] }) {
+  previousLabel,
+  filters,
+}: { 
+  readonly rows: IncapacidadesInputRow[], 
+  readonly previousLabel?: string,
+  readonly filters?: Record<string, string | null | undefined>
+}) {
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownType, setDrilldownType] = useState<RhDrilldownType>(null);
+  const [drilldownSummaryValue, setDrilldownSummaryValue] = useState<string | null>(null);
+
   const { pie, bars, summary, previous } = useMemo(() => aggregate(rows), [rows]);
+
+  const handleOpenDrilldown = (type: RhDrilldownType, summaryValue: string) => {
+      setDrilldownType(type);
+      setDrilldownSummaryValue(summaryValue);
+      setDrilldownOpen(true);
+  };
+
+  const hasValidFilters = Boolean(filters?.startDate && filters?.endDate);
 
   if (!pie.length) {
     return (
@@ -65,12 +84,32 @@ export function RhIncapacidadesPanel({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCardRh title="Días de incapacidad" value={fmtNum(summary.dias, 0)}
           tone="amber" icon={<AlertTriangle className="h-4 w-4"/>}
-          trend={<TrendBadge value={summary.dias} previous={previous.dias} mode="reversed"/>} />
+          tooltipText="Suma total de días amparados por certificados de incapacidad emitidos por el IMSS (riesgo de trabajo, enfermedad o maternidad)."
+          onClick={hasValidFilters && summary.dias > 0 ? () => handleOpenDrilldown('dias_incapacidad', fmtNum(summary.dias, 0)) : undefined}
+          trend={
+            <div className="flex flex-col items-center gap-1">
+              <TrendBadge value={summary.dias} previous={previous.dias} mode="reversed"/>
+              {previous.dias > 0 && <span className="text-[10px] text-muted-foreground">{previousLabel || 'vs período anterior'}</span>}
+            </div>
+          } />
         <KpiCardRh title="Eventos registrados" value={fmtNum(summary.eventos, 0)} tone="rose"
-          trend={<TrendBadge value={summary.eventos} previous={previous.eventos} mode="reversed"/>} />
-        <KpiCardRh title="Empleados afectados" value={fmtNum(summary.empleados, 0)} tone="indigo" />
+          icon={<AlertTriangle className="h-4 w-4"/>}
+          tooltipText="Cantidad de registros o certificados de incapacidad reportados en los recibos de nómina del período."
+          onClick={hasValidFilters && summary.eventos > 0 ? () => handleOpenDrilldown('eventos_incapacidad', fmtNum(summary.eventos, 0)) : undefined}
+          trend={
+            <div className="flex flex-col items-center gap-1">
+              <TrendBadge value={summary.eventos} previous={previous.eventos} mode="reversed"/>
+              {previous.eventos > 0 && <span className="text-[10px] text-muted-foreground">{previousLabel || 'vs período anterior'}</span>}
+            </div>
+          } />
+        <KpiCardRh title="Empleados afectados" value={fmtNum(summary.empleados, 0)} tone="indigo"
+          icon={<AlertTriangle className="h-4 w-4"/>}
+          tooltipText="Número de trabajadores únicos (RFCs) que presentaron al menos un certificado de incapacidad."
+          onClick={hasValidFilters && summary.empleados > 0 ? () => handleOpenDrilldown('empleados_incapacidad', fmtNum(summary.empleados, 0)) : undefined} />
         <KpiCardRh title="Días promedio / evento" value={fmtNum(diasPorEvento, 2)} tone="slate"
-          subtext="SLA salud ocupacional ≤ 3.0 días/evento" />
+          icon={<AlertTriangle className="h-4 w-4"/>}
+          subtext="SLA salud ocupacional ≤ 3.0 días/evento"
+          tooltipText="Promedio obtenido al dividir el total de 'Días de incapacidad' entre los 'Eventos registrados'." />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -78,56 +117,67 @@ export function RhIncapacidadesPanel({
           subtitle="Proporción de días de incapacidad por código"
           badge={<span className="text-[10px] text-slate-500">Total ${fmtMxn(summary.importe)}</span>}
           minHeight={280}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={pie} dataKey="value" nameKey="name"
-                cx="50%" cy="50%" outerRadius={95} innerRadius={55}
-                paddingAngle={2} isAnimationActive={false}>
-                {pie.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.fill} stroke="#fff" strokeWidth={2}/>
-                ))}
-              </Pie>
-              <Tooltip formatter={((v: number, _n: unknown, entry: unknown) => {
-                const payload = (entry as { payload?: { pct?: string; name?: string } })?.payload;
-                return [`${fmtNum(v,0)} días (${payload?.pct ?? ''})`, payload?.name ?? ''];
-              }) as RechartsFormatterSafe} contentStyle={{ fontSize: 12 }}/>
-              <Legend wrapperStyle={{ fontSize: 12 }}/>
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="h-[240px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pie} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={95} innerRadius={55}
+                  paddingAngle={2} isAnimationActive={false} stroke="#fff" strokeWidth={2} />
+                <Tooltip formatter={((v: number, _n: unknown, entry: unknown) => {
+                  const payload = (entry as { payload?: { pct?: string; name?: string } })?.payload;
+                  return [`${fmtNum(v,0)} días (${payload?.pct ?? ''})`, payload?.name ?? ''];
+                }) as RechartsFormatterSafe} contentStyle={{ fontSize: 12 }}/>
+                <Legend wrapperStyle={{ fontSize: 12 }}/>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
 
         <ChartCard title="Días por mes · Serie histórica"
           subtitle="Evolución mensual para detección de brotes / estacionalidad"
           footer="El pico rojo identifica meses con > 2σ sobre la media del período."
           minHeight={280}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={bars} margin={{ top: 8, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={RH_PALETTE.grid}/>
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: RH_PALETTE.text }}/>
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: RH_PALETTE.text }}/>
-              <Tooltip
-                formatter={((v: number, n: string) => [
-                  n === 'dias' ? `${fmtNum(v,0)} días` :
-                  n === 'empleados' ? `${fmtNum(v,0)} personas` : String(v),
-                  n === 'dias' ? 'Días' :
-                  n === 'empleados' ? 'Empleados afectados' : String(n),
-                ]) as RechartsFormatterSafe} contentStyle={{ fontSize: 12 }}/>
-              <Legend wrapperStyle={{ fontSize: 12 }}/>
-              <Bar dataKey="dias" name="Días de incapacidad" stackId="a"
-                   radius={[4,4,0,0]} barSize={18}>
-                {bars.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.anomaly ? RH_PALETTE.incapacidades.riesgoTrabajo
-                                                     : RH_PALETTE.incapacidades.enfermedadGeneral}/>
-                ))}
-              </Bar>
-              <Bar dataKey="empleados" name="Empleados afectados" stackId="b"
-                   fill={RH_PALETTE.incapacidades.maternidad}
-                   radius={[4,4,0,0]} barSize={18}/>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[240px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={bars} margin={{ top: 8, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={RH_PALETTE.grid}/>
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: RH_PALETTE.text }}/>
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: RH_PALETTE.text }}/>
+                <Tooltip
+                  formatter={((v: number, n: string) => {
+                    let val = String(v);
+                    let label = String(n);
+                    
+                    if (n === 'dias') {
+                      val = `${fmtNum(v,0)} días`;
+                      label = 'Días';
+                    } else if (n === 'empleados') {
+                      val = `${fmtNum(v,0)} personas`;
+                      label = 'Empleados afectados';
+                    }
+                    
+                    return [val, label];
+                  }) as RechartsFormatterSafe} contentStyle={{ fontSize: 12 }}/>
+                <Legend wrapperStyle={{ fontSize: 12 }}/>
+                <Bar dataKey="dias" name="Días de incapacidad" stackId="a"
+                     radius={[4,4,0,0]} barSize={18} fill={RH_PALETTE.incapacidades.enfermedadGeneral} />
+                <Bar dataKey="empleados" name="Empleados afectados" stackId="b"
+                     fill={RH_PALETTE.incapacidades.maternidad}
+                     radius={[4,4,0,0]} barSize={18}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ChartCard>
       </div>
+
+      <RhDrilldownModal
+          open={drilldownOpen}
+          onOpenChange={setDrilldownOpen}
+          type={drilldownType}
+          filters={filters || {}}
+          summaryValue={drilldownSummaryValue}
+      />
     </div>
   );
 }
@@ -199,7 +249,6 @@ function aggregate(rows: IncapacidadesInputRow[]) {
   // Período anterior (primera mitad vs segunda mitad)
   const half = Math.max(1, Math.floor(bars.length / 2));
   const first = bars.slice(0, half);
-  const second = bars.slice(half);
   const sumBars = (arr: typeof bars, k: 'dias'|'empleados') =>
     arr.reduce((a, c) => a + (c[k] || 0), 0);
   const countEventosByBar = (barKeys: typeof bars) => {
@@ -207,7 +256,6 @@ function aggregate(rows: IncapacidadesInputRow[]) {
     const w = barKeys.length / Math.max(1, bars.length);
     return Math.round(totalEventos * w);
   };
-  void second;
 
   const summary = {
     dias: totalDias, eventos: totalEventos,

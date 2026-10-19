@@ -107,6 +107,7 @@ export function __test_only_clearRedisCache(): void {
 
 export const MASS_DOWNLOAD_QUEUE_NAME = 'mass-download-queue'
 export const MASS_VERIFICATION_QUEUE_NAME = 'mass-verification-queue'
+export const MASS_PACKAGE_DOWNLOAD_QUEUE_NAME = 'mass-package-download-queue'
 export const PROVIDER_PAYMENT_COMPLIANCE_QUEUE_NAME = 'provider-payment-compliance-queue'
 export const SAT_69B_BLACKLIST_QUEUE_NAME = 'sat-69b-blacklist-queue'
 export const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME = 'provider-post-load-cancellation-alerts-queue'
@@ -115,6 +116,7 @@ export const CFDI_IMPORT_ITEM_QUEUE_NAME = 'cfdi-import-item-queue'
 
 let _massDownloadQueue: Queue | null = null
 let _massVerificationQueue: Queue | null = null
+let _massPackageDownloadQueue: Queue | null = null
 let _providerPaymentComplianceQueue: Queue | null = null
 let _sat69BBlacklistQueue: Queue | null = null
 let _providerPostLoadCancellationAlertsQueue: Queue | null = null
@@ -127,6 +129,14 @@ export function getMassDownloadQueue(): Queue {
     _massDownloadQueue = new Queue(MASS_DOWNLOAD_QUEUE_NAME, { connection })
   }
   return _massDownloadQueue
+}
+
+export function getMassPackageDownloadQueue(): Queue {
+  if (!_massPackageDownloadQueue) {
+    const connection = resolveRedisConnection()
+    _massPackageDownloadQueue = new Queue(MASS_PACKAGE_DOWNLOAD_QUEUE_NAME, { connection })
+  }
+  return _massPackageDownloadQueue
 }
 
 export function getMassVerificationQueue(): Queue {

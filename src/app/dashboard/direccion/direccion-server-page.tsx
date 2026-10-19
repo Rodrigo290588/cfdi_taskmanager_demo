@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from 'react'
-import { format, formatISO, parseISO, subMonths, startOfMonth, endOfMonth } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { ProtectedRoute } from '@/components/protected-route'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,20 +23,9 @@ import { DireccionDesviacionPresupuestal } from './_components/direccion-desviac
 type RawParsedDireccionFilters = ReturnType<typeof parseDireccionSearchParams>
 export type ResolvedDireccionFilters = RawParsedDireccionFilters & {
   companyId: string
-  startDate: string
-  endDate: string
+  startDate: string | null
+  endDate: string | null
   sections: DireccionSectionId[]
-}
-
-// ============================================================================
-// HELPERS FECHA DEFAULT (Paquete 7.1)
-// ============================================================================
-
-function defaultStartIso(): string {
-  return formatISO(subMonths(startOfMonth(new Date()), 12), { representation: 'date' })
-}
-function defaultEndIso(): string {
-  return formatISO(endOfMonth(new Date()), { representation: 'date' })
 }
 
 // ============================================================================
@@ -44,12 +33,8 @@ function defaultEndIso(): string {
 // ============================================================================
 
 function resolveFilters(initial: RawParsedDireccionFilters): ResolvedDireccionFilters {
-  const startDateRaw = initial.startDate
-  const endDateRaw = initial.endDate
-  const startDate =
-    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : defaultStartIso()
-  const endDate =
-    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : defaultEndIso()
+  const startDate = initial.startDate
+  const endDate = initial.endDate
   const defaultSections = DIRECCION_SECTIONS.map(s => s.id) as DireccionSectionId[]
   return {
     ...initial,
@@ -202,10 +187,11 @@ function resolveFetchScope(filters: ResolvedDireccionFilters): DireccionFetchSco
   return {
     companyId: filters.companyId,
     organizationId: filters.organizationId ?? null,
-    fiscalEntityId: filters.fiscalEntityId ?? filters.companyId,
+    fiscalEntityId: filters.fiscalEntityId ?? null,
     startDate: filters.startDate,
     endDate: filters.endDate,
     departamento: filters.departamento ?? null,
+    anioComparativo: filters.anioComparativo ?? null,
   }
 }
 
@@ -224,8 +210,10 @@ function HeaderDireccion({
 }>) {
   const s0 = filters.startDate
   const s1 = filters.endDate
-  const startFmt = format(parseISO(s0), 'dd/MM/yyyy', { locale: es })
-  const endFmt = format(parseISO(s1), 'dd/MM/yyyy', { locale: es })
+  const startFmt = s0 ? format(parseISO(s0), 'dd/MM/yyyy', { locale: es }) : ''
+  const endFmt = s1 ? format(parseISO(s1), 'dd/MM/yyyy', { locale: es }) : ''
+  const showDateLabel = s0 && s1 ? `Período: ${startFmt} — ${endFmt}` : 'Sin fechas seleccionadas (Tablero vacío)'
+
   return (
     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
       <div>
@@ -236,7 +224,7 @@ function HeaderDireccion({
           Costo Laboral Ejecutivo · Vista C-Level
         </h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>Período: {startFmt} — {endFmt}</span>
+          <span className={s0 && s1 ? '' : 'text-amber-600 font-medium'}>{showDateLabel}</span>
           {filters.departamento && (
             <>
               <span>·</span>
@@ -273,8 +261,8 @@ function CardSeleccionaEmpresa(): ReactNode {
         <div className="text-lg font-semibold">Selecciona una empresa</div>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        No se pudo resolver una empresa seleccionada. Usa el selector del sidebar o agrega
-        <code className="inline-block mx-1 px-1 rounded bg-slate-100">?companyId=...</code>
+        No se pudo resolver una empresa seleccionada. Usa el selector del sidebar o agrega{' '}
+        <code className="inline-block mx-1 px-1 rounded bg-slate-100">?companyId=...</code>{' '}
         a la URL para visualizar el Tablero Directivo.
       </CardContent>
     </Card>

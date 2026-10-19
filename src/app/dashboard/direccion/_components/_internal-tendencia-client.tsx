@@ -27,6 +27,7 @@ type SerializedRow = Readonly<{
   costoActual: number;
   costoYoY: number | null;
   diffPctYoY: number | null;
+  anioComparativo: number | null;
 }>;
 
 // ============================================================================
@@ -49,12 +50,13 @@ function computeDiffPct(actual: number, yoy: number | null): number | null {
   return (actual - yoy) / yoy;
 }
 
-function serializeOneRow(r: DireccionTendenciaRow): SerializedRow {
+function serializeOneRow(r: DireccionTendenciaRow, anioComparativo: number | null): SerializedRow {
   return {
     label: r.label,
     costoActual: Number(r.costoActual ?? 0),
     costoYoY: r.costoYoY === null || r.costoYoY === undefined ? null : Number(r.costoYoY),
     diffPctYoY: r.diffPctYoY === null || r.diffPctYoY === undefined ? null : Number(r.diffPctYoY),
+    anioComparativo,
   };
 }
 
@@ -71,10 +73,10 @@ function TooltipRowActual({ actual }: Readonly<{ actual: number }>) {
   );
 }
 
-function TooltipRowYoY({ yoy }: Readonly<{ yoy: number }>) {
+function TooltipRowYoY({ yoy, label }: Readonly<{ yoy: number, label: string }>) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="inline-flex items-center gap-1.5 text-slate-500"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed" style={{ borderColor: DIRECCION_PALETTE.yoYLine }} /> YoY referencia</span>
+      <span className="inline-flex items-center gap-1.5 text-slate-500"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed" style={{ borderColor: DIRECCION_PALETTE.yoYLine }} /> {label}</span>
       <span className="font-medium text-slate-600">{fmtMxn(yoy)}</span>
     </div>
   );
@@ -101,7 +103,7 @@ function TooltipRowDiff({
 function TooltipEmptyYoY() {
   return (
     <div className="text-[10.5px] text-slate-400 italic">
-      Sin datos de comparativo YoY para este período
+      Sin datos de comparativo para este período
     </div>
   );
 }
@@ -112,7 +114,7 @@ function TooltipEmptyYoY() {
 
 function CustomTooltip({ active, payload, label }: Readonly<{
   active?: boolean;
-  payload?: ReadonlyArray<{ readonly name: string; readonly value: number; readonly color: string }>;
+  payload?: ReadonlyArray<{ readonly name: string; readonly value: number; readonly color: string; readonly payload?: Record<string, unknown> }>;
   label?: string;
 }>) {
   const tooltipActive = active;
@@ -121,7 +123,13 @@ function CustomTooltip({ active, payload, label }: Readonly<{
   if (!tooltipActive || !tooltipPayload || tooltipPayload.length === 0) return null;
 
   const actual = tooltipPayload.find(p => p.name === 'Actual')?.value ?? 0;
-  const yoy = tooltipPayload.find(p => p.name === 'YoY')?.value ?? null;
+  
+  // Extraemos anioComparativo de payload secundario si está disponible
+  const rawAnioComp = tooltipPayload[0]?.payload?.anioComparativo;
+  const anioComp = typeof rawAnioComp === 'number' ? rawAnioComp : null;
+  const labelYoy = anioComp !== null ? `Año ${anioComp}` : 'Comparativo';
+  
+  const yoy = tooltipPayload.find(p => p.name === labelYoy)?.value ?? null;
   const diffPct = computeDiffPct(actual, yoy);
 
   return (
@@ -131,7 +139,7 @@ function CustomTooltip({ active, payload, label }: Readonly<{
         <TooltipRowActual actual={actual} />
         {yoy !== null && typeof yoy === 'number' ? (
           <>
-            <TooltipRowYoY yoy={yoy} />
+            <TooltipRowYoY yoy={yoy} label={labelYoy} />
             {diffPct !== null && <TooltipRowDiff diffPct={diffPct} actual={actual} yoy={yoy} />}
           </>
         ) : (
@@ -149,9 +157,11 @@ function CustomTooltip({ active, payload, label }: Readonly<{
 export const DireccionTendenciaChartClient = memo(function DireccionTendenciaChartClient({
   rows,
   viewMode,
+  anioComparativo,
 }: Readonly<{
   rows: readonly DireccionTendenciaRow[];
   viewMode: DireccionViewMode;
+  anioComparativo: number | null;
 }>) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -171,9 +181,11 @@ export const DireccionTendenciaChartClient = memo(function DireccionTendenciaCha
   }, [router, searchParams]);
 
   const data: SerializedRow[] = useMemo(
-    () => rows.map(serializeOneRow),
-    [rows],
+    () => rows.map((r) => serializeOneRow(r, anioComparativo)),
+    [rows, anioComparativo],
   );
+
+  const legendYoyLabel = anioComparativo ? `Año ${anioComparativo}` : 'Comparativo';
 
   return (
     <div className="w-full space-y-3">
@@ -232,11 +244,12 @@ export const DireccionTendenciaChartClient = memo(function DireccionTendenciaCha
           <Line
             type="monotone"
             dataKey="costoYoY"
-            name="YoY"
+            name={legendYoyLabel}
             stroke={DIRECCION_PALETTE.yoYLine}
             strokeWidth={2}
             strokeDasharray="5 4"
-            dot={{ r: 3, stroke: DIRECCION_PALETTE.yoYLine, strokeWidth: 1.5, fill: '#fff' }}
+            dot={{ r: 4, stroke: DIRECCION_PALETTE.yoYLine, strokeWidth: 2, fill: DIRECCION_PALETTE.yoYLine }}
+            activeDot={{ r: 5, stroke: DIRECCION_PALETTE.yoYLine, strokeWidth: 2, fill: '#fff' }}
             connectNulls={false}
           />
         </AreaChart>

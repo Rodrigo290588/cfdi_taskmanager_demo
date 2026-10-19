@@ -62,8 +62,8 @@ export type DireccionFilterValues = Readonly<{
 }>;
 
 export type FiltersForBar = Readonly<{
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
   departamento: string | null;
   anioComparativo: number | null;
   view: DireccionViewMode;
@@ -82,8 +82,8 @@ function defaultAnioComparativo(filtersAnio: number | null): string {
 
 function buildDefaultsFromFilters(filters: FiltersForBar): DireccionFilterValues {
   return {
-    startDate: filters.startDate,
-    endDate: filters.endDate,
+    startDate: filters.startDate ?? '',
+    endDate: filters.endDate ?? '',
     departamento: filters.departamento ?? '',
     anioComparativo: defaultAnioComparativo(filters.anioComparativo),
     view: filters.view,
@@ -103,8 +103,8 @@ function syncSearchParamsIntoForm(
   const d = sp.get('departamento');
   const ac = sp.get('anioComparativo');
   const v = sp.get('view');
-  if (s) setValue('startDate', s, { shouldDirty: false });
-  if (e) setValue('endDate', e, { shouldDirty: false });
+  setValue('startDate', s ?? '', { shouldDirty: false });
+  setValue('endDate', e ?? '', { shouldDirty: false });
   if (d !== null && d !== undefined) setValue('departamento', d, { shouldDirty: false });
   if (ac !== null && ac !== undefined) setValue('anioComparativo', ac, { shouldDirty: false });
   if (v && DIRECCION_VIEW_MODES.includes(v as DireccionViewMode)) {
@@ -126,11 +126,12 @@ function buildApplyParamsFromForm(
   const fullSections = sections.length === DIRECCION_SECTIONS.length;
   const params: ApplyParamBag = {
     companyId: sp.get('companyId') ?? '',
-    startDate: data.startDate,
-    endDate: data.endDate,
     view: data.view,
     sections: fullSections ? '' : sections.join(','),
   };
+  if (data.startDate) params.startDate = data.startDate;
+  if (data.endDate) params.endDate = data.endDate;
+  
   const orgId = sp.get('organizationId');
   if (orgId) params.organizationId = orgId;
   const fiscalId = sp.get('fiscalEntityId');

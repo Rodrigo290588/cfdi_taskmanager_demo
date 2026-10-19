@@ -82,6 +82,7 @@
     "test:mass_downloads": "cross-env NODE_ENV=test jest tests/mass_downloads --runInBand --passWithNoTests",
     "test:mass_downloads:coverage": "cross-env NODE_ENV=test jest tests/mass_downloads --runInBand --coverage --passWithNoTests",
     "test:menu": "node ejecutar_pruebas.js",
+    "test:nomina": "cross-env NODE_ENV=test jest \"Guias de Prueba/Nómina\" --runInBand --passWithNoTests",
     "sast:mass_downloads:report": "cross-env NODE_ENV=production npx tsx reports/generate-sast-mass-downloads-pdf.ts",
     "report:mass_downloads:remediation": "cross-env NODE_ENV=production npx tsx reports/generate-remediation-mass-downloads-pdf.ts",
     "sast:monitor:report": "start reports\\sast-monitor_report_20260824_0930.html",

@@ -5,7 +5,7 @@
 // Paridad estricta con rh-dashboard-url.ts (DASH-SAST-006).
 // ============================================================
 
-import { formatISO, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { formatISO, parseISO } from 'date-fns';
 
 export const FISCAL_NOMINA_DASHBOARD_PATH = '/dashboard/nomina/fiscal' as const;
 
@@ -40,12 +40,46 @@ export type RawParsedFiscalNominaFilters = {
     companyId: string | null;
     organizationId: string | null;
     fiscalEntityId: string | null;
-    startDate: string;
-    endDate: string;
+    startDate: string | null;
+    endDate: string | null;
     departamento: string | null;
     registroPatronal: string | null;
     sections: FiscalNominaSectionId[];
 };
+
+function _parseDates(s: string | null, e: string | null): { startDate: string | null; endDate: string | null } {
+    if (!s || !e) return { startDate: null, endDate: null };
+    try {
+        const startD = parseISO(s.slice(0, 10));
+        const endD = parseISO(e.slice(0, 10));
+        if (Number.isFinite(startD.getTime()) && Number.isFinite(endD.getTime())) {
+            if (startD.getTime() > endD.getTime()) {
+                return {
+                    startDate: formatISO(endD, { representation: 'date' }),
+                    endDate: formatISO(startD, { representation: 'date' })
+                };
+            }
+            return {
+                startDate: formatISO(startD, { representation: 'date' }),
+                endDate: formatISO(endD, { representation: 'date' })
+            };
+        }
+    } catch {
+        // Ignorar errores y retornar null
+    }
+    return { startDate: null, endDate: null };
+}
+
+function _parseSections(rawSec: string | null): FiscalNominaSectionId[] {
+    if (!rawSec) {
+        return FISCAL_NOMINA_SECTIONS.map(s => s.id);
+    }
+    const tokens = rawSec.split(',').map(t => t.trim()).filter(Boolean);
+    const valid = tokens.filter(
+        t => FISCAL_NOM_ALLOW_SECTION.test(t) && FISCAL_NOM_SECTION_IDS.has(t),
+    ) as FiscalNominaSectionId[];
+    return valid.length > 0 ? valid : FISCAL_NOMINA_SECTIONS.map(s => s.id);
+}
 
 export function parseFiscalNominaSearchParams(
     raw: Record<string, string | string[] | undefined> | null | undefined,
@@ -57,23 +91,7 @@ export function parseFiscalNominaSearchParams(
         return typeof v === 'string' && v !== '' ? v : null;
     };
 
-    const s = read('startDate');
-    const e = read('endDate');
-    let startDate: Date;
-    let endDate: Date;
-    try {
-        startDate = s ? parseISO(s.slice(0, 10)) : subMonths(startOfMonth(new Date()), 3);
-        endDate   = e ? parseISO(e.slice(0, 10)) : endOfMonth(new Date());
-        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime()))
-            startDate = subMonths(startOfMonth(new Date()), 3);
-        if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime()))
-            endDate = endOfMonth(new Date());
-        if (startDate.getTime() > endDate.getTime())
-            [startDate, endDate] = [endDate, startDate];
-    } catch {
-        startDate = subMonths(startOfMonth(new Date()), 3);
-        endDate   = endOfMonth(new Date());
-    }
+    const { startDate, endDate } = _parseDates(read('startDate'), read('endDate'));
 
     const d = read('departamento');
     const departamento = d && FISCAL_NOM_ALLOW_DEPARTAMENTO.test(d) ? d : null;
@@ -81,24 +99,14 @@ export function parseFiscalNominaSearchParams(
     const rp = read('registroPatronal');
     const registroPatronal = rp && FISCAL_NOM_ALLOW_REGISTRO_PATRONAL.test(rp) ? rp : null;
 
-    const rawSec = read('sections');
-    let sections: FiscalNominaSectionId[];
-    if (!rawSec) {
-        sections = FISCAL_NOMINA_SECTIONS.map(s => s.id);
-    } else {
-        const tokens = rawSec.split(',').map(t => t.trim()).filter(Boolean);
-        const valid = tokens.filter(
-            t => FISCAL_NOM_ALLOW_SECTION.test(t) && FISCAL_NOM_SECTION_IDS.has(t),
-        ) as FiscalNominaSectionId[];
-        sections = valid.length > 0 ? valid : FISCAL_NOMINA_SECTIONS.map(s => s.id);
-    }
+    const sections = _parseSections(read('sections'));
 
     return {
         companyId: read('companyId') ?? null,
         organizationId: read('organizationId') ?? null,
         fiscalEntityId: read('fiscalEntityId') ?? null,
-        startDate: formatISO(startDate, { representation: 'date' }),
-        endDate:   formatISO(endDate,   { representation: 'date' }),
+        startDate,
+        endDate,
         departamento,
         registroPatronal,
         sections,

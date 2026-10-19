@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:nomina12="http://www.sat.gob.mx/nomina12" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd" Version="4.0" Fecha="2026-01-04T12:00:00" Sello="SELLO_TEST_HE_03" FormaPago="99" NoCertificado="00001000000500000000" Certificado="CERTIFICADO_TEST" SubTotal="8150.00" Descuento="0.00" Moneda="MXN" Total="8150.00" TipoDeComprobante="N" Exportacion="01" MetodoPago="PUE" LugarExpedicion="12345">
+  <cfdi:Emisor Rfc="NMP7502257ZA" Nombre="NOMBREMPRESA SA DE CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Nombre="IRVING MIGUEL ALCALA MORA" Rfc="AAMI8905034G0" DomicilioFiscalReceptor="12345" RegimenFiscalReceptor="605" UsoCFDI="CN01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111505" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago de nómina" ValorUnitario="8150.00" Importe="8150.00" ObjetoImp="01" Descuento="0.00"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <nomina12:Nomina Version="1.2" TipoNomina="O" FechaPago="2026-01-04" FechaInicialPago="2026-01-01" FechaFinalPago="2026-01-15" NumDiasPagados="15" TotalPercepciones="8150.00" TotalDeducciones="0.00">
+      <nomina12:Emisor RegistroPatronal="A1234567890"/>
+      <nomina12:Receptor Curp="XAXX010103XXX12345" NumSeguridadSocial="12345678903" FechaInicioRelLaboral="2019-02-15" Antigüedad="P6Y" TipoContrato="01" Sindicalizado="No" TipoJornada="01" TipoRegimen="02" NumEmpleado="003" Departamento="Recursos Humanos" Puesto="Especialista" RiesgoPuesto="1" PeriodicidadPago="04" ClaveEntFed="CM"/>
+      <nomina12:Percepciones TotalSueldos="8000.00" TotalGravado="8150.00" TotalExento="0.00">
+        <nomina12:Percepcion TipoPercepcion="001" Clave="001" Concepto="Sueldo" ImporteGravado="8000.00" ImporteExento="0.00"/>
+        <nomina12:Percepcion TipoPercepcion="019" Clave="019" Concepto="Horas extras simples" ImporteGravado="150.00" ImporteExento="0.00">
+          <nomina12:HorasExtra Dias="1" TipoHoras="03" HorasExtra="1" ImportePagado="150.00"/>
+        </nomina12:Percepcion>
+      </nomina12:Percepciones>
+    </nomina12:Nomina>
+	<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2020-09-11T10:16:41" NoCertificadoSAT="00001000000406144089" RfcProvCertif="CAD100607RY8" SelloCFD="RYR1wOsM6aUU0Vd8UScYhxRVOHvIOOsbY23ES8CcVqASqRb7JJiIFOiMuF/vTO2ZVmm7cd3s+YVRc0nQ+3ilCPlzxRaJvLRrh9UKv46hip2Mnxzhn6/fWjjoacEXB1tVl/+3RjdWOfm5QlssY+MHGbd/WpBhMVQ5BU6Xssgl1VwU94SnrscZ3w/W4R4U5mr1XnfNI+UlwHBBAb/Te5ETh6HhUm9+XvE0rbn0HFn/7T8ZQlh1h+oM5G97XqVWsycHUX5YG1lZ7JH1hh1NEqN2zFdyGblTpMM/ec+0ky9Zm9FzqodVsAREwCufYc9PhPLxuqg20aF38eSS88sBmPmzzA==" SelloSAT="Yd7H5jCAIBH0cstYJSxeYTSBznHVrSiH6p4Xyrl3i62yIHSmeLkZmUyLhSqec4T0MFgYNtrTw8lfWAmJzYW5PgSbAaSN8HV7y5iANr7PXiEQIlN7x35O0MVAaBm6DRgCCPziuCl0AQslBdV4s/gm9/QCnDfwq/oS1WaKyMG4pZLHVQXdpuiYZLYeo0earWxYZvPHlGSoMDch0Q91woG+b3WmjOns4NWiu/mZV6PsgHXSWyOfsiE9sHylnhTPiP8k+TY6SjCSYuMYOaeFWN/CsGXjQU4VEPHbkUBYCM7ytCA560qcSoo51QPgx4hjAAcV5RdfWsd8Dt/jlLguhn+mAQ==" UUID="8353c792-6001-40cc-ae91-517feada01d0" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

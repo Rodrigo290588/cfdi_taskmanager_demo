@@ -3,10 +3,6 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
 import { sendInvitationEmail } from '@/lib/mail'
-import * as fs from 'fs'
-import * as path from 'path'
-import * as os from 'os'
-import * as readline from 'readline'
 
 // 2. Prevención de CSV Injection (Sanitización)
 const sanitizeCSV = (str: string) => {
@@ -188,11 +184,7 @@ async function validateAndSaveFile(request: NextRequest): Promise<{ errorRespons
     }
   }
 
-  const safeFilename = crypto.randomUUID() + '.txt'
-  const filePath = path.join(/*turbopackIgnore: true*/ os.tmpdir(), safeFilename)
-  fs.writeFileSync(filePath, buffer)
-
-  return { filePath, fileBuffer: buffer }
+  return { fileBuffer: buffer }
 }
 
 async function insertValidUsers(
@@ -285,7 +277,7 @@ async function getContextData(organizationId: string) {
 }
 
 async function processFileLines(
-  filePath: string,
+  fileBuffer: Buffer,
   customRoles: Array<{ id: string; name: string }>,
   companies: Array<{ id: string; rfc: string }>,
   organizationId: string
@@ -293,11 +285,10 @@ async function processFileLines(
   const errors: Array<{ rowNumber: number; message: string }> = []
   const validUsersToInvite: Array<ValidUserInvite> = []
 
-  const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' })
-  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity })
+  const lines = fileBuffer.toString('utf8').split(/\r?\n/)
 
   let rowNumber = 0
-  for await (const line of rl) {
+  for (const line of lines) {
     rowNumber++
     const { error, invite } = await processLine(line, rowNumber, customRoles, companies, organizationId)
     if (error) errors.push(error)
@@ -308,7 +299,6 @@ async function processFileLines(
 }
 
 export async function POST(request: NextRequest) {
-  let filePath = ''
   try {
     const session = await auth()
     if (!session?.user) {
@@ -331,11 +321,11 @@ export async function POST(request: NextRequest) {
 
     const fileValidationResult = await validateAndSaveFile(request)
     if (fileValidationResult.errorResponse) return fileValidationResult.errorResponse
-    filePath = fileValidationResult.filePath!
+    const fileBuffer = fileValidationResult.fileBuffer!
 
     const { customRoles, companies } = await getContextData(membership.organizationId)
 
-    const { errors, validUsersToInvite } = await processFileLines(filePath, customRoles, companies, membership.organizationId)
+    const { errors, validUsersToInvite } = await processFileLines(fileBuffer, customRoles, companies, membership.organizationId)
 
     if (errors.length > 0) {
       return NextResponse.json({ success: false, message: 'Se encontraron errores en el archivo', errors }, { status: 400 })
@@ -355,13 +345,5 @@ export async function POST(request: NextRequest) {
       { error: 'Error interno al procesar el archivo. Contacte al administrador.' },
       { status: 500 }
     )
-  } finally {
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath)
-      } catch (e) {
-        console.error(`[SECURITY LOG] No se pudo eliminar el archivo temporal: ${filePath}`, e)
-      }
-    }
   }
 }

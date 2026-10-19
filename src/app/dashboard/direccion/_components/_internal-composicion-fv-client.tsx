@@ -56,6 +56,22 @@ function DonutTooltip(props: Readonly<{
   );
 }
 
+const RADIAN = Math.PI / 180;
+function renderCustomizedLabel(props: unknown) {
+  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props as { cx: number, cy: number, midAngle: number, innerRadius: number, outerRadius: number, percent: number };
+  if (percent < 0.02) return null; // No mostrar si es menor al 2% para evitar superposiciones
+  
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+  return (
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight="bold" pointerEvents="none">
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  );
+}
+
 export const DireccionComposicionFvClient = memo(function DireccionComposicionFvClient({
   rows,
   pctVariableCentro,
@@ -128,8 +144,14 @@ export const DireccionComposicionFvClient = memo(function DireccionComposicionFv
             strokeWidth={3}
             isAnimationActive={false}
             fill={sliceColorOf as never}
+            labelLine={false}
+            label={renderCustomizedLabel}
           />
-          <RechartsTooltip content={<DonutTooltip />} />
+          <RechartsTooltip 
+            content={<DonutTooltip />} 
+            offset={30} // Mantiene el tooltip a una distancia cómoda del cursor sin tapar la dona
+            wrapperStyle={{ zIndex: 100 }} // Ensure it's above the center text
+          />
         </PieChart>
       </ResponsiveContainer>
 

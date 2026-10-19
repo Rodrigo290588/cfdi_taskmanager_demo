@@ -9,10 +9,10 @@
 // ============================================================
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Line, Cell,
+  ResponsiveContainer, Line,
 } from 'recharts';
 import { Gift } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,7 @@ import {
   ChartCard, KpiCardRh, TrendBadge, fmtNum, fmtMxn,
   RH_PALETTE, RhEmptyState,
 } from './rh-shared';
+import { RhDrilldownModal, RhDrilldownType } from './rh-drilldown-modal';
 
 // Tipado seguro para callbacks Recharts Tooltip/Legend formatter
 // (evita `as any` inline; Recharts 3.8 formatter signature es genérica)
@@ -45,13 +46,15 @@ export type BeneficioKind = {
   codigo: '005' | '010' | '029' | '049';
   descripcion: string;
   tone: 'emerald' | 'blue' | 'amber' | 'violet';
+  tooltipText: string;
+  drilldownType: RhDrilldownType;
 };
 
 const BENEFICIOS_OFICIALES: BeneficioKind[] = [
-  { codigo: '029', descripcion: 'Vales de Despensa',            tone: 'emerald' },
-  { codigo: '005', descripcion: 'Fondo / Caja de Ahorro',       tone: 'blue' },
-  { codigo: '010', descripcion: 'Premios de Puntualidad',       tone: 'amber' },
-  { codigo: '049', descripcion: 'Premios de Asistencia',        tone: 'violet' },
+  { codigo: '029', descripcion: 'Vales de Despensa',            tone: 'emerald', tooltipText: 'Suma del importe (exento y gravado) reportado bajo la clave SAT 029 (Vales de despensa) en el período.', drilldownType: 'vales_despensa' },
+  { codigo: '005', descripcion: 'Fondo / Caja de Ahorro',       tone: 'blue',    tooltipText: 'Suma del importe (exento y gravado) reportado bajo la clave SAT 005 (Fondo de ahorro) en el período.', drilldownType: 'fondo_ahorro' },
+  { codigo: '010', descripcion: 'Premios de Puntualidad',       tone: 'amber',   tooltipText: 'Suma del importe (exento y gravado) reportado bajo la clave SAT 010 (Premios por puntualidad) en el período.', drilldownType: 'premios_puntualidad' },
+  { codigo: '049', descripcion: 'Premios de Asistencia',        tone: 'violet',  tooltipText: 'Suma del importe (exento y gravado) reportado bajo la clave SAT 049 (Premios por asistencia) en el período.', drilldownType: 'premios_asistencia' },
 ];
 
 const FILL: Record<string, string> = {
@@ -61,8 +64,25 @@ const FILL: Record<string, string> = {
   '049': RH_PALETTE.beneficios.asistencia,
 };
 
-export function RhBeneficiosPanel({ rows }: { rows: BeneficiosInputRow[] }) {
+interface RhBeneficiosPanelProps {
+  readonly rows: BeneficiosInputRow[];
+  readonly filters?: Record<string, string | null | undefined>;
+}
+
+export function RhBeneficiosPanel({ rows, filters }: RhBeneficiosPanelProps) {
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownType, setDrilldownType] = useState<RhDrilldownType>(null);
+  const [drilldownSummaryValue, setDrilldownSummaryValue] = useState<string | null>(null);
+
   const { byTipo, byMes, summary, previous } = useMemo(() => aggregate(rows), [rows]);
+
+  const handleOpenDrilldown = (type: RhDrilldownType, summaryValue: string) => {
+      setDrilldownType(type);
+      setDrilldownSummaryValue(summaryValue);
+      setDrilldownOpen(true);
+  };
+
+  const hasValidFilters = Boolean(filters?.startDate && filters?.endDate);
 
   if (!byTipo.length) {
     return (
@@ -95,112 +115,83 @@ export function RhBeneficiosPanel({ rows }: { rows: BeneficiosInputRow[] }) {
             tone={k.tone}
             icon={<Gift className="h-4 w-4"/>}
             subtext={k.empleados > 0 ? `${fmtNum(k.empleados, 0)} empleados` : 'Sin beneficiarios'}
+            tooltipText={k.tooltipText}
+            onClick={hasValidFilters && k.valor > 0 ? () => handleOpenDrilldown(k.drilldownType, fmtMxn(k.valor)) : undefined}
           />
         ))}
         <KpiCardRh title="Inversión total período"
           value={fmtMxn(total)}
           tone="slate"
-          subtext={`Cobertura ${fmtNum(cobertura,1)}% del headcount · ${fmtNum(summary.aplicaciones, 0)} percepciones`}
-          trend={<TrendBadge value={summary.importe} previous={previous.importe}/>}
+          icon={<Gift className="h-4 w-4"/>}
+          subtext={`Cobertura ${fmtNum(cobertura,1)}% de la plantilla total · ${fmtNum(summary.aplicaciones, 0)} percepciones`}
+          trend={
+            <TrendBadge 
+              value={summary.importe} 
+              previous={previous.importe} 
+              format="percent" 
+              dateRange={filters?.previousStartDate && filters?.endDate ? { from: String(filters.previousStartDate), to: String(filters.previousEndDate ?? filters.endDate) } : undefined} 
+            />
+          }
+          tooltipText="Suma total del importe (gravado + exento) de las percepciones clasificadas como beneficios (SAT 005, 010, 029, 049) en el período."
         />
       </div>
 
       <ChartCard
+        minHeight={340}
         title="Evolución mensual · Importe gravado vs exento"
         subtitle="Barras: $ por beneficio · Línea: empleados beneficiados por mes"
         badge={<Badge variant="outline" className="text-[10px] font-normal">Últimos {byMes.length} meses</Badge>}
         footer="IMPORTANTE: Montos gravados/exentos conforme a la Ley del ISR; verifica tu cédula de percepciones ante tu contador."
       >
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={byMes} margin={{ top: 12, right: 20, left: -12, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={RH_PALETTE.grid}/>
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: RH_PALETTE.text }}
-              angle={-18} textAnchor="end" height={60}/>
-            <YAxis yAxisId="left" tick={{ fontSize: 11, fill: RH_PALETTE.text }}
-              tickFormatter={(v) => fmtMxn(Number(v), 0)}
-              label={{ value: 'Monto $', angle: -90, position: 'insideLeft', fontSize: 11 }}/>
-            <YAxis yAxisId="right" orientation="right" allowDecimals={false}
-              tick={{ fontSize: 11, fill: RH_PALETTE.text }}
-              label={{ value: '# Empleados', angle: 90, position: 'insideRight', fontSize: 11 }}/>
-            <Tooltip
-              contentStyle={{ fontSize: 12 }}
-              formatter={((v: number, n: string) => {
-                if (n === 'empleados') return [fmtNum(v, 0), 'Empleados beneficiados'];
-                return [fmtMxn(v), String(n)];
-              }) as RechartsFormatterSafe}/>
-            <Legend wrapperStyle={{ fontSize: 12 }}/>
+        <div className="h-[280px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={byMes} margin={{ top: 12, right: 20, left: -12, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={RH_PALETTE.grid}/>
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: RH_PALETTE.text }}
+                angle={-18} textAnchor="end" height={60}/>
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: RH_PALETTE.text }}
+                tickFormatter={(v) => fmtMxn(Number(v), 0)}
+                label={{ value: 'Monto $', angle: -90, position: 'insideLeft', fontSize: 11 }}/>
+              <YAxis yAxisId="right" orientation="right" allowDecimals={false}
+                tick={{ fontSize: 11, fill: RH_PALETTE.text }}
+                label={{ value: '# Empleados', angle: 90, position: 'insideRight', fontSize: 11 }}/>
+              <Tooltip
+                contentStyle={{ fontSize: 12 }}
+                formatter={((v: number, n: string) => {
+                  if (n === 'Empleados') return [`${fmtNum(v, 0)} Empleados`, 'Beneficiados'];
+                  return [fmtMxn(v), String(n)];
+                }) as RechartsFormatterSafe}/>
+              <Legend wrapperStyle={{ fontSize: 12 }}/>
 
-            <Bar yAxisId="left" dataKey="vales" name="Vales (029)" stackId="a"
-              radius={[4,4,0,0]} barSize={20}>
-              {byMes.map((_, idx) => <Cell key={idx} fill={FILL['029']}/>)}
-            </Bar>
-            <Bar yAxisId="left" dataKey="ahorro" name="Ahorro (005)" stackId="a"
-              radius={[4,4,0,0]} barSize={20}>
-              {byMes.map((_, idx) => <Cell key={idx} fill={FILL['005']}/>)}
-            </Bar>
-            <Bar yAxisId="left" dataKey="puntualidad" name="Puntualidad (010)" stackId="a"
-              radius={[4,4,0,0]} barSize={20}>
-              {byMes.map((_, idx) => <Cell key={idx} fill={FILL['010']}/>)}
-            </Bar>
-            <Bar yAxisId="left" dataKey="asistencia" name="Asistencia (049)" stackId="a"
-              radius={[4,4,0,0]} barSize={20}>
-              {byMes.map((_, idx) => <Cell key={idx} fill={FILL['049']}/>)}
-            </Bar>
-            <Line yAxisId="right" type="monotone" dataKey="empleados" name="Empleados"
-              stroke="#475569" strokeWidth={2.1} dot={{ r: 3 }}/>
-          </ComposedChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title="Detalle por concepto" minHeight={260}
-        subtitle="Desglose de cada percepción catalogada como beneficio">
-        <div className="overflow-auto h-[240px] rounded-md border border-slate-100 text-xs">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 sticky top-0 z-10">
-              <tr>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2">Concepto</th>
-                <th className="px-3 py-2 text-right"># apps</th>
-                <th className="px-3 py-2 text-right">Empleados</th>
-                <th className="px-3 py-2 text-right">Gravado</th>
-                <th className="px-3 py-2 text-right">Exento</th>
-                <th className="px-3 py-2 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detailRows(rows).slice(0, 100).map((r, i) => (
-                <tr key={i} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-3 py-1.5">
-                    <Badge variant="outline"
-                      className="text-[10px]"
-                      style={{ background: r.fill + '22', color: r.fill, borderColor: r.fill }}>
-                      {r.codigo} · {r.beneficio}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-1.5 truncate max-w-[240px]" title={r.concepto}>{r.concepto}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{fmtNum(r.apps, 0)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{fmtNum(r.empleados, 0)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-amber-700">{fmtMxn(r.gravado)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700">{fmtMxn(r.exento)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmtMxn(r.total)}</td>
-                </tr>
-              ))}
-              {detailRows(rows).length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-6 text-slate-400">Sin registros</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              <Bar yAxisId="left" dataKey="vales" name="Vales (029)" stackId="a"
+                radius={[4,4,0,0]} barSize={20} fill={FILL['029']} />
+              <Bar yAxisId="left" dataKey="ahorro" name="Ahorro (005)" stackId="a"
+                radius={[4,4,0,0]} barSize={20} fill={FILL['005']} />
+              <Bar yAxisId="left" dataKey="puntualidad" name="Puntualidad (010)" stackId="a"
+                radius={[4,4,0,0]} barSize={20} fill={FILL['010']} />
+              <Bar yAxisId="left" dataKey="asistencia" name="Asistencia (049)" stackId="a"
+                radius={[4,4,0,0]} barSize={20} fill={FILL['049']} />
+              <Line yAxisId="right" type="monotone" dataKey="empleados" name="Empleados"
+                stroke="#475569" strokeWidth={2.1} dot={{ r: 3 }}/>
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       </ChartCard>
+
+      <RhDrilldownModal 
+          open={drilldownOpen} 
+          onOpenChange={setDrilldownOpen} 
+          type={drilldownType} 
+          filters={filters || {}} 
+          summaryValue={drilldownSummaryValue}
+      />
     </div>
   );
 }
 
 // ---------- agregación ----------
 function aggregate(rows: BeneficiosInputRow[]) {
-  // headcount = max empleados beneficiados por mes (aproximación al total que recibe beneficios)
+  // headcount = suma de empleados únicos beneficiados por mes
   const byMesAcc = new Map<string, {
     vales: number; ahorro: number; puntualidad: number; asistencia: number;
     empleados: number;
@@ -211,7 +202,7 @@ function aggregate(rows: BeneficiosInputRow[]) {
 
   let totalImporte = 0;
   let totalApps = 0;
-  let maxEmpleadosBeneficiadosMes = 0; // cobertura proxy
+  let maxEmpleadosBeneficiadosMes = 0;
 
   for (const r of rows) {
     const d = typeof r.mes_pago === 'string' ? new Date(r.mes_pago) : r.mes_pago;
@@ -229,8 +220,9 @@ function aggregate(rows: BeneficiosInputRow[]) {
     else if (codigo === '005') mes.ahorro += imp;
     else if (codigo === '010') mes.puntualidad += imp;
     else if (codigo === '049') mes.asistencia += imp;
-    // otros por TipoPercepcion permitido: ya filtrado en MV, safe no-op
-    mes.empleados = Math.max(mes.empleados, emps);
+    
+    // Sumar los empleados en lugar de tomar el Math.max
+    mes.empleados += emps;
 
     byMesAcc.set(key, mes);
 
@@ -241,7 +233,7 @@ function aggregate(rows: BeneficiosInputRow[]) {
     };
     prevTipo.importe += imp;
     prevTipo.aplicaciones += apps;
-    prevTipo.empleados = Math.max(prevTipo.empleados, emps);
+    prevTipo.empleados += emps; // Corregido: Sumar los empleados en lugar de usar Math.max
     byTipoAcc.set(codigo, prevTipo);
   }
 
@@ -262,10 +254,8 @@ function aggregate(rows: BeneficiosInputRow[]) {
   // período anterior (primera mitad vs segunda)
   const half = Math.max(1, Math.floor(byMes.length / 2));
   const first = byMes.slice(0, half);
-  const second = byMes.slice(half);
   const monthSum = (arr: typeof byMes) =>
     arr.reduce((a, m) => a + m.vales + m.ahorro + m.puntualidad + m.asistencia, 0);
-  void second;
 
   const summary = {
     importe: totalImporte,
@@ -276,24 +266,4 @@ function aggregate(rows: BeneficiosInputRow[]) {
   const previous = { importe: monthSum(first) };
 
   return { byTipo, byMes, summary, previous };
-}
-
-function detailRows(rows: BeneficiosInputRow[]) {
-  return rows
-    .map(r => {
-      const codigo = r.tipo_percepcion;
-      const kind = BENEFICIOS_OFICIALES.find(k => k.codigo === codigo);
-      return {
-        codigo,
-        beneficio: kind?.descripcion ?? r.descripcion_beneficio ?? `Otro (${codigo})`,
-        concepto: r.concepto || r.descripcion_beneficio || '(sin concepto)',
-        apps: Number(r.numero_aplicaciones || 0),
-        empleados: Number(r.empleados_beneficiados || 0),
-        gravado: Number(r.total_gravado || 0),
-        exento: Number(r.total_exento || 0),
-        total: Number(r.importe_total || 0),
-        fill: FILL[codigo] ?? '#94a3b8',
-      };
-    })
-    .sort((a, b) => b.total - a.total);
 }

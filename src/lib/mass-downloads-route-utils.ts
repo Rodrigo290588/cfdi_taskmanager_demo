@@ -266,7 +266,6 @@ export function sha256Hex(input: string | Buffer): string {
 }
 
 const RFC_REGEX = /^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$/i
-const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/
 
 export const RfcStringSchema = z
@@ -276,7 +275,7 @@ export const RfcStringSchema = z
   .max(13)
   .regex(RFC_REGEX, 'RFC inválido')
 
-export const UuidStringSchema = z.string().trim().regex(UUID_REGEX, 'UUID inválido')
+export const UuidStringSchema = z.string().trim().min(8, 'ID inválido')
 
 export const DateStringSchema = z
   .string()
@@ -287,14 +286,14 @@ export const NonEmptyStringSchema = z.string().trim().min(1).max(1024)
 
 export const PostCreateMassRequestSchema = z.strictObject({
   companyId: UuidStringSchema,
-  startDate: DateStringSchema.optional(),
-  endDate: DateStringSchema.optional(),
-  receiverRfc: RfcStringSchema.optional(),
-  issuerRfc: RfcStringSchema.optional(),
+  startDate: DateStringSchema.optional().or(z.literal('')),
+  endDate: DateStringSchema.optional().or(z.literal('')),
+  receiverRfc: RfcStringSchema.optional().or(z.literal('')),
+  issuerRfc: RfcStringSchema.optional().or(z.literal('')),
   requestingRfc: RfcStringSchema,
   retrievalType: z.enum(['emitidos', 'recibidos', 'folio']).default('emitidos'),
   requestType: z.enum(['metadata', 'cfdi']),
-  voucherType: z.enum(['I', 'E', 'P', 'T', 'N']).optional(),
+  voucherType: z.enum(['I', 'E', 'P', 'T', 'N']).optional().or(z.literal('')),
   status: z.enum(['Todos', 'Cancelado', 'Vigente']).default('Todos'),
   thirdPartyRfc: RfcStringSchema.optional().or(z.literal('')),
   complement: z.string().trim().max(64).optional().or(z.literal('')),

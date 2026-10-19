@@ -119,7 +119,7 @@ function launchNewBrowserInstance(): Browser | Promise<Browser> {
       '--disable-gpu',
       '--user-data-dir=' + tmpDir,
       // SSRF DEFENSE HOST LEVEL: resolver bloquea todo DNS EXCEPTO 127 loopback
-      '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost',
+      '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost , EXCLUDE cdn.tailwindcss.com',
       // JS hardening
       '--js-flags=--noexpose-wasm --jitless',
       '--block-new-web-contents',
@@ -256,7 +256,7 @@ async function installSsrfRequestGuard(page: Page) {
   await page.setRequestInterception(true).catch(() => { /* ignore if not supported */ })
   page.on('request', (req) => {
     const u = (req.url() || '').toLowerCase()
-    const allow = u.startsWith('data:') || u.startsWith('about:blank') || u.startsWith('chrome-extension:') || u.startsWith('blob:')
+    const allow = u.startsWith('data:') || u.startsWith('about:blank') || u.startsWith('chrome-extension:') || u.startsWith('blob:') || u.startsWith('https://cdn.tailwindcss.com')
     if (!allow) { req.abort('blockedbyclient').catch(() => { /* ignore */ }); return }
     req.continue().catch(() => { /* ignore */ })
   })

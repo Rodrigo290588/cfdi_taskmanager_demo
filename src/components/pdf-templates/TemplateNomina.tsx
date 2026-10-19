@@ -21,381 +21,515 @@ const formatCurrency = (amount: unknown) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num);
 };
 
-const getTipoNominaLabel = (tipo: unknown): string => {
-  if (tipo === 'O') return 'Ordinaria';
-  if (tipo === 'E') return 'Extraordinaria';
-  return safeString(tipo);
-};
-
-const renderPercepciones = (percepcionesArray: RecordUnknown[]) => {
-  if (percepcionesArray.length === 0) {
-    return '<div class="text-xs text-slate-500 italic py-2">No hay percepciones</div>';
-  }
-  
-  const percepcionesHtml = percepcionesArray.map((p: RecordUnknown) => `
-    <tr class="border-b border-slate-200">
-      <td class="py-1 px-2">${safeString(p['@_TipoPercepcion'])}</td>
-      <td class="py-1 px-2">${safeString(p['@_Clave'])}</td>
-      <td class="py-1 px-2">${safeString(p['@_Concepto'])}</td>
-      <td class="py-1 px-2 text-right">${formatCurrency(p['@_ImporteGravado'])}</td>
-      <td class="py-1 px-2 text-right">${formatCurrency(p['@_ImporteExento'])}</td>
-    </tr>
-  `).join('');
-
-  return `
-  <table class="w-full text-xs border-collapse">
-    <thead>
-      <tr class="bg-slate-100 text-slate-600">
-        <th class="py-1 px-2 text-left">Tipo</th>
-        <th class="py-1 px-2 text-left">Clave</th>
-        <th class="py-1 px-2 text-left">Concepto</th>
-        <th class="py-1 px-2 text-right">Gravado</th>
-        <th class="py-1 px-2 text-right">Exento</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${percepcionesHtml}
-    </tbody>
-  </table>
-  `;
-};
-
-const renderDeducciones = (deduccionesArray: RecordUnknown[]) => {
-  if (deduccionesArray.length === 0) {
-    return '<div class="text-xs text-slate-500 italic py-2">No hay deducciones</div>';
-  }
-  
-  const deduccionesHtml = deduccionesArray.map((d: RecordUnknown) => `
-    <tr class="border-b border-slate-200">
-      <td class="py-1 px-2">${safeString(d['@_TipoDeduccion'])}</td>
-      <td class="py-1 px-2">${safeString(d['@_Clave'])}</td>
-      <td class="py-1 px-2">${safeString(d['@_Concepto'])}</td>
-      <td class="py-1 px-2 text-right">${formatCurrency(d['@_Importe'])}</td>
-    </tr>
-  `).join('');
-
-  return `
-  <table class="w-full text-xs border-collapse">
-    <thead>
-      <tr class="bg-slate-100 text-slate-600">
-        <th class="py-1 px-2 text-left">Tipo</th>
-        <th class="py-1 px-2 text-left">Clave</th>
-        <th class="py-1 px-2 text-left">Concepto</th>
-        <th class="py-1 px-2 text-right">Importe</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${deduccionesHtml}
-    </tbody>
-  </table>
-  `;
-};
-
-const renderOtrosPagos = (otrosPagosArray: RecordUnknown[]) => {
-  if (otrosPagosArray.length === 0) return '';
-  
-  const otrosPagosHtml = otrosPagosArray.map((o: RecordUnknown) => `
-    <tr class="border-b border-slate-200">
-      <td class="py-1 px-2">${safeString(o['@_TipoOtroPago'])}</td>
-      <td class="py-1 px-2">${safeString(o['@_Clave'])}</td>
-      <td class="py-1 px-2">${safeString(o['@_Concepto'])}</td>
-      <td class="py-1 px-2 text-right">${formatCurrency(o['@_Importe'])}</td>
-    </tr>
-  `).join('');
-
-  return `
-  <table class="w-full text-xs border-collapse">
-    <thead>
-      <tr class="bg-slate-100 text-slate-600">
-        <th class="py-1 px-2 text-left">Tipo</th>
-        <th class="py-1 px-2 text-left">Clave</th>
-        <th class="py-1 px-2 text-left">Concepto</th>
-        <th class="py-1 px-2 text-right">Importe</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${otrosPagosHtml}
-    </tbody>
-  </table>
-  `;
-};
-
-const renderCadenaOriginal = (timbre: RecordUnknown): string => {
-  if (!timbre['@_Version']) return '';
-  return `||${safeString(timbre['@_Version'])}|${safeString(timbre['@_UUID'])}|${safeString(timbre['@_FechaTimbrado'])}|${safeString(timbre['@_RfcProvCertif'])}|${safeString(timbre['@_SelloCFD'])}|${safeString(timbre['@_NoCertificadoSAT'])}||`;
-};
-
-const renderBrandHeader = (brandConfig: RecordUnknown | undefined): string => {
-  if (brandConfig?.logoUrl) {
-    return `<img src="${safeString(brandConfig.logoUrl)}" alt="Logo" class="max-h-16 object-contain mb-2" />`;
-  }
-  return '<div class="text-2xl font-bold primary-text mb-2">EMPRESA DEMO</div>';
-};
-
-const renderDescuento = (comprobante: RecordUnknown): string => {
-  if (!comprobante['@_Descuento']) return '';
-  return `
-    <div class="flex justify-between py-1 text-sm text-red-600">
-      <span>Descuento:</span>
-      <span>-${formatCurrency(comprobante['@_Descuento'])}</span>
-    </div>
-  `;
-};
-
-const renderWatermark = (isCancelled: boolean): string => {
-  return isCancelled ? '<div class="watermark">CANCELADO</div>' : '';
-};
-
-const renderQrCode = (qrCodeDataUrl: string | undefined): string => {
-  return qrCodeDataUrl ? `<img src="${safeString(qrCodeDataUrl)}" alt="QR Code" class="w-full h-auto" />` : '';
-};
-
-const renderOtrosPagosWrapper = (otrosPagosHtmlFinal: string, nomina: RecordUnknown): string => {
-  if (!otrosPagosHtmlFinal) return '';
-  return `
-    <div>
-      <h3 class="font-bold text-slate-700 mb-2 border-b-2 border-slate-300 pb-1">OTROS PAGOS</h3>
-      ${otrosPagosHtmlFinal}
-      <div class="flex justify-between mt-2 pt-2 border-t font-semibold text-xs">
-        <span>Total Otros Pagos:</span>
-        <span>${formatCurrency(nomina['@_TotalOtrosPagos'])}</span>
-      </div>
-    </div>
-  `;
-};
-
 const normalizeArray = (raw: unknown): RecordUnknown[] => {
   if (Array.isArray(raw)) return raw as RecordUnknown[];
   if (raw) return [raw as RecordUnknown];
   return [];
 };
 
-export const generateTemplateNominaHtml = ({ cfdiData, qrCodeDataUrl, brandConfig, isCancelled }: InvoiceTemplateProps): string => {
-  const comprobante = (cfdiData['cfdi:Comprobante'] || cfdiData['Comprobante'] || {}) as RecordUnknown;
+const renderConceptos = (conceptosArray: RecordUnknown[]) => {
+  if (conceptosArray.length === 0) return '';
+  const rows = conceptosArray.map((c) => `
+    <tr>
+      <td class="text-center">${safeString(c['@_ClaveProdServ'])}</td>
+      <td class="text-center">${safeString(c['@_Cantidad'])}</td>
+      <td class="text-center">${safeString(c['@_ClaveUnidad'])}</td>
+      <td>${safeString(c['@_Descripcion'])}</td>
+      <td class="text-right">${formatCurrency(c['@_ValorUnitario'])}</td>
+      <td class="text-right">${formatCurrency(c['@_Importe'])}</td>
+      <td class="text-right">${formatCurrency(c['@_Descuento'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title mt-2">CONCEPTOS</div>
+    <table>
+      <thead>
+        <tr>
+          <th>ClaveProdServ</th>
+          <th>Cantidad</th>
+          <th>Clave Unidad</th>
+          <th>Descripcion</th>
+          <th>Valor Unitario</th>
+          <th>Importe</th>
+          <th>Descuento</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderPercepciones = (percepcionesArray: RecordUnknown[]) => {
+  if (percepcionesArray.length === 0) return '';
+  const rows = percepcionesArray.map((p) => `
+    <tr>
+      <td class="text-center">${safeString(p['@_TipoPercepcion'])}</td>
+      <td class="text-center">${safeString(p['@_Clave'])}</td>
+      <td>${safeString(p['@_Concepto'])}</td>
+      <td class="text-right">${formatCurrency(p['@_ImporteGravado'])}</td>
+      <td class="text-right">${formatCurrency(p['@_ImporteExento'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title">CONCEPTOS PERCEPCIONES</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Clave SAT</th>
+          <th>Clave CIA</th>
+          <th>Descripcion</th>
+          <th>Gravado</th>
+          <th>Exento</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderDeducciones = (deduccionesArray: RecordUnknown[]) => {
+  if (deduccionesArray.length === 0) return '';
+  const rows = deduccionesArray.map((d) => `
+    <tr>
+      <td class="text-center">${safeString(d['@_TipoDeduccion'])}</td>
+      <td class="text-center">${safeString(d['@_Clave'])}</td>
+      <td>${safeString(d['@_Concepto'])}</td>
+      <td class="text-right">${formatCurrency(d['@_Importe'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title">CONCEPTOS DEDUCCIONES</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Clave SAT</th>
+          <th>Clave CIA</th>
+          <th>Descripción</th>
+          <th>Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderOtrosPagos = (otrosPagosArray: RecordUnknown[]) => {
+  if (otrosPagosArray.length === 0) return '';
+  const rows = otrosPagosArray.map((o) => `
+    <tr>
+      <td class="text-center">${safeString(o['@_TipoOtroPago'])}</td>
+      <td class="text-center">${safeString(o['@_Clave'])}</td>
+      <td>${safeString(o['@_Concepto'])}</td>
+      <td class="text-right">${formatCurrency(o['@_Importe'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title mt-2">CONCEPTOS OTROS PAGOS</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Clave SAT</th>
+          <th>Clave CIA</th>
+          <th>Descripción</th>
+          <th>Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderSubsidioAlEmpleo = (otrosPagosArray: RecordUnknown[]) => {
+  const subsidio = otrosPagosArray.find(o => o['@_TipoOtroPago'] === '002' && (o['nomina12:SubsidioAlEmpleo'] || get(o, 'SubsidioAlEmpleo')));
+  if (!subsidio) return '';
   
+  const subsidioNode = (subsidio['nomina12:SubsidioAlEmpleo'] || get(subsidio, 'SubsidioAlEmpleo')) as RecordUnknown;
+  
+  return `
+    <div class="section-title mt-2">SUBSIDIO AL EMPLEO</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Subsidio causado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="text-right">${formatCurrency(subsidioNode['@_SubsidioCausado'])}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+};
+
+const renderIncapacidades = (incapacidadesArray: RecordUnknown[]) => {
+  if (incapacidadesArray.length === 0) return '';
+  const rows = incapacidadesArray.map((i) => `
+    <tr>
+      <td class="text-center">${safeString(i['@_TipoIncapacidad'])}</td>
+      <td class="text-center">${safeString(i['@_DiasIncapacidad'])}</td>
+      <td class="text-right">${formatCurrency(i['@_ImporteMonetario'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title mt-2">INCAPACIDADES</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Días</th>
+          <th>Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderHorasExtra = (horasExtraArray: RecordUnknown[]) => {
+  if (horasExtraArray.length === 0) return '';
+  const rows = horasExtraArray.map((h) => `
+    <tr>
+      <td class="text-center">${safeString(h['@_TipoHoras'])}</td>
+      <td class="text-center">${safeString(h['@_Dias'])}</td>
+      <td class="text-center">${safeString(h['@_HorasExtra'])}</td>
+      <td class="text-right">${formatCurrency(h['@_ImportePagado'])}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="section-title mt-2">HORAS EXTRA</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Días</th>
+          <th>Horas</th>
+          <th>Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+};
+
+export const generateTemplateNominaHtml = ({ cfdiData, qrCodeDataUrl, isCancelled }: InvoiceTemplateProps): string => {
+  const comprobante = (cfdiData['cfdi:Comprobante'] || cfdiData['Comprobante'] || {}) as RecordUnknown;
   const emisor = (comprobante['cfdi:Emisor'] || get(comprobante, 'Emisor') || {}) as RecordUnknown;
   const receptor = (comprobante['cfdi:Receptor'] || get(comprobante, 'Receptor') || {}) as RecordUnknown;
   const complemento = (comprobante['cfdi:Complemento'] || get(comprobante, 'Complemento') || {}) as RecordUnknown;
   const timbre = (complemento?.['tfd:TimbreFiscalDigital'] || get(complemento, 'TimbreFiscalDigital') || {}) as RecordUnknown;
   const nomina = (complemento?.['nomina12:Nomina'] || get(complemento, 'Nomina') || {}) as RecordUnknown;
   
-  const primaryColor = brandConfig?.primaryColor || '#1e3a8a';
+  const conceptosContainer = (comprobante['cfdi:Conceptos'] || get(comprobante, 'Conceptos')) as RecordUnknown;
+  const conceptosRaw = conceptosContainer?.['cfdi:Concepto'] || get(conceptosContainer, 'Concepto');
+  const conceptosArray = normalizeArray(conceptosRaw);
 
-  // Nómina details
   const receptorNomina = (nomina['nomina12:Receptor'] || get(nomina, 'Receptor') || {}) as RecordUnknown;
   const emisorNomina = (nomina['nomina12:Emisor'] || get(nomina, 'Emisor') || {}) as RecordUnknown;
   
   const percepcionesNode = (nomina['nomina12:Percepciones'] || get(nomina, 'Percepciones') || {}) as RecordUnknown;
-  const percepcionesRaw = percepcionesNode['nomina12:Percepcion'] || get(percepcionesNode, 'Percepcion');
-  const percepcionesArray = normalizeArray(percepcionesRaw);
+  const percepcionesArray = normalizeArray(percepcionesNode['nomina12:Percepcion'] || get(percepcionesNode, 'Percepcion'));
 
   const deduccionesNode = (nomina['nomina12:Deducciones'] || get(nomina, 'Deducciones') || {}) as RecordUnknown;
-  const deduccionesRaw = deduccionesNode['nomina12:Deduccion'] || get(deduccionesNode, 'Deduccion');
-  const deduccionesArray = normalizeArray(deduccionesRaw);
+  const deduccionesArray = normalizeArray(deduccionesNode['nomina12:Deduccion'] || get(deduccionesNode, 'Deduccion'));
 
   const otrosPagosNode = (nomina['nomina12:OtrosPagos'] || get(nomina, 'OtrosPagos') || {}) as RecordUnknown;
-  const otrosPagosRaw = otrosPagosNode['nomina12:OtroPago'] || get(otrosPagosNode, 'OtroPago');
-  const otrosPagosArray = normalizeArray(otrosPagosRaw);
+  const otrosPagosArray = normalizeArray(otrosPagosNode['nomina12:OtroPago'] || get(otrosPagosNode, 'OtroPago'));
 
-  const percepcionesHtmlFinal = renderPercepciones(percepcionesArray);
-  const deduccionesHtmlFinal = renderDeducciones(deduccionesArray);
-  const otrosPagosHtmlFinal = renderOtrosPagos(otrosPagosArray);
+  const incapacidadesNode = (nomina['nomina12:Incapacidades'] || get(nomina, 'Incapacidades') || {}) as RecordUnknown;
+  const incapacidadesArray = normalizeArray(incapacidadesNode['nomina12:Incapacidad'] || get(incapacidadesNode, 'Incapacidad'));
 
-  const calcTotalPercepciones = () => {
-    const sum = Number(percepcionesNode['@_TotalGravado'] || 0) + Number(percepcionesNode['@_TotalExento'] || 0);
-    return percepcionesNode['@_TotalSueldos'] || percepcionesNode['@_TotalGravado'] ? sum : 0;
-  };
-  const valTotalPercepciones = calcTotalPercepciones();
-  
-  const calcTotalDeducciones = () => {
-    const sum = Number(deduccionesNode['@_TotalOtrasDeducciones'] || 0) + Number(deduccionesNode['@_TotalImpuestosRetenidos'] || 0);
-    return deduccionesNode['@_TotalOtrasDeducciones'] || deduccionesNode['@_TotalImpuestosRetenidos'] ? sum : nomina['@_TotalDeducciones'];
-  };
-  const valTotalDeducciones = calcTotalDeducciones();
+  const horasExtraArray = normalizeArray(receptorNomina['nomina12:HorasExtra'] || get(receptorNomina, 'HorasExtra'));
 
-  return `<!DOCTYPE html>
+  const cadenaOriginal = timbre['@_Version'] 
+    ? `||${safeString(timbre['@_Version'])}|${safeString(timbre['@_UUID'])}|${safeString(timbre['@_FechaTimbrado'])}|${safeString(timbre['@_RfcProvCertif'])}|${safeString(timbre['@_SelloCFD'])}|${safeString(timbre['@_NoCertificadoSAT'])}||`
+    : '';
+
+  return String.raw`<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Recibo de Nómina ${safeString(comprobante['@_Serie'])}${safeString(comprobante['@_Folio'])}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Recibo de Nómina \${safeString(comprobante['@_Serie'])}\${safeString(comprobante['@_Folio'])}</title>
     <style>
-      body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; position: relative; }
-      .primary-bg { background-color: ${primaryColor}; }
-      .primary-text { color: ${primaryColor}; }
+      body { 
+        font-family: Arial, Helvetica, sans-serif; 
+        font-size: 9px; 
+        -webkit-print-color-adjust: exact; 
+        print-color-adjust: exact; 
+        margin: 0; 
+        padding: 0;
+        color: #000;
+      }
+      table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin-bottom: 4px; 
+      }
+      th, td { 
+        border: 1px solid #000; 
+        padding: 2px 4px; 
+      }
+      th { 
+        background-color: #f3f4f6; 
+        font-weight: bold; 
+        text-align: center; 
+      }
+      .header-container { 
+        display: flex; 
+        justify-content: space-between; 
+        margin-bottom: 10px; 
+      }
+      .header-left { 
+        width: 80%; 
+      }
+      .header-right { 
+        width: 20%; 
+        display: flex;
+        justify-content: flex-end;
+      }
+      .qr-code {
+        max-width: 120px;
+        max-height: 120px;
+      }
+      .company-title {
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .info-row {
+        margin-bottom: 2px;
+      }
+      .info-grid { 
+        display: grid; 
+        grid-template-columns: repeat(3, 1fr); 
+        gap: 4px; 
+        margin-bottom: 10px; 
+      }
+      .info-item {
+        display: flex;
+      }
+      .info-label { 
+        font-weight: bold; 
+        margin-right: 4px; 
+      }
+      .text-right { text-align: right; }
+      .text-center { text-align: center; }
+      .section-title { 
+        font-weight: bold; 
+        text-align: center; 
+        background-color: #f3f4f6; 
+        border: 1px solid #000; 
+        border-bottom: none;
+        padding: 2px; 
+      }
+      .flex-row { 
+        display: flex; 
+        gap: 8px; 
+        align-items: flex-start;
+      }
+      .flex-half { 
+        width: 50%; 
+      }
+      .footer-container { 
+        display: flex; 
+        gap: 8px; 
+        margin-top: 8px;
+      }
+      .stamps { 
+        width: 70%; 
+      }
+      .stamp-box {
+        border: 1px solid #000;
+        padding: 2px 4px;
+        margin-bottom: 4px;
+        font-size: 7px;
+        word-break: break-all;
+      }
+      .stamp-title {
+        font-weight: bold;
+      }
+      .totals { 
+        width: 30%; 
+      }
+      .totals table {
+        margin-bottom: 4px;
+      }
+      .mt-2 { margin-top: 8px; }
       .watermark {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%) rotate(-45deg);
-        font-size: 120px;
+        font-size: 100px;
         color: rgba(239, 68, 68, 0.15);
         font-weight: 900;
-        letter-spacing: 10px;
         z-index: -1;
-        white-space: nowrap;
         pointer-events: none;
-        user-select: none;
+      }
+      .leyenda-final {
+        margin-top: 4px;
+        border: 1px solid #000;
+        padding: 4px;
+        text-transform: uppercase;
+        font-size: 8px;
       }
     </style>
   </head>
-  <body class="bg-white text-slate-800 p-8 text-sm">
-    ${renderWatermark(!!isCancelled)}
+  <body>
+    ${isCancelled ? '<div class="watermark">CANCELADO</div>' : ''}
     
-    <!-- Header -->
-    <div class="flex justify-between items-start mb-6">
-      <div class="w-1/2">
-        ${renderBrandHeader(brandConfig as RecordUnknown | undefined)}
-        <div class="font-semibold text-lg">${safeString(emisor['@_Nombre']) || 'EMPRESA DEMO'}</div>
-        <div class="text-slate-600">RFC: ${safeString(emisor['@_Rfc'])}</div>
-        <div class="text-slate-600">Régimen Fiscal: ${safeString(emisor['@_RegimenFiscal'])}</div>
-        <div class="text-slate-600">Registro Patronal: ${safeString(emisorNomina['@_RegistroPatronal'])}</div>
+    <div class="header-container">
+      <div class="header-left">
+        <div class="company-title">${safeString(emisor['@_Nombre'])}</div>
+        <div class="info-row"><span class="info-label">RFC:</span> ${safeString(emisor['@_Rfc'])}</div>
+        <div class="info-row"><span class="info-label">Registro Patronal:</span> ${safeString(emisorNomina['@_RegistroPatronal'])}</div>
+        <div class="info-row"><span class="info-label">Regimen Fiscal:</span> ${safeString(emisor['@_RegimenFiscal'])} <span class="info-label ml-2">Uso CFDI:</span> ${safeString(receptor['@_UsoCFDI'])}</div>
+        <div class="info-row"><span class="info-label">Lugar de Expedición:</span> ${safeString(comprobante['@_LugarExpedicion'])}</div>
+        <div class="info-row"><span class="info-label">Método Pago:</span> ${safeString(comprobante['@_MetodoPago'])} <span class="info-label ml-2">Forma Pago:</span> ${safeString(comprobante['@_FormaPago'])}</div>
+        <div class="info-row"><span class="info-label">F. Fiscal:</span> ${safeString(timbre['@_UUID'])}</div>
+        <div class="info-row"><span class="info-label">Fecha Certificación:</span> ${safeString(timbre['@_FechaTimbrado'])}</div>
+        <div class="info-row"><span class="info-label">Certificado CSD:</span> ${safeString(comprobante['@_NoCertificado'])}</div>
+        <div class="info-row"><span class="info-label">Certificado SAT:</span> ${safeString(timbre['@_NoCertificadoSAT'])}</div>
+      </div>
+      <div class="header-right">
+        ${qrCodeDataUrl ? `<img src="${safeString(qrCodeDataUrl)}" class="qr-code" alt="QR" />` : ''}
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-item"><span class="info-label">No. Empleado:</span> ${safeString(receptorNomina['@_NumEmpleado'])}</div>
+      <div class="info-item"><span class="info-label">Grupo Pago:</span></div>
+      <div class="info-item"><span class="info-label">Num. Seg. Social:</span> ${safeString(receptorNomina['@_NumSeguridadSocial'])}</div>
+      
+      <div class="info-item"><span class="info-label">Empleado:</span> ${safeString(receptor['@_Nombre'])}</div>
+      <div class="info-item"><span class="info-label">Fecha Inicio Rel. Laboral:</span> ${safeString(receptorNomina['@_FechaInicioRelLaboral'])}</div>
+      <div class="info-item"><span class="info-label">Periodicidad:</span> ${safeString(receptorNomina['@_PeriodicidadPago'])} <span class="info-label ml-2">Días Pagados:</span> ${safeString(nomina['@_NumDiasPagados'])}</div>
+      
+      <div class="info-item"><span class="info-label">RFC:</span> ${safeString(receptor['@_Rfc'])} <span class="info-label ml-2">CURP:</span> ${safeString(receptorNomina['@_Curp'])}</div>
+      <div class="info-item"><span class="info-label">Fecha de Pago:</span> ${safeString(nomina['@_FechaPago'])}</div>
+      <div class="info-item"><span class="info-label">Tipo contrato:</span> ${safeString(receptorNomina['@_TipoContrato'])}</div>
+      
+      <div class="info-item"><span class="info-label">Puesto:</span> ${safeString(receptorNomina['@_Puesto'])}</div>
+      <div class="info-item"><span class="info-label">Antigüedad:</span> ${safeString(receptorNomina['@_Antigüedad'])}</div>
+      <div class="info-item"><span class="info-label">Riesgo puesto:</span> ${safeString(receptorNomina['@_RiesgoPuesto'])}</div>
+      
+      <div class="info-item"><span class="info-label">Periodo Pago:</span> ${safeString(nomina['@_FechaInicialPago'])} a ${safeString(nomina['@_FechaFinalPago'])}</div>
+      <div class="info-item"></div>
+      <div class="info-item"><span class="info-label">Tipo de Régimen:</span> ${safeString(receptorNomina['@_TipoRegimen'])}</div>
+    </div>
+
+    ${renderConceptos(conceptosArray)}
+
+    <div class="flex-row">
+      <div class="flex-half">
+        ${renderPercepciones(percepcionesArray)}
+      </div>
+      <div class="flex-half">
+        ${renderDeducciones(deduccionesArray)}
+      </div>
+    </div>
+
+    ${renderOtrosPagos(otrosPagosArray)}
+    ${renderSubsidioAlEmpleo(otrosPagosArray)}
+    
+    <div class="flex-row">
+      <div class="flex-half">
+        ${renderIncapacidades(incapacidadesArray)}
+      </div>
+      <div class="flex-half">
+        ${renderHorasExtra(horasExtraArray)}
+      </div>
+    </div>
+
+    <div class="footer-container">
+      <div class="stamps">
+        <div class="stamp-box">
+          <span class="stamp-title">Sello Digital CFDI:</span> ${safeString(timbre['@_SelloCFD'])}
+        </div>
+        <div class="stamp-box">
+          <span class="stamp-title">Sello SAT:</span> ${safeString(timbre['@_SelloSAT'])}
+        </div>
+        <div class="stamp-box">
+          <span class="stamp-title">Cadena Original:</span> ${cadenaOriginal}
+        </div>
+        
+        <div class="leyenda-final">
+          CON LA CANTIDAD NETA RECIBIDA VÍA DEPÓSITO BANCARIO A MI CUENTA CLABE, ME DOY POR CUBIERTO DE LOS SALARIOS Y PRESTACIONES GENERADAS DURANTE EL PERIODO DE ESTE RECIBO, OTORGANDO EL FINIQUITO MAS AMPLIO QUE EN DERECHO PROCEDA A FAVOR DE ${safeString(emisor['@_Nombre'])}.
+        </div>
       </div>
       
-      <div class="w-1/2 text-right">
-        <h1 class="text-3xl font-bold primary-text mb-2">RECIBO DE NÓMINA</h1>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Folio:</span> ${safeString(comprobante['@_Serie'])}${safeString(comprobante['@_Folio']) || 'S/N'}
-        </div>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Fecha Emisión:</span> ${safeString(comprobante['@_Fecha'])}
-        </div>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Lugar de Expedición:</span> ${safeString(comprobante['@_LugarExpedicion'])}
-        </div>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Tipo Nómina:</span> ${getTipoNominaLabel(nomina['@_TipoNomina'])}
-        </div>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Periodo:</span> ${safeString(nomina['@_FechaInicialPago'])} al ${safeString(nomina['@_FechaFinalPago'])}
-        </div>
-        <div class="text-slate-600 mb-1">
-          <span class="font-semibold">Días Pagados:</span> ${safeString(nomina['@_NumDiasPagados'])}
-        </div>
+      <div class="totals">
+        <table>
+          <tbody>
+            <tr>
+              <td>Total Percepciones</td>
+              <td class="text-right">${formatCurrency(nomina['@_TotalPercepciones'])}</td>
+            </tr>
+            <tr>
+              <td>Total Otros Pagos</td>
+              <td class="text-right">${formatCurrency(nomina['@_TotalOtrosPagos'])}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div class="section-title">DEDUCCIONES</div>
+        <table>
+          <tbody>
+            <tr>
+              <td>Otras Deducciones</td>
+              <td class="text-right">${formatCurrency(deduccionesNode['@_TotalOtrasDeducciones'])}</td>
+            </tr>
+            <tr>
+              <td>Total ISR</td>
+              <td class="text-right">${formatCurrency(deduccionesNode['@_TotalImpuestosRetenidos'])}</td>
+            </tr>
+            <tr>
+              <td>Total Deducciones</td>
+              <td class="text-right">${formatCurrency(nomina['@_TotalDeducciones'])}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table>
+          <tbody>
+            <tr>
+              <td>Subtotal</td>
+              <td class="text-right">${formatCurrency(comprobante['@_SubTotal'])}</td>
+            </tr>
+            <tr>
+              <td>Descuento</td>
+              <td class="text-right">${formatCurrency(comprobante['@_Descuento'])}</td>
+            </tr>
+            <tr>
+              <td>Pago Neto</td>
+              <td class="text-right">${formatCurrency(comprobante['@_Total'])}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
-
-    <!-- Employee Info -->
-    <div class="border border-slate-200 rounded-lg p-4 mb-6 bg-slate-50 text-xs">
-      <h3 class="font-bold text-slate-700 mb-2 border-b pb-1">DATOS DEL TRABAJADOR</h3>
-      <div class="grid grid-cols-3 gap-4">
-        <div>
-          <span class="font-semibold block text-slate-600">Nombre:</span>
-          ${safeString(receptor['@_Nombre'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">RFC:</span>
-          ${safeString(receptor['@_Rfc'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">CURP:</span>
-          ${safeString(receptorNomina['@_Curp'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">No. Empleado:</span>
-          ${safeString(receptorNomina['@_NumEmpleado'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">NSS:</span>
-          ${safeString(receptorNomina['@_NumSeguridadSocial'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">Departamento:</span>
-          ${safeString(receptorNomina['@_Departamento'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">Puesto:</span>
-          ${safeString(receptorNomina['@_Puesto'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">Riesgo Puesto:</span>
-          ${safeString(receptorNomina['@_RiesgoPuesto'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">Salario Diario Integrado:</span>
-          ${formatCurrency(receptorNomina['@_SalarioDiarioIntegrado'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-600">Salario Base Cot. Apor.:</span>
-          ${formatCurrency(receptorNomina['@_SalarioBaseCotApor'])}
-        </div>
-      </div>
-    </div>
-
-    <!-- Payroll Details -->
-    <div class="flex gap-6 mb-6">
-      <!-- Percepciones -->
-      <div class="w-1/2">
-        <h3 class="font-bold text-slate-700 mb-2 border-b-2 border-slate-300 pb-1">PERCEPCIONES</h3>
-        ${percepcionesHtmlFinal}
-        <div class="flex justify-between mt-2 pt-2 border-t font-semibold text-xs">
-          <span>Total Percepciones:</span>
-          <span>${formatCurrency(valTotalPercepciones)}</span>
-        </div>
-      </div>
-
-      <!-- Deducciones & Otros Pagos -->
-      <div class="w-1/2 flex flex-col gap-4">
-        <div>
-          <h3 class="font-bold text-slate-700 mb-2 border-b-2 border-slate-300 pb-1">DEDUCCIONES</h3>
-          ${deduccionesHtmlFinal}
-          <div class="flex justify-between mt-2 pt-2 border-t font-semibold text-xs">
-            <span>Total Deducciones:</span>
-            <span>${formatCurrency(valTotalDeducciones)}</span>
-          </div>
-        </div>
-
-        ${renderOtrosPagosWrapper(otrosPagosHtmlFinal, nomina)}
-      </div>
-    </div>
-
-    <!-- Totals -->
-    <div class="flex justify-end mb-6">
-      <div class="w-1/3 bg-slate-50 p-4 rounded-lg border border-slate-200">
-        <div class="flex justify-between py-1 text-sm">
-          <span class="text-slate-600">Subtotal:</span>
-          <span class="font-semibold">${formatCurrency(comprobante['@_SubTotal'])}</span>
-        </div>
-        ${renderDescuento(comprobante)}
-        <div class="flex justify-between py-2 mt-2 border-t-2 border-slate-800 text-xl font-bold">
-          <span>Total a Pagar:</span>
-          <span>${formatCurrency(comprobante['@_Total'])}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- SAT Info & QR -->
-    <div class="border-t border-slate-300 pt-6 flex gap-6 text-[10px] text-slate-500 break-all">
-      <div class="w-24 flex-shrink-0">
-        ${renderQrCode(qrCodeDataUrl)}
-      </div>
-      <div class="flex-1 space-y-2">
-        <div>
-          <span class="font-semibold block text-slate-700">Folio Fiscal (UUID):</span>
-          ${safeString(timbre['@_UUID']) || 'No certificado'}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-700">Sello Digital del CFDI:</span>
-          ${safeString(timbre['@_SelloCFD'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-700">Sello del SAT:</span>
-          ${safeString(timbre['@_SelloSAT'])}
-        </div>
-        <div>
-          <span class="font-semibold block text-slate-700">Cadena Original del complemento de certificación digital del SAT:</span>
-          ${renderCadenaOriginal(timbre)}
-        </div>
-        <div class="flex justify-between text-slate-600 pt-1">
-          <span><span class="font-semibold">No. Certificado Emisor:</span> ${safeString(comprobante['@_NoCertificado'])}</span>
-          <span><span class="font-semibold">No. Certificado SAT:</span> ${safeString(timbre['@_NoCertificadoSAT'])}</span>
-          <span><span class="font-semibold">Fecha Timbrado:</span> ${safeString(timbre['@_FechaTimbrado'])}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="mt-6 text-center text-slate-400 text-[10px] italic">
-      Este documento es una representación impresa de un CFDI de Nómina.
+    
+    <div class="text-center mt-2" style="font-size: 8px;">
+      Este documento es una representación impresa de un CFDI
     </div>
   </body>
 </html>`;

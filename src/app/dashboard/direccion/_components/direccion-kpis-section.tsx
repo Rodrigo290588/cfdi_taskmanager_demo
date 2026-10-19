@@ -59,6 +59,7 @@ type OneKpiCard = Readonly<{
   description: string;
   progressRatio: number | null;
   trend: ReactNode;
+  tooltipText: string;
 }>;
 
 // ============================================================================
@@ -98,7 +99,7 @@ function deriveKpiAggregates(
 // HELPERS INDIVIDUALES · build KPI card (Paquete 7.2 · Extract 4 blocks inline)
 // ============================================================================
 
-function buildKpiCostoTotal(actual: DireccionKpiAggregates, d: KpiDerived): OneKpiCard {
+function buildKpiCostoTotal(actual: DireccionKpiAggregates, d: KpiDerived, labelPrev: string): OneKpiCard {
   return {
     tone: 'blue',
     title: 'Costo Total Nómina',
@@ -109,14 +110,15 @@ function buildKpiCostoTotal(actual: DireccionKpiAggregates, d: KpiDerived): OneK
     trend: (
       <TrendIndicatorBadge
         deltaPct={d.deltaCostoTotal}
-        labelPrev="período igual duración"
+        labelPrev={labelPrev}
         mode="default"
       />
     ),
+    tooltipText: 'Suma de percepciones brutas, carga patronal estimada (IMSS, RCV, INFONAVIT) y el Impuesto Sobre Nómina (ISN) estatal calculado.',
   };
 }
 
-function buildKpiPromedioEmp(d: KpiDerived): OneKpiCard {
+function buildKpiPromedioEmp(d: KpiDerived, labelPrev: string): OneKpiCard {
   const totalEmp = d.totalEmpleados.toLocaleString('es-MX');
   const totalRec = d.totalRecibos.toLocaleString('es-MX');
   return {
@@ -129,14 +131,15 @@ function buildKpiPromedioEmp(d: KpiDerived): OneKpiCard {
     trend: (
       <TrendIndicatorBadge
         deltaPct={d.deltaPromedio}
-        labelPrev="período anterior"
+        labelPrev={labelPrev}
         mode="default"
       />
     ),
+    tooltipText: 'Costo Total de la Nómina dividido entre el número de empleados únicos que recibieron al menos un recibo timbrado en el periodo.',
   };
 }
 
-function buildKpiPctVariable(actual: DireccionKpiAggregates, d: KpiDerived): OneKpiCard {
+function buildKpiPctVariable(actual: DireccionKpiAggregates, d: KpiDerived, labelPrev: string): OneKpiCard {
   return {
     tone: 'amber',
     title: '% Gasto Variable',
@@ -147,10 +150,11 @@ function buildKpiPctVariable(actual: DireccionKpiAggregates, d: KpiDerived): One
     trend: (
       <TrendIndicatorBadge
         deltaPct={d.deltaVar}
-        labelPrev="% variable anterior"
+        labelPrev={labelPrev}
         mode="default"
       />
     ),
+    tooltipText: 'Proporción del gasto variable (Aguinaldo, PTU, Horas Extra, Prima Vacacional, Comisiones, Bonos) sobre el costo total bruto.',
   };
 }
 
@@ -168,6 +172,7 @@ function buildKpiDesviacion(d: KpiDerived): OneKpiCard {
         Configurar presupuestos
       </span>
     ),
+    tooltipText: 'Variación porcentual entre el costo total real de nómina y el presupuesto autorizado configurado por departamento.',
   };
 }
 
@@ -175,11 +180,11 @@ function buildKpiDesviacion(d: KpiDerived): OneKpiCard {
 // HELPER 2 · buildAllKpiCards (Paquete 7.2 · Factory 4 tarjetas)
 // ============================================================================
 
-function buildAllKpiCards(actual: DireccionKpiAggregates, d: KpiDerived): readonly OneKpiCard[] {
+function buildAllKpiCards(actual: DireccionKpiAggregates, d: KpiDerived, labelPrev: string): readonly OneKpiCard[] {
   return [
-    buildKpiCostoTotal(actual, d),
-    buildKpiPromedioEmp(d),
-    buildKpiPctVariable(actual, d),
+    buildKpiCostoTotal(actual, d, labelPrev),
+    buildKpiPromedioEmp(d, labelPrev),
+    buildKpiPctVariable(actual, d, labelPrev),
     buildKpiDesviacion(d),
   ] as const;
 }
@@ -218,7 +223,8 @@ export async function DireccionKpisSection({
   }
 
   const derived = deriveKpiAggregates(actual, anterior);
-  const cards = buildAllKpiCards(actual, derived);
+  const labelPrev = scope.anioComparativo ? `vs año ${scope.anioComparativo}` : 'período anterior';
+  const cards = buildAllKpiCards(actual, derived, labelPrev);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -232,6 +238,7 @@ export async function DireccionKpisSection({
           description={card.description}
           progressRatio={card.progressRatio}
           trend={card.trend}
+          tooltipText={card.tooltipText}
         />
       ))}
     </div>

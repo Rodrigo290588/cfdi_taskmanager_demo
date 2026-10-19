@@ -58,8 +58,9 @@ export class SatSoapService {
     // Add common attributes based on type
     if (retrievalType !== 'folio') {
        // Force string comparison to avoid TS error since we might get lowercase from DB despite the type
-       const typeStr = tipoSolicitud as string;
-       solicitudAttrs += ` FechaInicial="${startStr}" FechaFinal="${endStr}" TipoSolicitud="${typeStr === 'cfdi' ? 'CFDI' : tipoSolicitud}"`
+       const typeStr = (tipoSolicitud as string).toLowerCase();
+       const tipoFinal = typeStr === 'metadata' ? 'Metadata' : 'CFDI';
+       solicitudAttrs += ` FechaInicial="${startStr}" FechaFinal="${endStr}" TipoSolicitud="${tipoFinal}"`
     }
 
     // Specific logic per Retrieval Type
@@ -90,7 +91,7 @@ export class SatSoapService {
       if (complemento) solicitudAttrs += ` Complemento="${complemento}"`
 
       if (rfcReceptor) {
-        solicitudContent = `<RfcReceptores><RfcReceptor>${rfcReceptor}</RfcReceptores></RfcReceptores>`
+        solicitudContent = `<RfcReceptores><RfcReceptor>${rfcReceptor}</RfcReceptor></RfcReceptores>`
       }
     }
 
@@ -105,7 +106,7 @@ export class SatSoapService {
     // Note: signedSolicitud already contains the <solicitud> with the enveloped signature
     
     // EMPTY HEADER as requested by user
-    const soapEnvelope = `<s:Envelope xmlns:s="${SatSoapService.NAMESPACES.s}"><s:Header/><s:Body><${rootElement} xmlns="${SatSoapService.NAMESPACES.des}">${signedSolicitud}</${rootElement}></s:Body></s:Envelope>`
+    const soapEnvelope = `<s:Envelope xmlns:s="${SatSoapService.NAMESPACES.s}" xmlns:des="${SatSoapService.NAMESPACES.des}"><s:Header/><s:Body><des:${rootElement}>${signedSolicitud}</des:${rootElement}></s:Body></s:Envelope>`
 
     return soapEnvelope
   }
@@ -126,7 +127,7 @@ export class SatSoapService {
     
     // EMPTY HEADER as requested by user
     const rootElement = 'VerificaSolicitudDescarga'
-    const soapEnvelope = `<s:Envelope xmlns:s="${SatSoapService.NAMESPACES.s}"><s:Header/><s:Body><${rootElement} xmlns="${SatSoapService.NAMESPACES.des}">${signedSolicitud}</${rootElement}></s:Body></s:Envelope>`
+    const soapEnvelope = `<s:Envelope xmlns:s="${SatSoapService.NAMESPACES.s}" xmlns:des="${SatSoapService.NAMESPACES.des}"><s:Header/><s:Body><des:${rootElement}>${signedSolicitud}</des:${rootElement}></s:Body></s:Envelope>`
 
     return soapEnvelope
   }

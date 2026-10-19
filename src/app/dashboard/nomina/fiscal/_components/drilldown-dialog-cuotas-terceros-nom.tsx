@@ -271,7 +271,7 @@ export function DrilldownDialogCuotasTercerosNom(props: DrilldownDialogCuotasTer
     function handleExportCsv() {
         try {
             const headers = [
-                'ID Deducción','Tipo Deducción','Categoría Cuota','Clave Deducción','Concepto Deducción','Importe Cuota MXN',
+                'Tipo Deducción','Categoría Cuota','Clave Deducción','Concepto Deducción','Importe Cuota MXN',
                 'Fecha Emisión','Fecha Pago','Tipo Nómina','UUID','Serie','Folio',
                 'RFC Empleado','Nombre Empleado','CURP','No. Empleado','Departamento',
                 'Percepciones','Deducciones','Otros Pagos','Total Neto','Estatus SAT','Link PDF',
@@ -284,7 +284,6 @@ export function DrilldownDialogCuotasTercerosNom(props: DrilldownDialogCuotasTer
                     return /[",\n]/.test(s) ? `"${s}"` : s;
                 };
                 lines.push([
-                    esc(r.deduccionId),
                     esc(r.tipoDeduccion),
                     esc(r.categoriaCuota),
                     esc(r.claveDeduccion),
@@ -378,7 +377,6 @@ export function DrilldownDialogCuotasTercerosNom(props: DrilldownDialogCuotasTer
             <Table className="w-full min-w-max">
                 <TableHeader className="sticky top-0 bg-muted z-10 shadow-sm">
                     <TableRow>
-                        <TableHead className="w-[140px] whitespace-nowrap">ID Deducción</TableHead>
                         <TableHead className="w-[90px] whitespace-nowrap">Tipo SAT</TableHead>
                         <TableHead className="w-[210px] whitespace-nowrap">Categoría Cuota</TableHead>
                         <TableHead className="w-[120px] whitespace-nowrap">Clave SAT</TableHead>
@@ -402,7 +400,6 @@ export function DrilldownDialogCuotasTercerosNom(props: DrilldownDialogCuotasTer
                         <TableHead className="w-[110px] whitespace-nowrap">Sat Status</TableHead>
                     </TableRow>
                     <TableRow className="bg-muted/50 border-b shadow-sm">
-                        <TableHead className="p-1 px-2 align-top"><Input placeholder="Buscar..." className="h-7 text-xs bg-background font-mono" value={filters.deduccionId || ''} onChange={e => updateFilter('deduccionId', e.target.value)}/></TableHead>
                         <TableHead className="p-1 px-2 align-top"><Input placeholder="001..." className="h-7 text-xs bg-background" value={filters.tipoDeduccion || ''} onChange={e => updateFilter('tipoDeduccion', e.target.value)}/></TableHead>
                         <TableHead className="p-1 px-2 align-top">
                             <select
@@ -445,7 +442,6 @@ export function DrilldownDialogCuotasTercerosNom(props: DrilldownDialogCuotasTer
                         const badgeClass = tip ? CUOTA_TIPO_BADGE_CLASS[tip] : 'bg-slate-500/10 text-slate-700 border-transparent';
                         return (
                             <TableRow key={`${r.deduccionId}-${i}`}>
-                                <TableCell className="whitespace-nowrap font-mono text-[11px]">{r.deduccionId}</TableCell>
                                 <TableCell className="whitespace-nowrap font-semibold text-[11px]">{r.tipoDeduccion || '-'}</TableCell>
                                 <TableCell className="whitespace-nowrap">
                                     <Badge variant="outline" className={badgeClass} title={r.categoriaCuota}>

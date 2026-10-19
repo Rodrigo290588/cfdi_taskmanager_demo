@@ -31,18 +31,19 @@ function humanViewLabel(view: DireccionViewMode): string {
   }
 }
 
-function buildTendenciaFooterSummary(rows: DireccionTendenciaRow[]): ReactNode {
+function buildTendenciaFooterSummary(rows: DireccionTendenciaRow[], anioComparativo: number | null): ReactNode {
   if (rows.length === 0) return undefined;
 
   const total = rows.reduce((a, r) => a + (r.costoActual ?? 0), 0);
   const periodLabel = rows.length === 1 ? 'período' : 'períodos';
+  const yoyLabel = anioComparativo ? `Año ${anioComparativo}` : 'Comparativo';
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="font-medium">{rows.length} {periodLabel} · Actual total <strong>{fmtMxn(total)}</strong></span>
       <span className="flex items-center gap-3">
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm" style={{ background: DIRECCION_PALETTE.primary }} />Período actual</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-dashed" style={{ borderColor: DIRECCION_PALETTE.yoYLine }} />YoY (año comparativo)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm border border-dashed" style={{ borderColor: DIRECCION_PALETTE.yoYLine }} />{yoyLabel}</span>
       </span>
     </div>
   );
@@ -51,7 +52,8 @@ function buildTendenciaFooterSummary(rows: DireccionTendenciaRow[]): ReactNode {
 function renderChartContent(
   fetchError: string | null,
   rows: DireccionTendenciaRow[],
-  view: DireccionViewMode
+  view: DireccionViewMode,
+  anioComparativo: number | null
 ): ReactNode {
   if (fetchError) {
     return (
@@ -75,7 +77,7 @@ function renderChartContent(
     );
   }
 
-  return <DireccionTendenciaChartClient rows={rows} viewMode={view} />;
+  return <DireccionTendenciaChartClient rows={rows} viewMode={view} anioComparativo={anioComparativo} />;
 }
 
 export async function DireccionTendenciaChart({
@@ -99,17 +101,16 @@ export async function DireccionTendenciaChart({
     fetchError = (err as Error)?.message ?? 'ERR_UNKNOWN';
   }
 
-  const title = humanViewLabel(view);
-  const subtitle = `Comparativo YoY vs ${anioComparativo ?? 'año anterior'} (línea punteada). Fuente: Vista Materializada mv_direccion_costo_ejecutivo_mensual (Index Only Scan).`;
+  const subtitle = `Comparativo vs año ${anioComparativo ?? 'anterior'} (línea punteada).`;
 
   return (
     <ChartCardDireccion
-      title={title}
+      title={humanViewLabel(view)}
       subtitle={subtitle}
       minHeight={460}
-      footer={buildTendenciaFooterSummary(rows)}
+      footer={buildTendenciaFooterSummary(rows, anioComparativo)}
     >
-      {renderChartContent(fetchError, rows, view)}
+      {renderChartContent(fetchError, rows, view, anioComparativo)}
     </ChartCardDireccion>
   );
 }

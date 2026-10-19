@@ -47,6 +47,7 @@ export type SbcSdiAlertRow = {
 };
 
 export async function fetchAuditoriaSbcSdiTop100(params: SbcSdiFetchTop100Params): Promise<SbcSdiAlertRow[]> {
+  if (!params.startDate || !params.endDate) return [];
   const { startDate: sIso, endDate: eIso } = params;
   const fe = params.fiscalEntityId ?? null;
   const limit = Math.max(1, Math.min(500, params.limit ?? 100));
@@ -304,6 +305,7 @@ export type BrechaTimbradoRow = {
 };
 
 export async function fetchAlertasBrechaTimbradoTop100(params: BrechaFetchTop100Params): Promise<BrechaTimbradoRow[]> {
+  if (!params.startDate || !params.endDate) return [];
   const { startDate: sIso, endDate: eIso } = params;
   const fe = params.fiscalEntityId ?? null;
   const limit = Math.max(1, Math.min(500, params.limit ?? 100));
@@ -551,6 +553,9 @@ type TopCompTotals = Readonly<{
 }>;
 
 async function _tCompQueryFromDB(params: FiscalNomTableParams): Promise<TopCompTotals> {
+  if (!params.startDate || !params.endDate) {
+    return { totalReceipts: 0, totalCancelados: 0, totalVigentes: 0 };
+  }
   const { startDate: sIso, endDate: eIso } = params;
   const fe = params.fiscalEntityId ?? null;
   let totalReceipts = 0;

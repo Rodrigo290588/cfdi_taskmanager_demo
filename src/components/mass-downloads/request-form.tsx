@@ -206,7 +206,7 @@ export function MassDownloadRequestForm() {
       requestType: 'metadata',
       status: 'Todos',
       thirdPartyRfc: '',
-      complement: 'null',
+      complement: '',
       companyId: '',
       folio: '',
     },

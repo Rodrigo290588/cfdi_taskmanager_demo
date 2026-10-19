@@ -55,8 +55,8 @@ async function main() {
   const soapXml = satSoapService.generateSolicitaDescargaSoap({
       rfcSolicitante: targetRfc,
       startDate: new Date(Date.now() - 86400000 * 5), // 5 days ago
-      endDate: new Date(),
-      tipoSolicitud: 'CFDI',
+      endDate: new Date(Date.now() - 86400000), // Yesterday
+      tipoSolicitud: 'Metadata',
       retrievalType: 'emitidos',
       rfcEmisor: targetRfc, // Self
       certificate,
@@ -86,6 +86,22 @@ async function main() {
   console.log('SAT Response Status:', response.status)
   console.log('SAT Response Body:', text)
 
+  // === DEBUG VERIFICA ===
+  const idSolicitudMatch = text.match(/IdSolicitud="([^"]+)"/)
+  if (idSolicitudMatch) {
+      const idSolicitud = idSolicitudMatch[1]
+      console.log(`\n\n--- Testing Verifica for IdSolicitud: ${idSolicitud} ---`)
+      const { verifyMassDownload } = await import('../lib/sat-service')
+      try {
+          const vRes = await verifyMassDownload({
+              rfc: "DMC750410C42", // Wrong RFC!
+              idSolicitud
+          })
+          console.log('Verifica result:', vRes)
+      } catch (err) {
+          console.error('Verifica failed:', err)
+      }
+  }
 }
 
 main()

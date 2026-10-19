@@ -1,7 +1,7 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
 import { RequestStatus } from '@prisma/client'
-import { MASS_VERIFICATION_QUEUE_NAME, getMassVerificationQueue, getMassDownloadQueue, resolveRedisConnection } from '@/lib/queue'
+import { MASS_VERIFICATION_QUEUE_NAME, getMassVerificationQueue, getMassPackageDownloadQueue, resolveRedisConnection } from '@/lib/queue'
 import { verifyMassDownload } from '@/lib/sat-service'
 import { generateDummyInvoices } from '@/services/dummy-invoice.service'
 import { v4 as uuidv4 } from 'uuid'
@@ -94,6 +94,10 @@ export function setupVerificationWorker() {
             nextCheck = null
             break
           default:
+            if (satVerification.codigoEstadoSolicitud === '5004') {
+              newStatus = RequestStatus.EN_PROCESO
+              satMessage = 'Solicitud Aceptada. El SAT está procesando la petición (En espera)...'
+            }
             nextCheck = new Date(Date.now() + nextDelayMs)
             break
         }
@@ -143,7 +147,7 @@ export function setupVerificationWorker() {
         // Encolar trabajos en `massDownloadQueue` para descargar físicamente los ZIPs
         if (packageIds && packageIds.length > 0) {
           for (const packId of packageIds) {
-            await getMassDownloadQueue().add('download-package', {
+            await getMassPackageDownloadQueue().add('download-package', {
               requestId: request.id,
               rfc: request.requestingRfc,
               idPaquete: packId

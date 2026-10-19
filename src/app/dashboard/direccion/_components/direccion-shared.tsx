@@ -18,7 +18,13 @@ import { memo, type ReactNode } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  ArrowUpRight, ArrowDownRight, Minus, AlertTriangle, Info,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  ArrowUpRight, ArrowDownRight, Minus, AlertTriangle, Info, HelpCircle,
 } from 'lucide-react';
 import {
   fmtPct,
@@ -178,6 +184,7 @@ export type KpiCardDireccionProps = Readonly<{
   progressRatio?: number | null;
   trend?: ReactNode;
   footer?: ReactNode;
+  tooltipText?: string;
   onClick?: () => void;
 }>;
 
@@ -198,9 +205,23 @@ export const KpiCardDireccion = memo(function KpiCardDireccion(
       onClick={props.onClick}
       role={props.onClick ? 'button' : undefined}
     >
-      <div className={`border-b ${c.bar} px-5 py-2.5`}>
-        <div className={`text-[13px] font-semibold tracking-tight ${c.textBar}`}>
+      <div className={`border-b ${c.bar} px-5 py-2.5 flex items-center justify-between`}>
+        <div className={`text-[13px] font-semibold tracking-tight flex items-center gap-1.5 ${c.textBar}`}>
           {props.title}
+          {props.tooltipText && (
+            <div className="relative z-20">
+              <TooltipProvider>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 cursor-help opacity-70 hover:opacity-100 transition-opacity" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[280px] bg-slate-800 text-white text-xs p-2 font-normal text-left">
+                    <p>{props.tooltipText}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
         </div>
       </div>
       <CardContent className="p-5 space-y-3">

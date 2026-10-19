@@ -1,3 +1,4 @@
+﻿ 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { JSDOM } = require('jsdom');
 const dom = new JSDOM();

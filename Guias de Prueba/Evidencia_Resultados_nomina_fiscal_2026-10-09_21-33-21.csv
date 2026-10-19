@@ -1,0 +1,6 @@
+Archivo,Suite,Prueba,Estado,Duracion(ms)
+"Nómina/Nómina Fiscal/nomina_fiscal.test.tsx","Tablero de Nómina Fiscal > 1. ⚙️ Pre-requisitos (Configuración Inicial)","debe renderizar el tablero al seleccionar empresa y fechas válidas","EXITOSO","67"
+"Nómina/Nómina Fiscal/nomina_fiscal.test.tsx","Tablero de Nómina Fiscal > 2. 💳 Validación de Tarjetas (KPIs)","Total de Recibos: muestra la cantidad correcta de CFDI de nómina","EXITOSO","29"
+"Nómina/Nómina Fiscal/nomina_fiscal.test.tsx","Tablero de Nómina Fiscal > 2. 💳 Validación de Tarjetas (KPIs)","ISR Retenido: muestra el total de impuestos retenidos con precisión decimal","EXITOSO","31"
+"Nómina/Nómina Fiscal/nomina_fiscal.test.tsx","Tablero de Nómina Fiscal > 2. 💳 Validación de Tarjetas (KPIs)","Deducciones a Terceros: muestra descuentos aplicados","EXITOSO","31"
+"Nómina/Nómina Fiscal/nomina_fiscal.test.tsx","Tablero de Nómina Fiscal > 3. 🖱️ Interfaz y Experiencia de Usuario","bloquea la apertura del Drilldown si el valor de la tarjeta es $0.00","EXITOSO","31"

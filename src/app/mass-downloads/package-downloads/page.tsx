@@ -22,7 +22,8 @@ const formatDate = (date: string | Date) => {
 }
 import { cn } from '@/lib/utils'
 
-interface PackageRequest {
+export interface PackageRequest {
+  id_interno: string
   id_solicitud: string
   rfc: string
   estado_code: number
@@ -70,7 +71,17 @@ async function loadPackageRequests(
 
     const res = await fetch(`/api/mass-downloads/package-downloads?${params.toString()}`, { cache: 'no-store' })
     if (!res.ok) throw new Error('Error al cargar solicitudes de paquetes')
-    const data: PackageRequest[] = await res.json()
+    const responseData = await res.json()
+    
+    let data: PackageRequest[] = []
+    if (Array.isArray(responseData)) {
+      data = responseData
+    } else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.data)) {
+      data = responseData.data
+    } else {
+      console.warn('Unexpected API response format:', responseData)
+    }
+
     const normalized = data.map((item) => ({
       ...item,
       progreso: item.progreso ?? getProgressFromEstado(item.estado_code),
@@ -103,7 +114,7 @@ export default function PackageDownloadsPage() {
       link.rel = 'noopener noreferrer'
       document.body.appendChild(link)
       link.click()
-      document.body.removeChild(link)
+      link.remove()
 
       toast.success(`Descargando paquete ${idPaquete}...`)
     } catch (error) {
@@ -274,7 +285,7 @@ export default function PackageDownloadsPage() {
                     </TableRow>
                   ) : (
                     requests.map((req) => (
-                      <TableRow key={req.id_solicitud}>
+                      <TableRow key={req.id_interno}>
                         <TableCell className="font-mono text-xs">{req.rfc}</TableCell>
                         <TableCell>
                           {req.periodoMes.toString().padStart(2, '0')}/{req.periodoAnio}
@@ -324,9 +335,11 @@ export default function PackageDownloadsPage() {
 
         {selectedRequest && (
           <div className="fixed inset-0 z-40 flex">
-            <div
-              className="flex-1 bg-black/40"
+            <button
+              type="button"
+              className="flex-1 bg-black/40 cursor-default"
               onClick={() => setSelectedRequest(null)}
+              aria-label="Cerrar detalle"
             />
             <div className="w-full max-w-md bg-background border-l shadow-xl p-6 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">

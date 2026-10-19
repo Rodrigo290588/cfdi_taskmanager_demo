@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 const format = (date: string | Date, fmt?: string) => {
   try {
     const d = new Date(date)
-    if (fmt && fmt.includes('HH:mm')) {
+    if (fmt?.includes('HH:mm')) {
       return d.toLocaleString('es-MX', { 
         year: 'numeric', 
         month: '2-digit', 
@@ -45,7 +45,14 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 
-// Types based on Prisma model
+import { format as formatFns } from 'date-fns'
+
+// Helper to safely format dates (fixes SonarQube nested ternary warning)
+const formatSafeDate = (dateStr: string | null) => {
+  if (!dateStr) return '-'
+  const isoDateStr = dateStr.endsWith('Z') ? dateStr : `${dateStr}Z`
+  return formatFns(new Date(isoDateStr), 'dd/MM/yyyy')
+}
 interface MassDownloadRequest {
   id: string
   requestingRfc: string
@@ -64,6 +71,28 @@ interface MassDownloadRequest {
   errorLog: Record<string, unknown> | null
 }
 
+function buildMonitorParams(rfc: string, filters: { requestType: string; status: string; startDate: string; endDate: string; folio: string }) {
+  const params = new URLSearchParams()
+  params.append('rfc', rfc)
+  if (filters.requestType !== 'all') params.append('requestType', filters.requestType)
+  if (filters.status !== 'Todos') params.append('status', filters.status)
+  if (filters.startDate) params.append('startDate', filters.startDate)
+  if (filters.endDate) params.append('endDate', filters.endDate)
+  if (filters.folio) params.append('folio', filters.folio)
+  return params
+}
+
+function parseMonitorResponse(responseData: unknown): MassDownloadRequest[] {
+  if (Array.isArray(responseData)) {
+    return responseData as MassDownloadRequest[]
+  }
+  if (responseData && typeof responseData === 'object' && 'data' in responseData && Array.isArray((responseData as { data: unknown }).data)) {
+    return (responseData as { data: MassDownloadRequest[] }).data
+  }
+  console.warn('Unexpected API response format:', responseData)
+  return []
+}
+
 async function loadMonitorRequests(
   rfc: string,
   filters: {
@@ -78,19 +107,14 @@ async function loadMonitorRequests(
 ) {
   setLoading(true)
   try {
-    const params = new URLSearchParams()
-    params.append('rfc', rfc)
-
-    if (filters.requestType !== 'all') params.append('requestType', filters.requestType)
-    if (filters.status !== 'Todos') params.append('status', filters.status)
-    if (filters.startDate) params.append('startDate', filters.startDate)
-    if (filters.endDate) params.append('endDate', filters.endDate)
-    if (filters.folio) params.append('folio', filters.folio)
-
+    const params = buildMonitorParams(rfc, filters)
     const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
     if (!res.ok) throw new Error('Error al cargar peticiones')
 
-    const data = await res.json()
+    const responseData = await res.json()
+    console.log('API Response (Monitor):', responseData)
+    
+    const data = parseMonitorResponse(responseData)
     setRequests(data)
   } catch (error) {
     console.error(error)
@@ -154,8 +178,19 @@ export default function MonitorPage() {
     return () => clearTimeout(timeoutId)
   }, [filters, selectedCompany?.rfc])
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
+  // Auto-refresh every 10 seconds silently
+  useEffect(() => {
+    if (!selectedCompany?.rfc) return
+    const rfc = selectedCompany.rfc
+    const interval = setInterval(() => {
+      // Actualización silenciosa: pasamos una función vacía en lugar de setLoading
+      void loadMonitorRequests(rfc, filters, () => {}, setRequests)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [filters, selectedCompany?.rfc])
+
+  const handleSearch = (formEvent: React.FormEvent<HTMLFormElement>) => {
+    formEvent.preventDefault()
     void fetchRequests()
   }
 
@@ -187,6 +222,73 @@ export default function MonitorPage() {
       case 'folio': return 'Por Folio'
       default: return type
     }
+  }
+
+  const renderTableBody = () => {
+    if (loading) {
+      return (
+        <TableRow>
+          <TableCell colSpan={8} className="h-24 text-center">
+            <div className="flex items-center justify-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Cargando peticiones...
+            </div>
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (requests.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+            No se encontraron solicitudes
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    return requests.map((request) => (
+      <TableRow key={request.id}>
+        <TableCell className="font-medium">
+          {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
+        </TableCell>
+        <TableCell>
+          <Badge variant="outline" className="font-normal">
+            {formatRetrievalType(request.retrievalType)}
+          </Badge>
+        </TableCell>
+        <TableCell className="text-sm">
+          {request.retrievalType === 'folio' ? (
+            <span className="font-mono text-xs text-muted-foreground">{request.folio}</span>
+          ) : (
+            <div className="flex flex-col text-xs text-muted-foreground">
+              <span>Del: {formatSafeDate(request.startDate)}</span>
+              <span>Al: {formatSafeDate(request.endDate)}</span>
+            </div>
+          )}
+        </TableCell>
+        <TableCell>
+          <Badge variant="secondary" className="font-normal">
+            {formatRequestType(request.requestType)}
+          </Badge>
+        </TableCell>
+        <TableCell className="font-mono text-xs">
+            {request.retrievalType === 'emitidos' ? request.receiverRfc || 'Todos' : request.issuerRfc || 'Todos'}
+        </TableCell>
+        <TableCell className="font-mono text-xs text-muted-foreground">
+          {request.satPackageId || '-'}
+        </TableCell>
+        <TableCell>
+          {getStatusBadge(request.requestStatus)}
+        </TableCell>
+        <TableCell className="max-w-[200px]">
+          <div className="truncate text-xs text-muted-foreground" title={request.satMessage || (request.errorLog as { message?: string })?.message || ''}>
+            {request.satMessage || ((request.errorLog as { message?: string })?.message ? 'Ver error en log' : '-')}
+          </div>
+        </TableCell>
+      </TableRow>
+    ))
   }
 
   return (
@@ -315,64 +417,7 @@ export default function MonitorPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center">
-                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          Cargando peticiones...
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : requests.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                        No se encontraron solicitudes
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    requests.map((request) => (
-                      <TableRow key={request.id}>
-                        <TableCell className="font-medium">
-                          {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="font-normal">
-                            {formatRetrievalType(request.retrievalType)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {request.retrievalType === 'folio' ? (
-                            <span className="font-mono text-xs text-muted-foreground">{request.folio}</span>
-                          ) : (
-                            <div className="flex flex-col text-xs text-muted-foreground">
-                              <span>Del: {request.startDate ? format(new Date(request.startDate), 'dd/MM/yyyy') : '-'}</span>
-                              <span>Al: {request.endDate ? format(new Date(request.endDate), 'dd/MM/yyyy') : '-'}</span>
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal">
-                            {formatRequestType(request.requestType)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                           {request.retrievalType === 'emitidos' ? request.receiverRfc || 'Todos' : request.issuerRfc || 'Todos'}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {request.satPackageId || '-'}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(request.requestStatus)}
-                        </TableCell>
-                        <TableCell className="max-w-[200px]">
-                          <div className="truncate text-xs text-muted-foreground" title={request.satMessage || (request.errorLog as { message?: string })?.message || ''}>
-                            {request.satMessage || ((request.errorLog as { message?: string })?.message ? 'Ver error en log' : '-')}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
+                  {renderTableBody()}
                 </TableBody>
               </Table>
             </div>

@@ -12,13 +12,13 @@
 
 import { memo, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowDownRight, ArrowUpRight, Minus, AlertTriangle } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Minus, AlertTriangle, Info } from 'lucide-react';
 import {
-  fmtMxn, fmtNum, fmtPct, fmtDateEs,
-} from '@/lib/rh-formatters';
-import {
-  RH_PALETTE,
-} from '@/lib/payroll-analytics-ui-helpers';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export type KpiTone =
   | 'blue' | 'emerald' | 'amber' | 'rose' | 'violet' | 'indigo'
@@ -48,22 +48,33 @@ export type TrendBadgeProps = {
   value?: number | null;
   previous?: number | null;
   mode?: 'default' | 'reversed';
+  format?: 'percent' | 'numeric' | 'currency';
+  dateRange?: { from: string; to: string };
 };
 
-export const TrendBadge = memo(function TrendBadge(props: TrendBadgeProps) {
-  let direction: TrendDirection = 'flat';
+function getTrendDirection(change: number, mode?: 'default' | 'reversed'): TrendDirection {
+  if (change === 0) return 'flat';
+  
+  const isUp = change > 0;
+  if (mode === 'reversed') {
+    return isUp ? 'down' : 'up';
+  }
+  return isUp ? 'up' : 'down';
+}
+
+function calculateTrendState(props: TrendBadgeProps) {
+  let direction: TrendDirection = props.direction ?? 'flat';
   let delta: string | null | undefined = props.delta;
   let label: string | null | undefined = props.label;
 
   if (typeof props.value === 'number') {
     const v = Number(props.value || 0);
     const p = Number(props.previous || 0);
+    
     if (p > 0) {
       const change = ((v - p) / p) * 100;
-      direction = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
-      if (props.mode === 'reversed') {
-        direction = change < 0 ? 'up' : change > 0 ? 'down' : 'flat';
-      }
+      direction = getTrendDirection(change, props.mode);
+      
       const sign = change >= 0 ? '+' : '';
       delta = delta ?? `${sign}${change.toFixed(1)}%`;
       label = label ?? `vs ${Math.round(p)} ref`;
@@ -72,45 +83,76 @@ export const TrendBadge = memo(function TrendBadge(props: TrendBadgeProps) {
       delta = delta ?? `+${v.toFixed(1)}`;
       label = label ?? 'Sin referencia previa';
     }
-  } else {
-    direction = props.direction ?? 'flat';
   }
 
-  const icon =
-    direction === 'up' ? <ArrowUpRight className="h-3.5 w-3.5" /> :
-    direction === 'down' ? <ArrowDownRight className="h-3.5 w-3.5" /> :
-    <Minus className="h-3.5 w-3.5" />;
+  return { direction, delta, label };
+}
 
-  const toneClass =
-    direction === 'up' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-    direction === 'down' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-    'bg-slate-50 text-slate-700 border-slate-200';
+export const TrendBadge = memo(function TrendBadge(props: TrendBadgeProps) {
+  const { direction, delta, label } = calculateTrendState(props);
 
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${toneClass}`}>
-      {icon}
-      <span>{delta ?? (label ?? 'Sin tendencia')}</span>
-    </span>
+  let icon = <Minus className="h-3.5 w-3.5" />;
+  let toneClass = 'bg-slate-50 text-slate-700 border-slate-200';
+
+  if (direction === 'up') {
+    icon = <ArrowUpRight className="h-3.5 w-3.5" />;
+    toneClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  } else if (direction === 'down') {
+    icon = <ArrowDownRight className="h-3.5 w-3.5" />;
+    toneClass = 'bg-rose-50 text-rose-700 border-rose-200';
+  }
+
+  const badgeContent = (
+    <div className="flex flex-col items-center gap-1">
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${toneClass}`}>
+        {icon}
+        <span>{delta ?? 'Sin tendencia'}</span>
+      </span>
+      {label && <span className="text-[10px] text-muted-foreground">{label}</span>}
+    </div>
   );
+
+  if (props.dateRange) {
+    return (
+      <TooltipProvider>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <div className="cursor-help">
+              {badgeContent}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="text-xs p-3">
+            <p className="font-semibold mb-1">Comparación vs periodo anterior</p>
+            <p className="text-muted-foreground">
+              Del {props.dateRange.from} al {props.dateRange.to}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return badgeContent;
 });
 
-export type KpiCardRhProps = {
-  title: string;
-  value: string;
-  tone: KpiTone;
-  icon?: ReactNode;
-  subtext?: string;
-  trendDirection?: TrendDirection;
-  trendDelta?: string | null;
-  trendLabel?: string | null;
-  onClick?: () => void;
-  trend?: ReactNode;
-};
+export interface KpiCardRhProps {
+  readonly title: string;
+  readonly value: string | number;
+  readonly icon: ReactNode;
+  readonly tone?: KpiTone;
+  readonly subtext?: string;
+  readonly trend?: ReactNode;
+  readonly trendDirection?: 'up' | 'down' | 'flat';
+  readonly trendDelta?: string;
+  readonly trendLabel?: string;
+  readonly tooltipText?: string;
+  readonly onClick?: () => void;
+}
 
 export const KpiCardRh = memo(function KpiCardRh({
   title,
   value,
-  tone,
+  tone = 'blue',
   icon,
   subtext,
   trendDirection,
@@ -118,21 +160,33 @@ export const KpiCardRh = memo(function KpiCardRh({
   trendLabel,
   onClick,
   trend,
+  tooltipText,
 }: KpiCardRhProps) {
   const classes = TONE_CLASSES[tone];
   return (
     <Card
-      className={[
-        'overflow-hidden border border-border bg-card',
-        onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : '',
-      ].filter(Boolean).join(' ')}
+      className={`overflow-hidden border border-border bg-card ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow trae-browser-inspect-draggable' : 'shadow-md transition-shadow hover:shadow-lg trae-browser-inspect-draggable'}`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
     >
-      <div className={`${classes.bar} p-2 text-center border-b border-border`}>
-        <h3 className={`${classes.text} font-bold text-base leading-tight min-h-[28px] flex items-center justify-center`}>
+      <div className={`${classes.bar} p-2 text-center border-b border-border relative`}>
+        <h3 className={`${classes.text} font-bold text-base leading-tight min-h-[28px] flex items-center justify-center gap-1.5`}>
           {title}
+          {tooltipText && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" onClick={(e) => e.stopPropagation()} className="cursor-help hover:opacity-80 border-none bg-transparent p-0 flex items-center justify-center">
+                    <Info className="h-4 w-4 opacity-70" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="center" className="max-w-[260px] text-xs font-normal text-center">
+                  <p>{tooltipText}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </h3>
       </div>
       <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
@@ -190,6 +244,18 @@ export const ChartPlaceholder = memo(function ChartPlaceholder({
   );
 });
 
+export interface ChartCardProps {
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly right?: ReactNode;
+  readonly badge?: ReactNode;
+  readonly footer?: ReactNode;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly minHeight?: number | string;
+  readonly style?: React.CSSProperties;
+}
+
 export function ChartCard({
   title,
   subtitle,
@@ -200,20 +266,10 @@ export function ChartCard({
   className,
   minHeight,
   style,
-}: {
-  title: string;
-  subtitle?: string;
-  right?: ReactNode;
-  badge?: ReactNode;
-  footer?: ReactNode;
-  children: ReactNode;
-  className?: string;
-  minHeight?: number | string;
-  style?: React.CSSProperties;
-}) {
+}: ChartCardProps) {
   const rootStyle: React.CSSProperties = {
-    ...(style ?? {}),
-    ...(minHeight ? { minHeight } : {}),
+    ...style,
+    ...(minHeight ? { minHeight } : {})
   };
   return (
     <Card style={Object.keys(rootStyle).length ? rootStyle : undefined}
@@ -246,19 +302,21 @@ export function ChartCard({
   );
 }
 
+export interface RhEmptyStateProps {
+  readonly icon?: ReactNode;
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly message?: string;
+  readonly hint?: string;
+}
+
 export function RhEmptyState({
   icon,
   title,
   subtitle,
   message,
   hint,
-}: {
-  icon?: ReactNode;
-  title: string;
-  subtitle?: string;
-  message?: string;
-  hint?: string;
-}) {
+}: RhEmptyStateProps) {
   const bodyText = subtitle ?? message;
   return (
     <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
@@ -272,4 +330,5 @@ export function RhEmptyState({
   );
 }
 
-export { fmtMxn, fmtNum, fmtPct, fmtDateEs, RH_PALETTE };
+export { fmtMxn, fmtNum, fmtPct, fmtDateEs } from '@/lib/rh-formatters';
+export { RH_PALETTE } from '@/lib/payroll-analytics-ui-helpers';

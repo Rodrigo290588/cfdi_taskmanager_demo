@@ -138,10 +138,8 @@ export async function GET(req: NextRequest) {
 
         await setParallelWorkers();
 
-        const startYear  = parsed.data.startDate.getFullYear();
-        const startMonth = parsed.data.startDate.getMonth() + 1;
-        const endYear    = parsed.data.endDate.getFullYear();
-        const endMonth   = parsed.data.endDate.getMonth() + 1;
+        const [startYear, startMonth] = String(raw.startDate).split('-').map(Number);
+        const [endYear, endMonth] = String(raw.endDate).split('-').map(Number);
 
         const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
             SELECT count_receipts, count_empleados_distinct,

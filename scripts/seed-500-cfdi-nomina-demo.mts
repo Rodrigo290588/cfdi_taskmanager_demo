@@ -3,7 +3,7 @@ const prisma = new PrismaClient()
 
 // ====================== Constantes y generadores pseudoaleatorios deterministas (seeded)
 const ORG_ID = 'cmnntrppk000502gcp93ketfx'
-const TARGET_RFCS = ['ODE8604257UA','NMP7502257ZA','QA2414521FJW','QA27383427M8','QA27301176NC','QB2983782QT1','QB26123630CU'] as const
+const TARGET_RFCS = ['SIN840607L59'] as const
 const FIRST = ['Rosa','María','José','Juan','Luis','Guadalupe','Francisco','Ana','Miguel','Carmen','Roberto','Laura','Pedro','Sofía','Alejandro','Isabel','Emilio','Dulce','Ricardo','Ximena','Eduardo','Mariana','Ignacio','Lucía','Raúl','Andrea','Alberto','Claudia','Fernando','Alejandra']
 const LAST  = ['García','Martínez','López','González','Pérez','Rodríguez','Sánchez','Ramírez','Cruz','Gómez','Flores','Vázquez','Jiménez','Reyes','Díaz','Torres','Ruiz','Gutiérrez','Mendoza','Herrera','Aguilar','Medina','Ríos','Castro','Vargas','Mora','Domínguez','Castillo','Ortega','Silva']
 const DEPTS = ['Finanzas','RH','Operaciones','Comercial','IT','Logística','Producción','Marketing','Legal','Administración']
@@ -16,7 +16,7 @@ const ENTFED= ['ASG','BCN','BCS','CAM','CHP','CHH','CMP','COA','COL','DIF','DUR'
 const NSSPF = ['77','26','08','68','30','71','94','18','42','55']
 
 function mulberry32(seed: number) { return function() { let t = seed += 0x6D2B79F5; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }
-const RAND = mulberry32(20260903)
+const RAND = mulberry32(Date.now())
 const rand = (n: number) => Math.floor(RAND() * n)
 const pick = <T,>(arr: readonly T[] | T[]): T => arr[rand(arr.length)] as T
 const pad  = (n: number, w = 2) => String(n).padStart(w, '0')

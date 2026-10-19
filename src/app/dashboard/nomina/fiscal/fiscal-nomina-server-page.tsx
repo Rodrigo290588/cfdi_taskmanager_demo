@@ -9,7 +9,7 @@
 // ============================================================
 
 import { Suspense } from 'react';
-import { format, formatISO, parseISO, subMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale/es';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -47,26 +47,19 @@ import {
 } from './_components/fiscal-nomina-alertas-tables';
 
 type RawParsedFiscalNominaFilters = ReturnType<typeof parseFiscalNominaSearchParams>;
-export type ResolvedFiscalNominaFilters = RawParsedFiscalNominaFilters & {
+type ResolvedFiscalNominaFilters = RawParsedFiscalNominaFilters & {
   companyId: string;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
 };
-
-function defaultStartIso(): string {
-  return formatISO(subMonths(startOfMonth(new Date()), 3), { representation: 'date' });
-}
-function defaultEndIso(): string {
-  return formatISO(endOfMonth(new Date()), { representation: 'date' });
-}
 
 function resolveFilters(initial: RawParsedFiscalNominaFilters): ResolvedFiscalNominaFilters {
   const startDateRaw = initial.startDate;
   const endDateRaw = initial.endDate;
   const startDate =
-    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : defaultStartIso();
+    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : null;
   const endDate =
-    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : defaultEndIso();
+    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : null;
   return {
     ...initial,
     startDate,
@@ -77,7 +70,7 @@ function resolveFilters(initial: RawParsedFiscalNominaFilters): ResolvedFiscalNo
 
 type _ResolvedFiltersSafe = Readonly<{
   filters: ResolvedFiscalNominaFilters;
-  safeFiltersForFilterBar: { startDate: string; endDate: string; departamento: string | null; registroPatronal: string | null; sections: FiscalNominaSectionId[] };
+  safeFiltersForFilterBar: { startDate: string | null; endDate: string | null; departamento: string | null; registroPatronal: string | null; sections: FiscalNominaSectionId[] };
   allSectionIds: FiscalNominaSectionId[];
   hasCompany: boolean;
 }>;
@@ -95,10 +88,10 @@ function _resolveFiltersAndSafeBar(initial: RawParsedFiscalNominaFilters): _Reso
     sections,
     startDate: typeof filtersRaw.startDate === 'string' && filtersRaw.startDate.length === 10
       ? filtersRaw.startDate
-      : defaultStartIso(),
+      : null,
     endDate: typeof filtersRaw.endDate === 'string' && filtersRaw.endDate.length === 10
       ? filtersRaw.endDate
-      : defaultEndIso(),
+      : null,
     companyId: typeof filtersRaw.companyId === 'string' ? filtersRaw.companyId : '',
   };
   const hasCompany = !!filters.companyId && filters.companyId.length > 0;
@@ -130,12 +123,12 @@ async function _resolveCompanyDisplay(args: Readonly<{ hasCompany: boolean; comp
   }
 }
 
-type _PeriodLabels = Readonly<{ periodoLabelStart: string; periodoLabelEnd: string }>;
-function _formatPeriodLabels(args: Readonly<{ startDate: string; endDate: string }>): _PeriodLabels {
+type _PeriodLabels = Readonly<{ periodoLabelStart: string | null; periodoLabelEnd: string | null }>;
+function _formatPeriodLabels(args: Readonly<{ startDate: string | null; endDate: string | null }>): _PeriodLabels {
   try {
     return {
-      periodoLabelStart: format(parseISO(args.startDate), 'dd/MM/yyyy', { locale: es }),
-      periodoLabelEnd:   format(parseISO(args.endDate),   'dd/MM/yyyy', { locale: es }),
+      periodoLabelStart: args.startDate ? format(parseISO(args.startDate), 'dd/MM/yyyy', { locale: es }) : null,
+      periodoLabelEnd:   args.endDate ? format(parseISO(args.endDate),   'dd/MM/yyyy', { locale: es }) : null,
     };
   } catch {
     return { periodoLabelStart: args.startDate, periodoLabelEnd: args.endDate };
@@ -153,12 +146,12 @@ export async function FiscalNominaServerPage({
     kind: 'ok';
     filters: ResolvedFiscalNominaFilters;
     hasCompany: boolean;
-    periodoLabelStart: string;
-    periodoLabelEnd: string;
+    periodoLabelStart: string | null;
+    periodoLabelEnd: string | null;
     totalSections: number;
     companyRfc: string | null;
     companyDisplayName: string | null;
-    safeFiltersForFilterBar: { startDate: string; endDate: string; departamento: string | null; registroPatronal: string | null; sections: FiscalNominaSectionId[] };
+    safeFiltersForFilterBar: { startDate: string | null; endDate: string | null; departamento: string | null; registroPatronal: string | null; sections: FiscalNominaSectionId[] };
   } | {
     kind: 'fatal';
     errMsg: string;
@@ -213,7 +206,7 @@ export async function FiscalNominaServerPage({
             </h1>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>
-                Período: {periodoLabelStart} — {periodoLabelEnd}
+                Período: {periodoLabelStart && periodoLabelEnd ? `${periodoLabelStart} — ${periodoLabelEnd}` : 'Sin fechas seleccionadas (Tablero vacío)'}
               </span>
               {filters.registroPatronal && (
                 <>
@@ -372,10 +365,12 @@ async function GravadoExentoSection(params: FiscalNomTableParams) {
     },
   ];
 
-  const s = new Date(params.startDate);
-  const e = new Date(params.endDate);
-  const sY = s.getFullYear(), sM = s.getMonth() + 1;
-  const eY = e.getFullYear(), eM = e.getMonth() + 1;
+  if (!params.startDate || !params.endDate) {
+    return <GravadoVsExentoChart rows={fillGravadoExentoDefaults([])} />;
+  }
+
+  const [sY, sM] = params.startDate.split('-').map(Number);
+  const [eY, eM] = params.endDate.split('-').map(Number);
   const fe = params.fiscalEntityId ?? null;
 
   try {
@@ -430,10 +425,11 @@ function fillGravadoExentoDefaults(rows: GravadoExentoRow[]): GravadoExentoRow[]
 // Sub-sections async — Deducciones Terceros 4 categorías SAT
 // ==================================================================
 async function DeducTercerosSection(params: FiscalNomTableParams) {
-  const s = new Date(params.startDate);
-  const e = new Date(params.endDate);
-  const sY = s.getFullYear(), sM = s.getMonth() + 1;
-  const eY = e.getFullYear(), eM = e.getMonth() + 1;
+  if (!params.startDate || !params.endDate) {
+    return <DeducTercerosDonut rows={[]} />;
+  }
+  const [sY, sM] = params.startDate.split('-').map(Number);
+  const [eY, eM] = params.endDate.split('-').map(Number);
   const fe = params.fiscalEntityId ?? null;
 
   let infonavit = 0, fonacot = 0, pension = 0, sindicato = 0;

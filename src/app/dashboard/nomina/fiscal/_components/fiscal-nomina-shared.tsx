@@ -45,6 +45,14 @@ function _onKeyDownEnterSpace(fn: KpiDrilldownOpenFn) {
     };
 }
 
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { HelpCircle } from 'lucide-react';
+
 export type KpiCardFiscalProps = Readonly<{
     title: string;
     tone: ToneId;
@@ -54,6 +62,7 @@ export type KpiCardFiscalProps = Readonly<{
     badge?: ReactNode;
     className?: string;
     onClick?: KpiDrilldownOpenFn;
+    tooltipText?: string;
 }>;
 
 export function KpiCardFiscal(props: KpiCardFiscalProps) {
@@ -74,6 +83,20 @@ export function KpiCardFiscal(props: KpiCardFiscalProps) {
             <div className={cn(tone.bar, 'p-2 text-center border-b border-border')}>
                 <h3 className={cn('font-bold text-base leading-tight flex items-center justify-center gap-2', tone.text)}>
                     {props.title}
+                    {props.tooltipText && (
+                        <div className="relative z-20">
+                            <TooltipProvider>
+                                <Tooltip delayDuration={300}>
+                                    <TooltipTrigger asChild>
+                                        <HelpCircle className="h-4 w-4 cursor-help opacity-70 hover:opacity-100 transition-opacity" />
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-[280px] bg-slate-800 text-white text-xs p-2 font-normal text-left">
+                                        <p>{props.tooltipText}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </div>
+                    )}
                     {props.badge}
                 </h3>
             </div>
@@ -195,8 +218,8 @@ export type KpiDrilldownShellNominaProps = Readonly<{
     companyId: string;
     companyRfc?: string | null;
     companyDisplayName?: string | null;
-    startDate: string;
-    endDate: string;
+    startDate: string | null;
+    endDate: string | null;
     children: ReactNode;
 }>;
 
@@ -233,8 +256,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                                 <DrilldownDialogUuidDuplicadosNom
                                     open={drilldownUuidDuplicadosOpen}
@@ -242,8 +265,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                                 <DrilldownDialogRetrasosNom
                                     open={drilldownRetrasosOpen}
@@ -251,8 +274,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                                 <DrilldownDialogAlertasSbcSdiNom
                                     open={drilldownAlertasOpen}
@@ -260,8 +283,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                                 <DrilldownDialogIsrRetenidoNom
                                     open={drilldownIsrRetenidoOpen}
@@ -269,8 +292,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                                 <DrilldownDialogCuotasTercerosNom
                                     open={drilldownCuotasTercerosOpen}
@@ -278,8 +301,8 @@ export function KpiDrilldownShellNomina(props: KpiDrilldownShellNominaProps) {
                                     companyId={props.companyId}
                                     companyRfc={props.companyRfc ?? null}
                                     companyDisplayName={props.companyDisplayName ?? null}
-                                    startDate={props.startDate}
-                                    endDate={props.endDate}
+                                    startDate={props.startDate ?? ''}
+                                    endDate={props.endDate ?? ''}
                                 />
                             </CuotasTercerosDrilldownCtx.Provider>
                         </IsrRetenidoDrilldownCtx.Provider>

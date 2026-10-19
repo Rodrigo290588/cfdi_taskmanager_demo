@@ -7,7 +7,7 @@
 // ============================================================
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
@@ -19,6 +19,8 @@ import { Users } from 'lucide-react';
 import {
   ChartCard, KpiCardRh, TrendBadge, fmtNum, RH_PALETTE, RhEmptyState,
 } from './rh-shared';
+
+import { RhDrilldownModal, RhDrilldownType } from './rh-drilldown-modal';
 
 type RechartsFormatterSafe = (value: unknown, name: unknown) => [string | number, string] | string | number;
 
@@ -34,11 +36,19 @@ export type TurnoverInputRow = {
 
 export function RhTurnoverPanel({
   rows,
+  previousLabel,
+  filters,
 }: {
-  rows: TurnoverInputRow[];
+  readonly rows: TurnoverInputRow[];
+  readonly previousLabel?: string;
+  readonly filters?: Record<string, string | null | undefined>;
 }) {
   // Agregación mensual: si data viene por departamento, collapse por mes.
   const { chart, summary, previous } = useMemo(() => aggregate(rows), [rows]);
+
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownType, setDrilldownType] = useState<RhDrilldownType>(null);
+  const [drilldownSummaryValue, setDrilldownSummaryValue] = useState<string | null>(null);
 
   if (!chart.length) {
     return (
@@ -56,7 +66,24 @@ export function RhTurnoverPanel({
     );
   }
 
-  const turnActivos = summary.empleados ? ((summary.bajas / summary.empleados) * 100) : 0;
+  // Turnover rate: (Total de bajas en el período / Promedio de empleados activos del período) * 100
+  // Si usamos solo el último mes puede sesgar el % si hubo mucha fluctuación, usamos el promedio.
+  const turnActivos = summary.empleadosPromedio ? ((summary.bajas / summary.empleadosPromedio) * 100) : 0;
+  let turnoverTone: 'rose' | 'amber' | 'emerald' = 'emerald';
+  if (turnActivos > 8) {
+    turnoverTone = 'rose';
+  } else if (turnActivos > 4) {
+    turnoverTone = 'amber';
+  }
+
+  const handleOpenDrilldown = (type: RhDrilldownType, summaryValue: string) => {
+    if (!hasValidFilters) return;
+    setDrilldownType(type);
+    setDrilldownSummaryValue(summaryValue);
+    setDrilldownOpen(true);
+  };
+
+  const hasValidFilters = Boolean(filters?.startDate && filters?.endDate);
 
   return (
     <div className="space-y-3">
@@ -66,33 +93,55 @@ export function RhTurnoverPanel({
           value={fmtNum(summary.altas, 0)}
           tone="emerald"
           icon={<Users className="h-4 w-4"/>}
-          trend={<TrendBadge value={summary.altas} previous={previous.altas} />}
+          tooltipText="Suma de empleados nuevos detectados (sin recibos previos) y reingresos (brecha > 60 días sin pago)."
+          trend={
+            <div className="flex flex-col items-center gap-1">
+              <TrendBadge value={summary.altas} previous={previous.altas} />
+              {previous.altas > 0 && <span className="text-[10px] text-muted-foreground">{previousLabel || 'vs período anterior'}</span>}
+            </div>
+          }
+          onClick={hasValidFilters && summary.altas > 0 ? () => handleOpenDrilldown('altas', fmtNum(summary.altas, 0)) : undefined}
         />
         <KpiCardRh
           title="Bajas período"
           value={fmtNum(summary.bajas, 0)}
           tone="rose"
           icon={<Users className="h-4 w-4"/>}
-          trend={<TrendBadge value={summary.bajas} previous={previous.bajas} mode="reversed" />}
+          tooltipText="Empleados cuyo último recibo fue emitido en el mes (cese definitivo o brecha > 60 días sin pagos posteriores)."
+          trend={
+            <div className="flex flex-col items-center gap-1">
+              <TrendBadge value={summary.bajas} previous={previous.bajas} mode="reversed" />
+              {previous.bajas > 0 && <span className="text-[10px] text-muted-foreground">{previousLabel || 'vs período anterior'}</span>}
+            </div>
+          }
+          onClick={hasValidFilters && summary.bajas > 0 ? () => handleOpenDrilldown('bajas', fmtNum(summary.bajas, 0)) : undefined}
         />
         <KpiCardRh
           title="Reingresos"
           value={fmtNum(summary.reingresos, 0)}
           tone="amber"
           icon={<Users className="h-4 w-4"/>}
-          trend={<TrendBadge value={summary.reingresos} previous={previous.reingresos} />}
+          tooltipText="Subconjunto de altas: Empleados que volvieron a recibir nómina tras un lapso de inactividad mayor a 60 días."
+          trend={
+            <div className="flex flex-col items-center gap-1">
+              <TrendBadge value={summary.reingresos} previous={previous.reingresos} />
+              {previous.reingresos > 0 && <span className="text-[10px] text-muted-foreground">{previousLabel || 'vs período anterior'}</span>}
+            </div>
+          }
+          onClick={hasValidFilters && summary.reingresos > 0 ? () => handleOpenDrilldown('reingresos', fmtNum(summary.reingresos, 0)) : undefined}
         />
         <KpiCardRh
           title="% Turnover"
           value={`${turnActivos.toFixed(2)}%`}
-          subtext={`sobre ${fmtNum(summary.empleados,0)} empleados activos último mes`}
-          tone={turnActivos > 8 ? 'rose' : turnActivos > 4 ? 'amber' : 'emerald'}
+          icon={<Users className="h-4 w-4" />}
+          subtext={`sobre ${fmtNum(summary.empleadosPromedio,0)} empleados promedio activos`}
+          tooltipText="Tasa de rotación: Total de Bajas en el período divididas entre el promedio de empleados activos del mismo período."
+          tone={turnoverTone}
         />
       </div>
 
-      <ChartCard
-        title="Tendencia mensual"
-        subtitle="Movimientos detectados por emisión/cese de UUIDs de nómina"
+      <ChartCard title="Tendencia de Turnover y Movimientos" minHeight={300}
+        subtitle="Evolución de altas, bajas, reingresos y porcentaje de rotación por mes"
         badge={
           <span className="text-[10px] text-slate-500">
             {chart.length} meses · última actualización {format(new Date(), 'dd/MM/yy', { locale: es })}
@@ -100,41 +149,46 @@ export function RhTurnoverPanel({
         }
         footer="Nota: los reingresos cuentan cuando el mismo RFC reaparece después de 60+ días sin nómina."
       >
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chart} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
-            <CartesianGrid stroke={RH_PALETTE.grid} strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: RH_PALETTE.text }} />
-            <YAxis tick={{ fontSize: 11, fill: RH_PALETTE.text }} allowDecimals={false} />
-            <Tooltip
-              labelFormatter={(v) => `Mes: ${v}`}
-              formatter={((value: number, name: string) => [
-                fmtNum(value, 0),
-                name === 'altas' ? 'Altas' :
-                name === 'bajas' ? 'Bajas' :
-                name === 'reingresos' ? 'Reingresos' :
-                name === 'activos' ? 'Empleados activos' : String(name),
-              ]) as RechartsFormatterSafe}
-              contentStyle={{ fontSize: 12 }}
-            />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line
-              type="monotone" dataKey="altas" name="Altas"
-              stroke={RH_PALETTE.turnover.altas} strokeWidth={2.25}
-              dot={{ r: 2.5 }} activeDot={{ r: 5 }}
-            />
-            <Line
-              type="monotone" dataKey="bajas" name="Bajas"
-              stroke={RH_PALETTE.turnover.bajas} strokeWidth={2.25}
-              dot={{ r: 2.5 }} activeDot={{ r: 5 }}
-            />
-            <Line
-              type="monotone" dataKey="reingresos" name="Reingresos"
-              stroke={RH_PALETTE.turnover.reingresos} strokeWidth={2}
-              strokeDasharray="5 4" dot={{ r: 2 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="h-[260px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chart} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+              <CartesianGrid stroke={RH_PALETTE.grid} strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: RH_PALETTE.text }} />
+              <YAxis tick={{ fontSize: 11, fill: RH_PALETTE.text }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ fontSize: 12 }}
+                formatter={((v: number, n: string) => {
+                  if (n === 'turnover_pct') {
+                    return [`${v.toFixed(1)}%`, 'Tasa Rotación'];
+                  }
+                  
+                  let label = n;
+                  if (n === 'altas') {
+                    label = 'Altas';
+                  } else if (n === 'bajas') {
+                    label = 'Bajas';
+                  } else if (n === 'reingresos') {
+                    label = 'Reingresos';
+                  }
+                  
+                  return [v, label];
+                }) as RechartsFormatterSafe}/>
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="altas" name="Altas" stroke={RH_PALETTE.turnover.altas} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}/>
+              <Line type="monotone" dataKey="bajas" name="Bajas" stroke={RH_PALETTE.turnover.bajas} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}/>
+              <Line type="monotone" dataKey="reingresos" name="Reingresos" stroke={RH_PALETTE.turnover.reingresos} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </ChartCard>
+
+      <RhDrilldownModal
+        open={drilldownOpen}
+        onOpenChange={setDrilldownOpen}
+        type={drilldownType}
+        filters={filters || {}}
+        summaryValue={drilldownSummaryValue}
+      />
     </div>
   );
 }
@@ -169,24 +223,24 @@ function aggregate(rows: TurnoverInputRow[]) {
 
   const half = Math.max(1, Math.floor(chart.length / 2));
   const first  = chart.slice(0, half);
-  const second = chart.slice(half);
-  const sum = (arr: typeof chart, k: 'altas'|'bajas'|'reingresos') =>
+  const sum = (arr: typeof chart, k: 'altas'|'bajas'|'reingresos'|'activos') =>
     arr.reduce((a, c) => a + (c[k] || 0), 0);
+
+  const avgEmpleados = chart.length ? sum(chart, 'activos') / chart.length : 0;
+  const prevAvgEmpleados = first.length ? sum(first, 'activos') / first.length : 0;
 
   const summary = {
     altas:      sum(chart, 'altas'),
     bajas:      sum(chart, 'bajas'),
     reingresos: sum(chart, 'reingresos'),
-    empleados:  chart.length ? (chart[chart.length - 1]?.activos || 0) : 0,
+    empleadosPromedio: avgEmpleados,
   };
   const previous = {
     altas:      sum(first, 'altas'),
     bajas:      sum(first, 'bajas'),
     reingresos: sum(first, 'reingresos'),
-    // Para empleados usamos punto medio como referencia anterior
-    empleados:  chart[half - 1]?.activos ?? 0,
+    empleadosPromedio: prevAvgEmpleados,
   };
-  void second;
 
   return { chart, summary, previous };
 }

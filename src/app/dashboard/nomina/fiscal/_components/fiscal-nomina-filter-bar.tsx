@@ -7,7 +7,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, RefreshCcw, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,8 +38,8 @@ const filterSchema = z.object({
 
 export type FiscalNominaFilterBarProps = Readonly<{
     filters: Readonly<{
-        startDate: string;
-        endDate: string;
+        startDate: string | null;
+        endDate: string | null;
         departamento: string | null;
         registroPatronal: string | null;
         sections: Readonly<FiscalNominaSectionId[]>;
@@ -51,19 +50,19 @@ export function FiscalNominaFilterBar({ filters }: FiscalNominaFilterBarProps) {
     const router = useRouter();
     const sp = useSearchParams();
 
-    const [startDate,        setStartDate]        = useState(filters.startDate);
-    const [endDate,          setEndDate]          = useState(filters.endDate);
+    const [startDate,        setStartDate]        = useState(filters.startDate ?? '');
+    const [endDate,          setEndDate]          = useState(filters.endDate ?? '');
     const [departamento,     setDepartamento]     = useState(filters.departamento ?? '');
     const [registroPatronal, setRegistroPatronal] = useState(filters.registroPatronal ?? '');
 
     useEffect(() => {
-        const v = filters.startDate;
+        const v = filters.startDate ?? '';
         const t = window.setTimeout(() => setStartDate(v), 0);
         return () => window.clearTimeout(t);
     }, [filters.startDate]);
 
     useEffect(() => {
-        const v = filters.endDate;
+        const v = filters.endDate ?? '';
         const t = window.setTimeout(() => setEndDate(v), 0);
         return () => window.clearTimeout(t);
     }, [filters.endDate]);
@@ -110,7 +109,7 @@ export function FiscalNominaFilterBar({ filters }: FiscalNominaFilterBarProps) {
     const showAllSections = useCallback(() => navigateWithSections([...ALL_SECTION_IDS]), [navigateWithSections]);
     const hideAllSections = useCallback(() => navigateWithSections([]), [navigateWithSections]);
 
-    const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const safe = filterSchema.safeParse({ startDate, endDate, departamento, registroPatronal });
         if (!safe.success) return;

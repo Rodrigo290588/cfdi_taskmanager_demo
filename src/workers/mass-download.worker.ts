@@ -136,8 +136,12 @@ export function setupMassDownloadWorker() {
         endDate: request.endDate!,
         tipoSolicitud: request.requestType as 'CFDI' | 'Metadata',
         retrievalType: request.retrievalType as 'emitidos' | 'recibidos' | 'folio',
-        rfcEmisor: request.issuerRfc,
+        rfcEmisor: request.issuerRfc || undefined,
         rfcReceptor: request.receiverRfc || undefined,
+        rfcACuentaTerceros: request.thirdPartyRfc || undefined,
+        tipoComprobante: request.voucherType || undefined,
+        estadoComprobante: request.status && request.status !== 'Todos' ? (request.status === 'Vigente' ? '1' : '0') : undefined,
+        complemento: request.complement && request.complement !== 'null' ? request.complement : undefined,
         uuid: request.folio || undefined,
         certificate,
         privateKey: privateKeyPem
@@ -151,8 +155,8 @@ export function setupMassDownloadWorker() {
         method: 'POST',
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': `"${soapAction}"`,
-          'Authorization': `WRAP access_token="[REDACTED len=${token.length} sha256=${crypto.createHash('sha256').update(token).digest('hex').slice(0, 12)}]"`
+          'SOAPAction': soapAction,
+          'Authorization': `WRAP access_token="${token}"`
         },
         body: soapXml
       })

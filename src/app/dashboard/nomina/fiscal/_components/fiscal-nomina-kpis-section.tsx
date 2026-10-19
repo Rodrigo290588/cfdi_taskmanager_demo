@@ -85,10 +85,9 @@ function sanitizeKpisRow(raw: Partial<FiscalNominaKpisRow> | null | undefined): 
 }
 
 export async function fetchFiscalNominaKpis(params: FiscalNomTableParams): Promise<FiscalNominaKpisRow> {
-    const s = new Date(params.startDate);
-    const e = new Date(params.endDate);
-    const sY = s.getFullYear(), sM = s.getMonth() + 1;
-    const eY = e.getFullYear(), eM = e.getMonth() + 1;
+    if (!params.startDate || !params.endDate) return SAFE_KPI_DEFAULTS;
+    const [sY, sM] = params.startDate.split('-').map(Number);
+    const [eY, eM] = params.endDate.split('-').map(Number);
     const fe = params.fiscalEntityId ?? null;
     try {
     const rows = await prisma.$queryRaw<FiscalNominaKpisRow[]>`
@@ -184,6 +183,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                         icon={<Landmark className="h-12 w-12" />}
                         value={fmtMxn(safeToNumber(k.isr_retenido_mxn))}
                         sublabel="TipoDeduccion SAT · 002"
+                        tooltipText="Suma total del Importe de deducciones con Clave SAT 002 (ISR Retenido) extraído de los CFDI vigentes."
                     />
                     <KpiIsrRetenidoTriggerClient />
                 </div>
@@ -194,6 +194,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                         icon={<Users2 className="h-12 w-12" />}
                         value={fmtMxn(cuotasTerceros)}
                         sublabel="INFONAVIT · FONACOT · Pensión · Sindicato"
+                        tooltipText="Suma total de cuotas pagadas a terceros: INFONAVIT (009), FONACOT (011), Sindicato (040, 069) y Pensión Alimenticia (007)."
                     />
                     <KpiCuotasTercerosTriggerClient />
                 </div>
@@ -209,6 +210,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                                 : undefined
                         }
                         sublabel="Estatus SAT = CANCELADO"
+                        tooltipText="Total de CFDI con estatus 'Cancelado' en los registros del SAT. Permite identificar inconsistencias en los timbrados de nómina."
                     />
                     <KpiCanceladosTriggerClient />
                 </div>
@@ -224,6 +226,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                                 : undefined
                         }
                         sublabel="UUID repetido > 1 carga histórica"
+                        tooltipText="CFDIs de nómina que se han importado o detectado más de una vez con el mismo folio fiscal (UUID), indicando una posible duplicidad de pago o error de carga."
                     />
                     <KpiUuidDuplicadosTriggerClient />
                 </div>
@@ -239,6 +242,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                                 : undefined
                         }
                         sublabel="Brecha Emisión vs Pago > 5 días"
+                        tooltipText="Conteo de recibos cuya fecha de emisión tiene un retraso superior a 5 días respecto a la fecha de pago de la nómina, incumpliendo potencialmente reglas del SAT."
                     />
                     <KpiRetrasosTimbradoTriggerClient />
                 </div>
@@ -254,6 +258,7 @@ export async function KpisSection(params: FiscalNomTableParams) {
                                 : undefined
                         }
                         sublabel="Nulos · Cero · Desviación > 3%"
+                        tooltipText="Comprobantes donde el Salario Base de Cotización (SBC) o Salario Diario Integrado (SDI) es cero, nulo, o presenta una desviación mayor al 3% respecto a lo esperado para el IMSS."
                     />
                     <KpiAlertasSbcSdiTriggerClient />
                 </div>

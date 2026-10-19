@@ -103,12 +103,12 @@ export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConf
     </tr>
   `).join('');
 
-  return `<!DOCTYPE html>
+  return String.raw`<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <title>Factura ${comprobante['@_Serie'] || ''}${comprobante['@_Folio'] || ''}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS CDN removido para mejorar estabilidad offline y de PDF, estilos inyectados directamente -->
     <style>
       body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; position: relative; }
       .primary-bg { background-color: ${primaryColor}; }
@@ -127,6 +127,83 @@ export const generateTemplateClassicHtml = ({ cfdiData, qrCodeDataUrl, brandConf
         pointer-events: none;
         user-select: none;
       }
+      
+      /* Tailwind Fallback Utilities */
+      .flex { display: flex; }
+      .justify-between { justify-content: space-between; }
+      .justify-end { justify-content: flex-end; }
+      .items-start { align-items: flex-start; }
+      .w-1\\/2 { width: 50%; }
+      .w-1\\/3 { width: 33.333333%; }
+      .w-full { width: 100%; }
+      .text-right { text-align: right; }
+      .text-center { text-align: center; }
+      .text-left { text-align: left; }
+      .font-medium { font-weight: 500; }
+      .font-bold { font-weight: 700; }
+      .font-semibold { font-weight: 600; }
+      .text-base { font-size: 1rem; line-height: 1.5rem; }
+      .text-xs { font-size: 0.75rem; line-height: 1rem; }
+      .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+      .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+      .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+      .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+      .text-4xl { font-size: 2.25rem; line-height: 2.5rem; }
+      .mb-8 { margin-bottom: 2rem; }
+      .mb-6 { margin-bottom: 1.5rem; }
+      .mb-4 { margin-bottom: 1rem; }
+      .mb-2 { margin-bottom: 0.5rem; }
+      .mb-1 { margin-bottom: 0.25rem; }
+      .mt-2 { margin-top: 0.5rem; }
+      .mt-6 { margin-top: 1.5rem; }
+      .mt-8 { margin-top: 2rem; }
+      .pt-6 { padding-top: 1.5rem; }
+      .pt-2 { padding-top: 0.5rem; }
+      .pt-1 { padding-top: 0.25rem; }
+      .pb-1 { padding-bottom: 0.25rem; }
+      .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+      .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+      .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+      .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+      .p-4 { padding: 1rem; }
+      .p-8 { padding: 2rem; }
+      .gap-6 { gap: 1.5rem; }
+      .gap-4 { gap: 1rem; }
+      .border { border-width: 1px; border-style: solid; }
+      .border-t { border-top-width: 1px; border-style: solid; }
+      .border-t-2 { border-top-width: 2px; border-style: solid; }
+      .border-b { border-bottom-width: 1px; border-style: solid; }
+      .border-b-2 { border-bottom-width: 2px; border-style: solid; }
+      .border-slate-200 { border-color: #e2e8f0; }
+      .border-slate-300 { border-color: #cbd5e1; }
+      .border-slate-800 { border-color: #1e293b; }
+      .bg-white { background-color: #ffffff; }
+      .bg-slate-50 { background-color: #f8fafc; }
+      .bg-slate-100 { background-color: #f1f5f9; }
+      .text-white { color: #ffffff; }
+      .text-slate-400 { color: #94a3b8; }
+      .text-slate-500 { color: #64748b; }
+      .text-slate-600 { color: #475569; }
+      .text-slate-700 { color: #334155; }
+      .text-slate-800 { color: #1e293b; }
+      .text-red-600 { color: #dc2626; }
+      .rounded-lg { border-radius: 0.5rem; }
+      .border-collapse { border-collapse: collapse; }
+      .break-all { word-break: break-all; }
+      .italic { font-style: italic; }
+      .block { display: block; }
+      .flex-1 { flex: 1 1 0%; }
+      .flex-shrink-0 { flex-shrink: 0; }
+      .w-24 { width: 6rem; }
+      .w-32 { width: 8rem; }
+      .grid { display: grid; }
+      .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .flex-col { flex-direction: column; }
+      .object-contain { object-fit: contain; }
+      .max-h-16 { max-height: 4rem; }
+      .max-h-20 { max-height: 5rem; }
+      .h-auto { height: auto; }
+      .w-auto { width: auto; }
     </style>
   </head>
   <body class="bg-white text-slate-800 p-8 text-sm">

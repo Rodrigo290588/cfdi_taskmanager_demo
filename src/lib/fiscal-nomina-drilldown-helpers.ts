@@ -40,18 +40,15 @@ export function safeStrOrNull(v: unknown): string | null {
 
 export function safeIso(v: unknown): string | null {
   if (v === null || v === undefined) return null;
-  let ds: string | null = null;
-  if (v instanceof Date) ds = safeStr(v.getTime());
-  else {
-    const t = typeof v;
-    if (t === 'string' || t === 'number' || t === 'bigint') ds = safeStr(v);
+  if (v instanceof Date) {
+    if (Number.isFinite(v.getTime())) return v.toISOString();
+    return null;
   }
-  if (ds == null) return null;
   try {
-    const d = new Date(ds);
-    if (!Number.isFinite(d.getTime())) return null;
-    return d.toISOString();
-  } catch { return null; }
+    const d = new Date(typeof v === 'string' || typeof v === 'number' ? v : Number(v));
+    if (Number.isFinite(d.getTime())) return d.toISOString();
+  } catch {}
+  return null;
 }
 
 export function refineFiscalNominaDateRange(

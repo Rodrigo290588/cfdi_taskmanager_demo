@@ -1,0 +1,1 @@
+﻿import { fetchHrDashboardAggregate } from './src/lib/payroll-analytics-service'; async function main() { const res = await fetchHrDashboardAggregate({ companyId: 'cmtm8jg7r00012qdwca083613' }); console.log(res); } main();

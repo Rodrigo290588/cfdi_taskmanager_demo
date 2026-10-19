@@ -11,7 +11,7 @@
 //            Siempre usar URLSearchParams.
 // ============================================================
 
-import { formatISO, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { formatISO, parseISO } from 'date-fns';
 
 // ---------- TIPOS ----------
 export type DireccionSectionId =
@@ -62,8 +62,8 @@ export type RawParsedDireccionFilters = {
   companyId: string;
   organizationId: string | null;
   fiscalEntityId: string | null;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
   departamento: string | null;
   anioComparativo: number | null;
   view: DireccionViewMode;
@@ -79,31 +79,27 @@ const ANIO_MIN = 2000;
 const ANIO_MAX = 2100;
 
 // ---------- PARSEO SEGURO ----------
-function getValidDateOrFallback(dateRaw: string | null, fallback: Date): Date {
-  if (!dateRaw) return fallback;
-  const parsed = parseISO(dateRaw.slice(0, 10));
-  if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) {
-    return fallback;
-  }
-  return parsed;
-}
-
 function parseDireccionDates(startDateRaw: string | null, endDateRaw: string | null) {
-  const defaultStart = subMonths(startOfMonth(new Date()), 12);
-  const defaultEnd = endOfMonth(new Date());
+  if (!startDateRaw || !endDateRaw) return { startDate: null, endDate: null };
 
   try {
-    let startDate = getValidDateOrFallback(startDateRaw, defaultStart);
-    let endDate = getValidDateOrFallback(endDateRaw, defaultEnd);
+    const startDate = parseISO(startDateRaw.slice(0, 10));
+    const endDate = parseISO(endDateRaw.slice(0, 10));
     
-    if (startDate.getTime() > endDate.getTime()) {
-      [startDate, endDate] = [endDate, startDate];
+    if (Number.isFinite(startDate.getTime()) && Number.isFinite(endDate.getTime())) {
+      if (startDate.getTime() > endDate.getTime()) {
+        return {
+          startDate: formatISO(endDate, { representation: 'date' }),
+          endDate: formatISO(startDate, { representation: 'date' }),
+        };
+      }
+      return {
+        startDate: formatISO(startDate, { representation: 'date' }),
+        endDate: formatISO(endDate, { representation: 'date' }),
+      };
     }
-    
-    return { startDate, endDate };
-  } catch {
-    return { startDate: defaultStart, endDate: defaultEnd };
-  }
+  } catch {}
+  return { startDate: null, endDate: null };
 }
 
 function parseDireccionAnioComparativo(anioCompRaw: string | null, startDateYear: number): number {
@@ -151,7 +147,8 @@ export function parseDireccionSearchParams(
   const deptoRaw = read('departamento');
   const departamento = deptoRaw && DIRECCION_ALLOW_DEPARTAMENTO.test(deptoRaw) ? deptoRaw : null;
   
-  const anioComparativo = parseDireccionAnioComparativo(read('anioComparativo'), startDate.getFullYear());
+  const currentYear = startDate ? Number.parseInt(startDate.slice(0, 4), 10) : new Date().getFullYear();
+  const anioComparativo = parseDireccionAnioComparativo(read('anioComparativo'), currentYear);
   const view = parseDireccionView(read('view'));
   const sections = parseDireccionSections(read('sections'));
 
@@ -159,8 +156,8 @@ export function parseDireccionSearchParams(
     companyId: read('companyId') ?? '',
     organizationId: read('organizationId') ?? null,
     fiscalEntityId: read('fiscalEntityId') ?? null,
-    startDate: formatISO(startDate, { representation: 'date' }),
-    endDate:   formatISO(endDate,   { representation: 'date' }),
+    startDate,
+    endDate,
     departamento,
     anioComparativo,
     view,

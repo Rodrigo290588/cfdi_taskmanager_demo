@@ -1,5 +1,6 @@
 import { loadEnvConfig } from '@next/env'
 import { setupVerificationWorker } from '../workers/verification.worker'
+import { setupMassDownloadWorker } from '../workers/mass-download.worker'
 import { setupDownloadWorker } from '../workers/download.worker'
 import { setupProviderPaymentComplianceWorker } from '../workers/provider-payment-compliance.worker'
 import { setupProviderPostLoadCancellationAlertsWorker } from '../workers/provider-post-load-cancellation-alerts.worker'
@@ -11,6 +12,7 @@ loadEnvConfig(process.cwd())
 
 console.log('Starting Background Workers (SAT Verification, Download, Provider Payment Compliance, SAT 69-B Blacklist & Provider Post-Load Cancellation Alerts)...')
 setupVerificationWorker()
+setupMassDownloadWorker()
 setupDownloadWorker()
 setupProviderPaymentComplianceWorker()
 setupProviderPostLoadCancellationAlertsWorker()

@@ -1,13 +1,13 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { MASS_DOWNLOAD_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
+import { MASS_PACKAGE_DOWNLOAD_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
 import { downloadMassPackages } from '@/lib/sat-service'
 import { extractAndProcessMetadataZip } from '@/services/metadata-parser.service'
 import fs from 'fs'
 import path from 'path'
 
 export function setupDownloadWorker() {
-  const worker = new Worker(MASS_DOWNLOAD_QUEUE_NAME, async (job: Job) => {
+  const worker = new Worker(MASS_PACKAGE_DOWNLOAD_QUEUE_NAME, async (job: Job) => {
     const { requestId, rfc, idPaquete } = job.data
 
     try {
@@ -62,6 +62,27 @@ export function setupDownloadWorker() {
 
     } catch (error) {
       console.error(`[Download] Error crítico procesando paquete ${idPaquete}:`, error)
+      
+      // Intentar actualizar el estado a ERROR en la base de datos
+      try {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        
+        await prisma.massDownloadRequest.update({
+          where: { id: requestId },
+          data: { 
+            requestStatus: 'ERROR',
+            satMessage: errorMsg,
+            errorLog: {
+              message: errorMsg,
+              timestamp: new Date().toISOString()
+            }
+          }
+        })
+        console.log(`[Download] Estado de la solicitud ${requestId} actualizado a ERROR.`)
+      } catch (dbError) {
+        console.error(`[Download] No se pudo actualizar el estado de error en la BD para ${requestId}:`, dbError)
+      }
+      
       throw error
     }
   }, {

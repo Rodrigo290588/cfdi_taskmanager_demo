@@ -1,0 +1,1 @@
+﻿import { prisma } from './src/lib/prisma'; prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW mv_fiscal_conciliacion_mensual').then(() => console.log('Refreshed')).finally(() => prisma.$disconnect());

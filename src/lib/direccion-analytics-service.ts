@@ -88,9 +88,10 @@ export type DireccionFetchScope = Readonly<{
   companyId: string;
   organizationId?: string | null;
   fiscalEntityId?: string | null;
-  startDate: string;
-  endDate: string;
+  startDate: string | null;
+  endDate: string | null;
   departamento?: string | null;
+  anioComparativo?: number | null;
 }>;
 
 // ============================================================================
@@ -155,13 +156,25 @@ export async function setParallelWorkersDireccion(
 export async function fetchDireccionKpisAggregates(
   scope: DireccionFetchScope,
 ): Promise<DireccionKpiAggregates> {
+  if (!scope.startDate || !scope.endDate) {
+    return {
+      costoTotalNominaMxn: 0,
+      percepcionesBrutas: 0,
+      cargaPatronalEstimada: 0,
+      isnEstimado: 0,
+      costoFijo: 0,
+      costoVariable: 0,
+      empleadosUnicos: 0,
+      countRecibos: 0,
+      desgloseFijoVariable: [],
+    };
+  }
+
   const { sYear, sMonth, eYear, eMonth } = _rangeBounds(scope.startDate, scope.endDate);
   const { whereFragments } = _companyScopeClauses(scope);
   whereFragments.push(
     Prisma.sql`ROW(anio, mes) >= ROW(${sYear}::int, ${sMonth}::int)`,
-  );
-  whereFragments.push(
-    Prisma.sql`ROW(anio, mes) <= ROW(${eYear}::int, ${eMonth}::int)`,
+    Prisma.sql`ROW(anio, mes) <= ROW(${eYear}::int, ${eMonth}::int)`
   );
   const where = Prisma.join(whereFragments, ' AND ');
 
@@ -219,6 +232,128 @@ export async function fetchDireccionKpisAggregates(
 }
 
 // ============================================================================
+// HELPERS PARA TENDENCIA HISTÓRICA (Refactorización)
+// ============================================================================
+
+function _buildTendenciaQueryExpr(view: DireccionViewMode) {
+  if (view === 'yearly') {
+    return {
+      groupExpr: Prisma.sql`anio`,
+      labelExpr: Prisma.sql`anio::VARCHAR(4)`,
+    };
+  }
+  if (view === 'quarterly') {
+    return {
+      groupExpr: Prisma.sql`anio, CEIL(mes / 3.0)::INT`,
+      labelExpr: Prisma.sql`(anio::VARCHAR(4) || ' Q' || CEIL(mes / 3.0)::INT::VARCHAR(1))`,
+    };
+  }
+  return {
+    groupExpr: Prisma.sql`anio, mes`,
+    labelExpr: Prisma.sql`TO_CHAR(TO_DATE(LPAD(mes::VARCHAR(2),2,'0') || ' ' || LPAD(anio::VARCHAR(4),4,'0'), 'MM YYYY'), 'Mon/YY')`,
+  };
+}
+
+function _isYearInRange(anio: number, start: number, end: number): boolean {
+  return anio === start || (end !== start && anio >= start && anio <= end);
+}
+
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
+
+function _populateTendenciaMaps(
+  raw: Array<Record<string, unknown>>,
+  sYear: number,
+  eYear: number,
+  sMonth: number,
+  eMonth: number,
+  anioComp: number,
+  view: DireccionViewMode
+) {
+  const actualMap = new Map<string, Mutable<DireccionTendenciaRow>>();
+  const yoyMap = new Map<string, number>();
+  const yearOffset = sYear - anioComp;
+
+  // 1) PRE-POBLAR todos los meses del rango actual para garantizar que existan en el mapa
+  // incluso si la base de datos no regresa registros (ej. costo 0)
+  for (let y = sYear; y <= eYear; y++) {
+    const mStart = (y === sYear) ? sMonth : 1;
+    const mEnd = (y === eYear) ? eMonth : 12;
+    for (let m = mStart; m <= mEnd; m++) {
+      const quarter = view === 'quarterly' ? Math.ceil(m / 3) : null;
+      let label = '';
+      if (view === 'yearly') label = `${y}`;
+      else if (view === 'quarterly') label = `${y} Q${quarter}`;
+      else {
+        const mNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        label = `${mNames[m - 1]}/${String(y).slice(-2)}`;
+      }
+      actualMap.set(`${y}-${m}`, {
+        anio: y, mes: m, quarter, label,
+        costoActual: 0, costoYoY: null,
+        diffAbsYoY: null, diffPctYoY: null,
+      });
+    }
+  }
+
+  // 2) SOBRESCRIBIR con los datos reales de PostgreSQL
+  for (const r of raw) {
+    const anio = Number(r.anio);
+    const mes = Number(r.mes);
+    const costo = Number(r.costo ?? 0);
+    const rawLabel = r.label;
+    const label = typeof rawLabel === 'string' ? rawLabel : '';
+
+    if (_isYearInRange(anio, sYear, eYear)) {
+      const existing = actualMap.get(`${anio}-${mes}`);
+      if (existing) {
+        existing.costoActual = costo;
+        if (label) existing.label = label;
+      }
+    } 
+    
+    // Check if this record belongs to the YoY period
+    if (_isYearInRange(anio, anioComp, anioComp + (eYear - sYear))) {
+      // Map the YoY year to the actual year so they overlay on the chart
+      const mappedYear = anio + yearOffset;
+      yoyMap.set(`${mappedYear}-${mes}`, costo);
+    }
+  }
+  return { actualMap, yoyMap };
+}
+
+function _processTendenciaRows(
+  raw: Array<Record<string, unknown>>,
+  sYear: number,
+  eYear: number,
+  sMonth: number,
+  eMonth: number,
+  anioComp: number,
+  view: DireccionViewMode
+) {
+  const { actualMap, yoyMap } = _populateTendenciaMaps(raw, sYear, eYear, sMonth, eMonth, anioComp, view);
+
+  const result: DireccionTendenciaRow[] = [];
+  // Sort con función de comparación
+  const sortedKeys = Array.from(actualMap.keys()).sort((a, b) => {
+    const [yA, mA] = a.split('-').map(Number);
+    const [yB, mB] = b.split('-').map(Number);
+    return yA - yB || mA - mB;
+  });
+  
+  for (const k of sortedKeys) {
+    const row = actualMap.get(k)!;
+    const yoy = yoyMap.get(k);
+    if (yoy !== undefined) {
+      row.costoYoY = yoy;
+      row.diffAbsYoY = row.costoActual - yoy;
+      row.diffPctYoY = yoy > 0 ? row.diffAbsYoY / yoy : null;
+    }
+    result.push(row);
+  }
+  return result;
+}
+
+// ============================================================================
 // Fn #2: Tendencia Histórica + YoY (Mensual / Trimestral / Anual)
 // ============================================================================
 
@@ -228,6 +363,8 @@ export async function fetchDireccionTendenciaHistorica(
     view?: DireccionViewMode;
   },
 ): Promise<DireccionTendenciaRow[]> {
+  if (!scope.startDate || !scope.endDate) return [];
+
   const view: DireccionViewMode = scope.view ?? 'monthly';
   const { sYear, sMonth, eYear, eMonth } = _rangeBounds(scope.startDate, scope.endDate);
 
@@ -236,20 +373,7 @@ export async function fetchDireccionTendenciaHistorica(
     Math.max(2000, sYear - 1);
 
   const { whereFragments } = _companyScopeClauses(scope);
-
-  // Granularidad GROUP BY
-  let groupExpr: Prisma.Sql;
-  let labelExpr: Prisma.Sql;
-  if (view === 'yearly') {
-    groupExpr = Prisma.sql`anio`;
-    labelExpr = Prisma.sql`anio::VARCHAR(4)`;
-  } else if (view === 'quarterly') {
-    groupExpr = Prisma.sql`anio, CEIL(mes / 3.0)::INT`;
-    labelExpr = Prisma.sql`(anio::VARCHAR(4) || ' Q' || CEIL(mes / 3.0)::INT::VARCHAR(1))`;
-  } else {
-    groupExpr = Prisma.sql`anio, mes`;
-    labelExpr = Prisma.sql`TO_CHAR(TO_DATE(LPAD(mes::VARCHAR(2),2,'0') || ' ' || LPAD(anio::VARCHAR(4),4,'0'), 'MM YYYY'), 'Mon/YY')`;
-  }
+  const { groupExpr, labelExpr } = _buildTendenciaQueryExpr(view);
 
   // Query período actual + período YoY en un solo scan
   whereFragments.push(
@@ -277,49 +401,7 @@ export async function fetchDireccionTendenciaHistorica(
     SELECT * FROM buckets
   `);
 
-  // Pivot: renglón actual vs renglón YoY
-  const actualMap = new Map<string, DireccionTendenciaRow>();
-  const yoyMap = new Map<string, number>();
-
-  const yearOffset = sYear - anioComp;
-  for (const r of raw) {
-    const anio = Number(r.anio);
-    const mes = Number(r.mes);
-    const costo = Number(r.costo ?? 0);
-    const label = String(r.label ?? '');
-    if (anio === sYear || (eYear !== sYear && anio >= sYear && anio <= eYear)) {
-      let quarter: number | null = null;
-      if (view === 'quarterly') quarter = Math.ceil(mes / 3);
-      actualMap.set(`${anio}-${mes}`, {
-        anio, mes, quarter, label,
-        costoActual: costo, costoYoY: null,
-        diffAbsYoY: null, diffPctYoY: null,
-      });
-    } else if (anio === anioComp || (eYear !== sYear && anio >= anioComp && anio <= anioComp + (eYear - sYear))) {
-      const mesEq = mes;
-      const anioEq = anio + yearOffset;
-      yoyMap.set(`${anioEq}-${mesEq}`, costo);
-    }
-  }
-
-  const result: DireccionTendenciaRow[] = [];
-  for (const k of Array.from(actualMap.keys()).sort()) {
-    const row = actualMap.get(k)!;
-    const yoy = yoyMap.get(k);
-    if (yoy === undefined) {
-      result.push(row);
-      continue;
-    }
-    const diffAbs = row.costoActual - yoy;
-    const diffPct = yoy > 0 ? diffAbs / yoy : null;
-    result.push({
-      ...row,
-      costoYoY: yoy,
-      diffAbsYoY: diffAbs,
-      diffPctYoY: diffPct,
-    });
-  }
-  return result;
+  return _processTendenciaRows(raw, sYear, eYear, sMonth, eMonth, anioComp, view);
 }
 
 // ============================================================================
@@ -331,13 +413,13 @@ export async function fetchDireccionTendenciaHistorica(
 export async function fetchDireccionDesviacionPresupuestal(
   scope: DireccionFetchScope,
 ): Promise<DireccionBudgetRow[]> {
+  if (!scope.startDate || !scope.endDate) return [];
+
   const { sYear, sMonth, eYear, eMonth } = _rangeBounds(scope.startDate, scope.endDate);
   const { whereFragments } = _companyScopeClauses(scope);
   whereFragments.push(
     Prisma.sql`ROW(anio, mes) >= ROW(${sYear}::int, ${sMonth}::int)`,
-  );
-  whereFragments.push(
-    Prisma.sql`ROW(anio, mes) <= ROW(${eYear}::int, ${eMonth}::int)`,
+    Prisma.sql`ROW(anio, mes) <= ROW(${eYear}::int, ${eMonth}::int)`
   );
   const where = Prisma.join(whereFragments, ' AND ');
 
@@ -393,18 +475,40 @@ export async function fetchDireccionDesviacionPresupuestal(
 export async function fetchDireccionPeriodoAnterior(
   scope: DireccionFetchScope,
 ): Promise<DireccionKpiAggregates> {
+  if (!scope.startDate || !scope.endDate) {
+    return fetchDireccionKpisAggregates(scope);
+  }
+
   const start = parseISO(scope.startDate);
   const end = parseISO(scope.endDate);
-  const monthsBack = Math.max(
-    1,
-    Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)),
-  );
-  const startPrev = new Date(start); startPrev.setMonth(startPrev.getMonth() - monthsBack);
-  const endPrev = new Date(end);       endPrev.setMonth(endPrev.getMonth() - monthsBack);
+  
+  let startPrev: Date;
+  let endPrev: Date;
+  
+  if (scope.anioComparativo) {
+    startPrev = new Date(start); startPrev.setFullYear(scope.anioComparativo);
+    endPrev = new Date(end); endPrev.setFullYear(scope.anioComparativo);
+  } else {
+    const monthsBack = Math.max(
+      1,
+      Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)),
+    );
+    startPrev = new Date(start); startPrev.setMonth(startPrev.getMonth() - monthsBack);
+    endPrev = new Date(end);       endPrev.setMonth(endPrev.getMonth() - monthsBack);
+  }
+  
   const toIso = (d: Date) => d.toISOString().slice(0, 10);
   return fetchDireccionKpisAggregates({
     ...scope,
     startDate: toIso(startPrev),
     endDate: toIso(endPrev),
   });
+}
+
+export async function refreshDireccionMaterializedViews(concurrent = false): Promise<{ updatedAt: Date }> {
+  const rows = await prisma.$queryRaw<{ p_updated_at: Date }[]>`
+    SELECT p_updated_at
+    FROM refresh_direccion_materialized_views(${concurrent}::boolean)
+  `;
+  return { updatedAt: rows[0].p_updated_at };
 }

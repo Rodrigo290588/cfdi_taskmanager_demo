@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { downloadMassPackages } from '@/lib/sat-service'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { hasPermission } from '@/lib/permissions'
-import { Permission } from '@/lib/permissions'
+import { hasPermission, Permission } from '@/lib/permissions'
 import {
   massDownloadJsonResponse,
   buildRfc6266ContentDisposition,
@@ -24,6 +23,114 @@ export const maxDuration = 60
  * [MDFC-003] Clamp máximo de ZIP Base64 chars / bytes para evitar OOM.
  * [MDFC-003] RFC6266 hardened filename via buildRfc6266ContentDisposition.
  */
+function validateParams(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const rfc = (searchParams.get('rfc') || '').trim()
+  const idPaquete = (searchParams.get('idPaquete') || '').trim()
+
+  if (!rfc || !idPaquete) {
+    return { error: 'Faltan parámetros requeridos: rfc, idPaquete', status: 400 }
+  }
+
+  // [SAST-FIX API-04] Validación estricta del RFC (formato SAT)
+  if (!/^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$/i.test(rfc)) {
+    return { error: 'RFC inválido', status: 400 }
+  }
+
+  // Validar idPaquete (alfanumérico + guiones, típico SAT)
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idPaquete)) {
+    return { error: 'idPaquete inválido', status: 400 }
+  }
+
+  return { rfc, idPaquete }
+}
+
+async function getAuthorizedMember(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      systemRole: true,
+      memberships: { where: { status: 'APPROVED' }, select: { organizationId: true, role: true } }
+    }
+  })
+  const member = await prisma.member.findFirst({
+    where: { userId, status: 'APPROVED' },
+    include: { organization: true }
+  })
+  
+  if (!user || !member?.organization) {
+    return { error: 'Sin membresía activa', status: 403 }
+  }
+
+  const canDownload = hasPermission(user, Permission.CFDI_DOWNLOAD_MASSIVE, member.organizationId)
+  if (!canDownload) {
+    return { error: 'Permiso insuficiente: descarga masiva', status: 403 }
+  }
+
+  return { member }
+}
+
+async function verifyTenantAccess(rfc: string, memberId: string, orgId: string) {
+  // Opción A: FiscalEntity activo de la organización
+  const fe = await prisma.fiscalEntity.findFirst({
+    where: { organizationId: orgId, rfc, isActive: true },
+    select: { id: true, rfc: true }
+  })
+  // Opción B: Company accesible via CompanyAccess N:N
+  const ca = fe
+    ? null
+    : await prisma.companyAccess.findFirst({
+        where: {
+          memberId,
+          company: { rfc }
+        },
+        select: { companyId: true }
+      })
+
+  if (!fe && !ca) {
+    return { error: 'RFC no autorizado dentro de tu tenant', status: 403 }
+  }
+  return null
+}
+
+async function verifyPackageRequest(rfc: string, idPaquete: string, memberId: string, orgId: string) {
+  // [SAST-FIX API-04] Confirmar que el idPaquete corresponde a ese RFC en MassDownloadRequest
+  const reqRow = await prisma.massDownloadRequest.findFirst({
+    where: {
+      AND: [
+        {
+          OR: [{ requestingRfc: rfc }, { issuerRfc: rfc }, { receiverRfc: rfc }]
+        },
+        {
+          OR: [
+            { satPackageId: idPaquete },
+            { packageIds: { array_contains: idPaquete } }
+          ]
+        },
+        {
+          company: {
+            OR: [
+              { rfc },
+              {
+                companyAccesses: {
+                  some: { organizationId: orgId, memberId }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    select: { id: true, requestStatus: true, satPackageId: true }
+  })
+
+  if (!reqRow) {
+    return { error: 'Paquete no encontrado o no asociado al RFC', status: 404 }
+  }
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const reqId = crypto.randomUUID()
 
@@ -33,101 +140,33 @@ export async function GET(request: NextRequest) {
       return massDownloadJsonResponse({ error: 'No autorizado', reqId }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const rfc = (searchParams.get('rfc') || '').trim()
-    const idPaquete = (searchParams.get('idPaquete') || '').trim()
-
-    if (!rfc || !idPaquete) {
+    const paramsValidation = validateParams(request)
+    if (paramsValidation.error) {
       return massDownloadJsonResponse(
-        { error: 'Faltan parámetros requeridos: rfc, idPaquete', reqId },
-        { status: 400 }
+        { error: paramsValidation.error, reqId },
+        { status: paramsValidation.status }
       )
     }
+    const { rfc, idPaquete } = paramsValidation
 
-    // [SAST-FIX API-04] Validación estricta del RFC (formato SAT)
-    if (!/^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$/i.test(rfc)) {
-      return massDownloadJsonResponse({ error: 'RFC inválido', reqId }, { status: 400 })
+    const authResult = await getAuthorizedMember(session.user.id)
+    if (authResult.error) {
+      return massDownloadJsonResponse({ error: authResult.error, reqId }, { status: authResult.status })
+    }
+    const { member } = authResult
+
+    const tenantError = await verifyTenantAccess(rfc!, member!.id, member!.organizationId)
+    if (tenantError) {
+      return massDownloadJsonResponse({ error: tenantError.error, reqId }, { status: tenantError.status })
     }
 
-    // Validar idPaquete (alfanumérico + guiones, típico SAT)
-    if (!/^[A-Za-z0-9_-]{8,128}$/.test(idPaquete)) {
-      return massDownloadJsonResponse({ error: 'idPaquete inválido', reqId }, { status: 400 })
-    }
-
-    // [SAST-FIX API-04] Determinar organización activa y permiso
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        systemRole: true,
-        memberships: { where: { status: 'APPROVED' }, select: { organizationId: true, role: true } }
-      }
-    })
-    const member = await prisma.member.findFirst({
-      where: { userId: session.user.id, status: 'APPROVED' },
-      include: { organization: true }
-    })
-    if (!user || !member || !member.organization) {
-      return massDownloadJsonResponse({ error: 'Sin membresía activa', reqId }, { status: 403 })
-    }
-
-    const canDownload = hasPermission(user, Permission.CFDI_DOWNLOAD_MASSIVE, member.organizationId)
-    if (!canDownload) {
-      return massDownloadJsonResponse({ error: 'Permiso insuficiente: descarga masiva', reqId }, { status: 403 })
-    }
-
-    // [SAST-FIX API-04] Verificar que el RFC solicitado pertenece al tenant
-    // Opción A: FiscalEntity activo de la organización
-    const fe = await prisma.fiscalEntity.findFirst({
-      where: { organizationId: member.organizationId, rfc, isActive: true },
-      select: { id: true, rfc: true }
-    })
-    // Opción B: Company accesible via CompanyAccess N:N
-    const ca = fe
-      ? null
-      : await prisma.companyAccess.findFirst({
-          where: {
-            memberId: member.id,
-            company: { rfc }
-          },
-          select: { companyId: true }
-        })
-
-    if (!fe && !ca) {
-      return massDownloadJsonResponse(
-        { error: 'RFC no autorizado dentro de tu tenant', reqId },
-        { status: 403 }
-      )
-    }
-
-    // [SAST-FIX API-04] Confirmar que el idPaquete corresponde a ese RFC en MassDownloadRequest
-    const reqRow = await prisma.massDownloadRequest.findFirst({
-      where: {
-        OR: [{ requestingRfc: rfc }, { issuerRfc: rfc }, { receiverRfc: rfc }],
-        satPackageId: idPaquete,
-        company: {
-          OR: [
-            { rfc },
-            {
-              companyAccesses: {
-                some: { organizationId: member.organizationId, memberId: member.id }
-              }
-            }
-          ]
-        }
-      },
-      select: { id: true, requestStatus: true, satPackageId: true }
-    })
-
-    if (!reqRow) {
-      return massDownloadJsonResponse(
-        { error: 'Paquete no encontrado o no asociado al RFC', reqId },
-        { status: 404 }
-      )
+    const reqError = await verifyPackageRequest(rfc!, idPaquete!, member!.id, member!.organizationId)
+    if (reqError) {
+      return massDownloadJsonResponse({ error: reqError.error, reqId }, { status: reqError.status })
     }
 
     // Solicitar al SAT
-    const result = await downloadMassPackages({ rfc, idPaquete })
+    const result = await downloadMassPackages({ rfc: rfc!, idPaquete: idPaquete! })
     if (!result.paqueteB64 || result.paqueteB64.length > MASS_DOWNLOADS_ZIP_BASE64_MAX_CHARS) {
       return massDownloadJsonResponse(
         { error: `Paquete excede tamaño máximo permitido (${MASS_DOWNLOADS_MAX_ZIP_BYTES >> 20}MB)`, reqId },
@@ -145,7 +184,7 @@ export async function GET(request: NextRequest) {
     console.info('[mass-download-zip OK]', {
       reqId,
       userId: session.user.id,
-      organizationId: member.organizationId,
+      organizationId: member!.organizationId,
       rfc,
       idPaquete,
       size: buffer.length

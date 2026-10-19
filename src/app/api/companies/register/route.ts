@@ -135,7 +135,7 @@ function applyRfcRateLimit(clientIp: string, normalizedRfc: string, reqId: strin
 type TxResult = { createdCompany: Company | null; rfcExists: boolean }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function executeCompanyRegistrationTx(data: any, normalizedRfc: string, dbUser: any, primaryMembership: any) {
+async function executeCompanyRegistrationTx(data: any, normalizedRfc: string, dbUser: any, primaryMembership: any, autoApprove: boolean) {
   return await prisma.$transaction<TxResult>(async tx => {
     const existing = await tx.company.findUnique({
       where: { rfc: normalizedRfc },
@@ -173,6 +173,9 @@ async function executeCompanyRegistrationTx(data: any, normalizedRfc: string, db
         employeesCount: data.employeesCount,
         incorporationDate: data.incorporationDate ? new Date(data.incorporationDate) : undefined,
         notes: data.notes,
+        status: autoApprove ? 'APPROVED' : 'PENDING',
+        approvedAt: autoApprove ? new Date() : null,
+        approvedBy: autoApprove ? dbUser.id : null,
         createdBy: dbUser.id,
         updatedBy: dbUser.id,
       }
@@ -388,7 +391,10 @@ export async function POST(request: NextRequest) {
     let txResult: TxResult
 
     try {
-      txResult = await executeCompanyRegistrationTx(data, normalizedRfc, dbUser, primaryMembership)
+      const enrichedUser = await enrichUserWithMemberships({ id: session.user.id, systemRole: dbUser.systemRole })
+      const autoApprove = hasPermission(enrichedUser, Permission.COMPANY_APPROVE, primaryMembership?.organizationId)
+      
+      txResult = await executeCompanyRegistrationTx(data, normalizedRfc, dbUser, primaryMembership, autoApprove)
     } finally {
       const elapsed = performance.now() - shadowStart
       if (elapsed < RFC_UNIFORM_TIMING_MS) {

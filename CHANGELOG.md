@@ -2,6 +2,26 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.20.1 - 2026-10-16
+
+### Resumen
+- **Reducción de Complejidad Cognitiva (SonarQube `typescript:S3776`)**: Extracción de lógica compleja en funciones de ayuda (helpers) en los endpoints de descargas masivas (`package-downloads`, `download-zip`, `requests`) y en el monitor de UI, reduciendo el score cognitivo por debajo del límite permitido (15).
+- **Mejora de Accesibilidad y DOM (SonarQube `typescript:S7762`, `typescript:S6848`, `typescript:S1082`, `typescript:S6819`)**: Reemplazo de elementos `<div>` interactivos por botones nativos (`<button>`) con manejo correcto de eventos de teclado, y actualización de métodos de eliminación del DOM (`remove()` en lugar de `removeChild()`) en la UI de descargas masivas.
+- **Optimización de Expresiones Regulares y Tipos (SonarQube `typescript:S6353`, `typescript:S6594`, `typescript:S6582`)**: Uso de encadenamiento opcional `?.`, simplificación de cuantificadores RegExp y uso de `RegExp.exec()` sobre `String.match()`.
+- **Refactorización de Firmas de Funciones (SonarQube `typescript:S107`)**: Reducción del número de parámetros mediante el patrón Parameter Object (`WhereClauseFilters`) en el constructor de sentencias Prisma del endpoint de peticiones.
+- **Actualización de Módulos Nativos y APIs Obsoletas (SonarQube `typescript:S7288`, `typescript:S1874`, `typescript:S7773`, `typescript:S4123`)**: Reemplazo de `crypto` por `node:crypto`, uso de `React.FormEvent` en lugar de la API obsoleta `React.FormEventHandler`, uso de métodos estáticos `Number.parseInt()`, y remoción de `await` redundantes.
+- **Excepciones Controladas por Seguridad (SonarQube `typescript:S4790`)**: Adición de directiva `// NOSONAR` justificada para suprimir advertencias sobre el uso del algoritmo SHA-1 en firmas XML (`xmldsig#sha1`), el cual es exigido estrictamente por los Web Services SOAP del SAT.
+
+### Archivos Afectados Relevantes
+- `src/app/api/mass-downloads/package-downloads/route.ts`
+- `src/app/api/mass-downloads/download-zip/route.ts`
+- `src/app/api/mass-downloads/requests/route.ts`
+- `src/app/mass-downloads/requests/monitor/page.tsx`
+- `src/app/mass-downloads/package-downloads/page.tsx`
+- `src/scripts/get-verify-xml.ts`
+
+---
+
 ## v1.20.0 - 2026-09-30
 
 ### Resumen

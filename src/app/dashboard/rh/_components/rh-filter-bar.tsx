@@ -40,6 +40,8 @@ export type RhFilterValues = {
   startDate: string;
   endDate: string;
   departamento: string;
+  tipoNomina: string;
+  periodicidad: string;
   view: 'monthly' | 'quarterly' | 'yearly';
 };
 
@@ -47,9 +49,11 @@ export function RhFilterBar({
   filters,
 }: {
   filters: {
-    startDate: string;
-    endDate: string;
+    startDate: string | null;
+    endDate: string | null;
     departamento: string | null;
+    tipoNomina: string | null;
+    periodicidad: string | null;
     view: 'monthly' | 'quarterly' | 'yearly';
     sections: RhSectionId[];
   };
@@ -68,9 +72,11 @@ export function RhFilterBar({
 
   const { register, handleSubmit, setValue, control, formState: { isDirty, isSubmitting } } = useForm<RhFilterValues>({
     defaultValues: {
-      startDate:      filters.startDate,
-      endDate:        filters.endDate,
+      startDate:      filters.startDate ?? '',
+      endDate:        filters.endDate ?? '',
       departamento:   filters.departamento ?? '',
+      tipoNomina:     filters.tipoNomina ?? 'all',
+      periodicidad:   filters.periodicidad ?? 'all',
       view:           filters.view,
     },
   });
@@ -80,10 +86,14 @@ export function RhFilterBar({
     const s = searchParams.get('startDate');
     const e = searchParams.get('endDate');
     const d = searchParams.get('departamento');
+    const tN = searchParams.get('tipoNomina');
+    const pP = searchParams.get('periodicidad');
     const v = searchParams.get('view');
     if (s) setValue('startDate', s, { shouldDirty: false });
     if (e) setValue('endDate',   e, { shouldDirty: false });
     if (d !== null && d !== undefined) setValue('departamento', d, { shouldDirty: false });
+    if (tN !== null && tN !== undefined) setValue('tipoNomina', tN, { shouldDirty: false });
+    if (pP !== null && pP !== undefined) setValue('periodicidad', pP, { shouldDirty: false });
     if (v && RH_VIEW_MODES.includes(v as never)) setValue('view', v as 'monthly', { shouldDirty: false });
   }, [searchParams, setValue]);
 
@@ -96,6 +106,12 @@ export function RhFilterBar({
       view:       data.view,
       sections:   sections.length === RH_SECTIONS.length ? '' : sections.join(','),
     };
+    if (data.tipoNomina && data.tipoNomina !== 'all') {
+      params.tipoNomina = data.tipoNomina;
+    }
+    if (data.periodicidad && data.periodicidad !== 'all') {
+      params.periodicidad = data.periodicidad;
+    }
     const orgId = searchParams.get('organizationId');
     if (orgId) params.organizationId = orgId;
     const fiscalId = searchParams.get('fiscalEntityId');
@@ -114,20 +130,26 @@ export function RhFilterBar({
   }, [router, searchParams, visibleSections]);
 
   const reset = useCallback(() => {
-    setValue('startDate', filters.startDate);
-    setValue('endDate',   filters.endDate);
+    setValue('startDate', filters.startDate ?? '');
+    setValue('endDate',   filters.endDate ?? '');
     setValue('departamento', filters.departamento ?? '');
+    setValue('tipoNomina', filters.tipoNomina ?? 'all');
+    setValue('periodicidad', filters.periodicidad ?? 'all');
     setValue('view',      filters.view);
     setVisibleSections(RH_SECTIONS.map(s => s.id));
     void apply({
-      startDate: filters.startDate,
-      endDate:   filters.endDate,
+      startDate: filters.startDate ?? '',
+      endDate:   filters.endDate ?? '',
       departamento: filters.departamento ?? '',
+      tipoNomina: filters.tipoNomina ?? 'all',
+      periodicidad: filters.periodicidad ?? 'all',
       view:      filters.view,
     }, RH_SECTIONS.map(s => s.id));
   }, [setValue, filters, apply]);
 
   const currentView = useWatch({ name: 'view', control });
+  const currentTipoNomina = useWatch({ name: 'tipoNomina', control });
+  const currentPeriodicidad = useWatch({ name: 'periodicidad', control });
   const allChecked = useMemo(() => visibleSections.length === RH_SECTIONS.length, [visibleSections]);
   const noneChecked = visibleSections.length === 0;
 
@@ -150,6 +172,41 @@ export function RhFilterBar({
               className="h-9 text-sm"
               maxLength={80}
               {...register('departamento')} />
+          </div>
+          <div className="grid w-full max-w-sm items-center gap-1.5">
+            <Label htmlFor="rh-tipo-nomina">Tipo de Nómina</Label>
+            <Select
+              value={currentTipoNomina}
+              onValueChange={(v) => setValue('tipoNomina', v, { shouldDirty: true })}>
+              <SelectTrigger id="rh-tipo-nomina" className="h-9 text-sm"><SelectValue/></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="O">O - Nómina Ordinaria</SelectItem>
+                <SelectItem value="E">E - Nómina Extraordinaria</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid w-full max-w-sm items-center gap-1.5">
+            <Label htmlFor="rh-periodicidad">Periodicidad</Label>
+            <Select
+              value={currentPeriodicidad}
+              onValueChange={(v) => setValue('periodicidad', v, { shouldDirty: true })}>
+              <SelectTrigger id="rh-periodicidad" className="h-9 text-sm"><SelectValue/></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="01">01 - Diario</SelectItem>
+                <SelectItem value="02">02 - Semanal</SelectItem>
+                <SelectItem value="03">03 - Catorcenal</SelectItem>
+                <SelectItem value="04">04 - Quincenal</SelectItem>
+                <SelectItem value="05">05 - Mensual</SelectItem>
+                <SelectItem value="06">06 - Bimestral</SelectItem>
+                <SelectItem value="07">07 - Unidad de obra</SelectItem>
+                <SelectItem value="08">08 - Comisión</SelectItem>
+                <SelectItem value="09">09 - Precio alzado</SelectItem>
+                <SelectItem value="10">10 - Decenal</SelectItem>
+                <SelectItem value="99">99 - Otra Periodicidad</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="rh-view">Vista</Label>

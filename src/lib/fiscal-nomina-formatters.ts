@@ -33,9 +33,11 @@ export function fmtPct(n: NominaNullableNumber, digits = 1): string {
 }
 
 export function fmtDateEs(date: Date | string | null | undefined): string {
-    if (date === null || date === undefined) return '';
+    if (date === null || date === undefined || date === '') return '';
     const d = typeof date === 'string' ? new Date(date) : date;
+    if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleDateString('es-MX', {
+        timeZone: 'UTC',
         year: 'numeric',
         month: 'short',
         day: '2-digit',

@@ -1,0 +1,6 @@
+Archivo,Suite,Prueba,Estado,Duracion(ms)
+"Nómina/Tablero de RH/tablero_rh.test.tsx","Tablero Analítico de RH > 1. ⚙️ Configuración Inicial","debe mostrar el tablero en ceros al inicio antes de aplicar filtros","EXITOSO","19"
+"Nómina/Tablero de RH/tablero_rh.test.tsx","Tablero Analítico de RH > 2. 💳 Validación de KPIs","Total de Empleados: muestra la plantilla correcta","EXITOSO","11"
+"Nómina/Tablero de RH/tablero_rh.test.tsx","Tablero Analítico de RH > 2. 💳 Validación de KPIs","Rotación: calcula correctamente el porcentaje de rotación","EXITOSO","14"
+"Nómina/Tablero de RH/tablero_rh.test.tsx","Tablero Analítico de RH > 2. 💳 Validación de KPIs","Incapacidades: muestra los días descontados","EXITOSO","15"
+"Nómina/Tablero de RH/tablero_rh.test.tsx","Tablero Analítico de RH > 3. 🖱️ Experiencia de Usuario","muestra descripciones textuales en lugar de solo claves del SAT","EXITOSO","15"

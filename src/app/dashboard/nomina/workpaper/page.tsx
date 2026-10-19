@@ -140,8 +140,6 @@ const attributeExtractors: Record<string, (xml: string) => string | null> = {
   cfdiRelacionado: (xml) => getCfdiRelacionadosAttribute(xml, 'UUID'),
   totalImpuestosTrasladados: (xml) => getGlobalImpuestosAttribute(xml, 'TotalImpuestosTrasladados') || null,
   totalImpuestosRetenidos: (xml) => getGlobalImpuestosAttribute(xml, 'TotalImpuestosRetenidos') || null,
-  nominaNumEmpleado: (xml) => getReceptorAttribute(xml, 'NumEmpleado') || null,
-  nominaFechaPago: (xml) => getXmlAttribute(xml, 'FechaPago') || null,
 }
 
 function parseNominaNodeAttribute(xml: string, attr: string) {
@@ -192,8 +190,12 @@ function getProjectedValue(row: InvoiceRow, key: string) {
 
 
 const getCfdiElements = (n: Element | Document, name: string) => {
-  const withPrefix = n.getElementsByTagName(`cfdi:${name}`)
-  if (withPrefix.length > 0) return Array.from(withPrefix)
+  const withCfdiPrefix = n.getElementsByTagName(`cfdi:${name}`)
+  if (withCfdiPrefix.length > 0) return Array.from(withCfdiPrefix)
+  const withNominaPrefix = n.getElementsByTagName(`nomina12:${name}`)
+  if (withNominaPrefix.length > 0) return Array.from(withNominaPrefix)
+  const withNs = n.getElementsByTagNameNS('*', name)
+  if (withNs.length > 0) return Array.from(withNs)
   return Array.from(n.getElementsByTagName(name))
 }
 
@@ -334,7 +336,7 @@ function NominaPercepcionesTable({ xml }: Readonly<{ xml: string }>) {
 
       {items.length > 0 && (
       <div className="overflow-x-auto scrollbar-visible">
-        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+        <table className="w-max text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="p-2 font-medium">TipoPercepcion</th>
@@ -352,7 +354,7 @@ function NominaPercepcionesTable({ xml }: Readonly<{ xml: string }>) {
                 <tr className="border-b hover:bg-muted/20">
                   <td className="p-2">{c.TipoPercepcion}</td>
                   <td className="p-2">{c.Clave}</td>
-                  <td className="p-2 max-w-[200px] truncate" title={c.Concepto}>{c.Concepto}</td>
+                  <td className="p-2 truncate max-w-xs xl:max-w-md 2xl:max-w-xl" title={c.Concepto}>{c.Concepto}</td>
                   <td className="p-2 text-right">{c.ImporteGravado ? `$${Number(c.ImporteGravado).toFixed(2)}` : ''}</td>
                   <td className="p-2 text-right">{c.ImporteExento ? `$${Number(c.ImporteExento).toFixed(2)}` : ''}</td>
                 </tr>
@@ -418,7 +420,7 @@ function NominaDeduccionesTable({ xml }: Readonly<{ xml: string }>) {
     <div className="p-4 bg-muted/30 border rounded-md">
       <h5 className="font-semibold text-sm mb-2 text-primary">Detalle de Deducciones</h5>
       <div className="overflow-x-auto scrollbar-visible">
-        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+        <table className="w-max text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="p-2 font-medium">TipoDeduccion</th>
@@ -434,7 +436,7 @@ function NominaDeduccionesTable({ xml }: Readonly<{ xml: string }>) {
               <tr key={key} className="border-b hover:bg-muted/20">
                 <td className="p-2">{c.TipoDeduccion}</td>
                 <td className="p-2">{c.Clave}</td>
-                <td className="p-2 max-w-[200px] truncate" title={c.Concepto}>{c.Concepto}</td>
+                <td className="p-2 truncate max-w-xs xl:max-w-md 2xl:max-w-xl" title={c.Concepto}>{c.Concepto}</td>
                 <td className="p-2 text-right">{c.Importe ? `$${Number(c.Importe).toFixed(2)}` : ''}</td>
               </tr>
             )})}
@@ -480,7 +482,7 @@ function NominaOtrosPagosTable({ xml }: Readonly<{ xml: string }>) {
     <div className="p-4 bg-muted/30 border rounded-md">
       <h5 className="font-semibold text-sm mb-2 text-primary">Detalle de Otros Pagos</h5>
       <div className="overflow-x-auto scrollbar-visible">
-        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+        <table className="w-max text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="p-2 font-medium">TipoOtroPago</th>
@@ -497,7 +499,7 @@ function NominaOtrosPagosTable({ xml }: Readonly<{ xml: string }>) {
                 <tr className="border-b hover:bg-muted/20">
                   <td className="p-2">{c.TipoOtroPago}</td>
                   <td className="p-2">{c.Clave}</td>
-                  <td className="p-2 max-w-[200px] truncate" title={c.Concepto}>{c.Concepto}</td>
+                  <td className="p-2 truncate max-w-xs xl:max-w-md 2xl:max-w-xl" title={c.Concepto}>{c.Concepto}</td>
                   <td className="p-2 text-right">{c.Importe ? `$${Number(c.Importe).toFixed(2)}` : ''}</td>
                 </tr>
                 {c.SubsidioAlEmpleo && (
@@ -542,7 +544,7 @@ function NominaIncapacidadesTable({ xml }: Readonly<{ xml: string }>) {
     <div className="p-4 bg-muted/30 border rounded-md">
       <h5 className="font-semibold text-sm mb-2 text-primary">Detalle de Incapacidades</h5>
       <div className="overflow-x-auto scrollbar-visible">
-        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+        <table className="w-max text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="p-2 font-medium">Dias Incapacidad</th>
@@ -588,7 +590,7 @@ function ConceptosTable({ xml }: Readonly<{ xml: string }>) {
     <div className="p-4 bg-muted/30">
       <h5 className="font-semibold text-sm mb-2 text-primary">Detalle de Conceptos</h5>
       <div className="overflow-x-auto scrollbar-visible">
-        <table className="w-full text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
+        <table className="w-max text-xs text-left border-collapse bg-background shadow-sm rounded-md overflow-hidden">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="p-2 font-medium">ClaveProdServ</th>
@@ -614,7 +616,7 @@ function ConceptosTable({ xml }: Readonly<{ xml: string }>) {
                   <td className="p-2">{c.Cantidad}</td>
                   <td className="p-2">{c.ClaveUnidad}</td>
                   <td className="p-2">{c.Unidad}</td>
-                  <td className="p-2 max-w-[200px] truncate" title={c.Descripcion}>{c.Descripcion}</td>
+                  <td className="p-2 truncate max-w-xs xl:max-w-md 2xl:max-w-xl" title={c.Descripcion}>{c.Descripcion}</td>
                   <td className="p-2">{c.ValorUnitario ? `$${Number(c.ValorUnitario).toFixed(2)}` : ''}</td>
                   <td className="p-2">{c.Descuento ? `$${Number(c.Descuento).toFixed(2)}` : ''}</td>
                   <td className="p-2">{c.Importe ? `$${Number(c.Importe).toFixed(2)}` : ''}</td>

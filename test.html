@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recibo de Nómina </title>
+    <!-- Tailwind CSS CDN removido para mejorar estabilidad offline y de PDF, estilos inyectados directamente -->
+    <style>
+      body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; position: relative; }
+      .primary-bg { background-color: #1e3a8a; }
+      .primary-text { color: #1e3a8a; }
+      .watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 120px;
+        color: rgba(239, 68, 68, 0.15);
+        font-weight: 900;
+        letter-spacing: 10px;
+        z-index: -1;
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+      }
+      
+      /* Tailwind Fallback Utilities */
+      .flex { display: flex; }
+      .justify-between { justify-content: space-between; }
+      .justify-end { justify-content: flex-end; }
+      .items-start { align-items: flex-start; }
+      .w-1\/2 { width: 50%; }
+      .w-1\/3 { width: 33.333333%; }
+      .w-full { width: 100%; }
+      .text-right { text-align: right; }
+      .text-center { text-align: center; }
+      .text-left { text-align: left; }
+      .font-bold { font-weight: 700; }
+      .font-semibold { font-weight: 600; }
+      .text-xs { font-size: 0.75rem; line-height: 1rem; }
+      .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+      .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+      .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+      .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+      .mb-6 { margin-bottom: 1.5rem; }
+      .mb-2 { margin-bottom: 0.5rem; }
+      .mb-1 { margin-bottom: 0.25rem; }
+      .mt-2 { margin-top: 0.5rem; }
+      .mt-6 { margin-top: 1.5rem; }
+      .pt-6 { padding-top: 1.5rem; }
+      .pt-2 { padding-top: 0.5rem; }
+      .pt-1 { padding-top: 0.25rem; }
+      .pb-1 { padding-bottom: 0.25rem; }
+      .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+      .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+      .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+      .p-4 { padding: 1rem; }
+      .p-8 { padding: 2rem; }
+      .gap-6 { gap: 1.5rem; }
+      .gap-4 { gap: 1rem; }
+      .border { border-width: 1px; border-style: solid; }
+      .border-t { border-top-width: 1px; border-style: solid; }
+      .border-t-2 { border-top-width: 2px; border-style: solid; }
+      .border-b { border-bottom-width: 1px; border-style: solid; }
+      .border-b-2 { border-bottom-width: 2px; border-style: solid; }
+      .border-slate-200 { border-color: #e2e8f0; }
+      .border-slate-300 { border-color: #cbd5e1; }
+      .border-slate-800 { border-color: #1e293b; }
+      .bg-white { background-color: #ffffff; }
+      .bg-slate-50 { background-color: #f8fafc; }
+      .bg-slate-100 { background-color: #f1f5f9; }
+      .text-slate-400 { color: #94a3b8; }
+      .text-slate-500 { color: #64748b; }
+      .text-slate-600 { color: #475569; }
+      .text-slate-700 { color: #334155; }
+      .text-slate-800 { color: #1e293b; }
+      .text-red-600 { color: #dc2626; }
+      .rounded-lg { border-radius: 0.5rem; }
+      .border-collapse { border-collapse: collapse; }
+      .break-all { word-break: break-all; }
+      .italic { font-style: italic; }
+      .block { display: block; }
+      .flex-1 { flex: 1 1 0%; }
+      .flex-shrink-0 { flex-shrink: 0; }
+      .w-24 { width: 6rem; }
+      .grid { display: grid; }
+      .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .flex-col { flex-direction: column; }
+      .object-contain { object-fit: contain; }
+      .max-h-16 { max-height: 4rem; }
+      .h-auto { height: auto; }
+      .w-auto { width: auto; }
+    </style>
+  </head>
+  <body class="bg-white text-slate-800 p-8 text-sm">
+    
+    
+    <!-- Header -->
+    <div class="flex justify-between items-start mb-6">
+      <div class="w-1/2">
+        <div class="text-2xl font-bold primary-text mb-2">EMPRESA DEMO</div>
+        <div class="font-semibold text-lg">EMPRESA DEMO</div>
+        <div class="text-slate-600">RFC: </div>
+        <div class="text-slate-600">Régimen Fiscal: </div>
+        <div class="text-slate-600">Registro Patronal: </div>
+      </div>
+      
+      <div class="w-1/2 text-right">
+        <h1 class="text-3xl font-bold primary-text mb-2">RECIBO DE NÓMINA</h1>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Folio:</span> S/N
+        </div>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Fecha Emisión:</span> 
+        </div>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Lugar de Expedición:</span> 
+        </div>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Tipo Nómina:</span> 
+        </div>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Periodo:</span>  al 
+        </div>
+        <div class="text-slate-600 mb-1">
+          <span class="font-semibold">Días Pagados:</span> 
+        </div>
+      </div>
+    </div>
+
+    <!-- Employee Info -->
+    <div class="border border-slate-200 rounded-lg p-4 mb-6 bg-slate-50 text-xs">
+      <h3 class="font-bold text-slate-700 mb-2 border-b pb-1">DATOS DEL TRABAJADOR</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <span class="font-semibold block text-slate-600">Nombre:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">RFC:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">CURP:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">No. Empleado:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">NSS:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">Departamento:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">Puesto:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">Riesgo Puesto:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">Salario Diario Integrado:</span>
+          $0.00
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-600">Salario Base Cot. Apor.:</span>
+          $0.00
+        </div>
+      </div>
+    </div>
+
+    <!-- Payroll Details -->
+    <div class="flex gap-6 mb-6">
+      <!-- Percepciones -->
+      <div class="w-1/2">
+        <h3 class="font-bold text-slate-700 mb-2 border-b-2 border-slate-300 pb-1">PERCEPCIONES</h3>
+        <div class="text-xs text-slate-500 italic py-2">No hay percepciones</div>
+        <div class="flex justify-between mt-2 pt-2 border-t font-semibold text-xs">
+          <span>Total Percepciones:</span>
+          <span>$0.00</span>
+        </div>
+      </div>
+
+      <!-- Deducciones & Otros Pagos -->
+      <div class="w-1/2 flex flex-col gap-4">
+        <div>
+          <h3 class="font-bold text-slate-700 mb-2 border-b-2 border-slate-300 pb-1">DEDUCCIONES</h3>
+          <div class="text-xs text-slate-500 italic py-2">No hay deducciones</div>
+          <div class="flex justify-between mt-2 pt-2 border-t font-semibold text-xs">
+            <span>Total Deducciones:</span>
+            <span>$0.00</span>
+          </div>
+        </div>
+
+        
+      </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="flex justify-end mb-6">
+      <div class="w-1/3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+        <div class="flex justify-between py-1 text-sm">
+          <span class="text-slate-600">Subtotal:</span>
+          <span class="font-semibold">$0.00</span>
+        </div>
+        
+        <div class="flex justify-between py-2 mt-2 border-t-2 border-slate-800 text-xl font-bold">
+          <span>Total a Pagar:</span>
+          <span>$0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SAT Info & QR -->
+    <div class="border-t border-slate-300 pt-6 flex gap-6 text-[10px] text-slate-500 break-all">
+      <div class="w-24 flex-shrink-0">
+        
+      </div>
+      <div class="flex-1 space-y-2">
+        <div>
+          <span class="font-semibold block text-slate-700">Folio Fiscal (UUID):</span>
+          No certificado
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-700">Sello Digital del CFDI:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-700">Sello del SAT:</span>
+          
+        </div>
+        <div>
+          <span class="font-semibold block text-slate-700">Cadena Original del complemento de certificación digital del SAT:</span>
+          
+        </div>
+        <div class="flex justify-between text-slate-600 pt-1">
+          <span><span class="font-semibold">No. Certificado Emisor:</span> </span>
+          <span><span class="font-semibold">No. Certificado SAT:</span> </span>
+          <span><span class="font-semibold">Fecha Timbrado:</span> </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 text-center text-slate-400 text-[10px] italic">
+      Este documento es una representación impresa de un CFDI de Nómina.
+    </div>
+  </body>
+</html>

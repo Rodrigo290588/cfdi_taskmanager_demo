@@ -244,7 +244,7 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
     function handleExportCsv() {
         try {
             const headers = [
-                'ID Deducción','Tipo Deducción','Clave Deducción','Concepto Deducción','Importe ISR MXN',
+                'Tipo Deducción','Clave Deducción','Concepto Deducción','Importe ISR MXN',
                 'Fecha Emisión','Fecha Pago','Tipo Nómina','UUID','Serie','Folio',
                 'RFC Empleado','Nombre Empleado','CURP','No. Empleado','Departamento',
                 'Percepciones','Deducciones','Otros Pagos','Total Neto','Estatus SAT','Link PDF',
@@ -257,7 +257,6 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
                     return /[",\n]/.test(s) ? `"${s}"` : s;
                 };
                 lines.push([
-                    esc(r.deduccionId),
                     esc(r.tipoDeduccion),
                     esc(r.claveDeduccion),
                     esc(r.conceptoDeduccion),
@@ -349,7 +348,6 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
             <Table className="w-full min-w-max">
                 <TableHeader className="sticky top-0 bg-muted z-10 shadow-sm">
                     <TableRow>
-                        <TableHead className="w-[140px] whitespace-nowrap">ID Deducción</TableHead>
                         <TableHead className="w-[100px] whitespace-nowrap">Tipo</TableHead>
                         <TableHead className="w-[120px] whitespace-nowrap">Clave SAT</TableHead>
                         <TableHead className="min-w-[260px]">Concepto Deducción</TableHead>
@@ -372,7 +370,6 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
                         <TableHead className="w-[110px] whitespace-nowrap">Sat Status</TableHead>
                     </TableRow>
                     <TableRow className="bg-muted/50 border-b shadow-sm">
-                        <TableHead className="p-1 px-2 align-top"><Input placeholder="Buscar..." className="h-7 text-xs bg-background font-mono" value={filters.deduccionId || ''} onChange={e => updateFilter('deduccionId', e.target.value)}/></TableHead>
                         <TableHead className="p-1 px-2 align-top"><Input placeholder="002..." className="h-7 text-xs bg-background" value={filters.tipoDeduccion || ''} onChange={e => updateFilter('tipoDeduccion', e.target.value)}/></TableHead>
                         <TableHead className="p-1 px-2 align-top"><Input placeholder="Buscar..." className="h-7 text-xs bg-background" value={filters.claveDeduccion || ''} onChange={e => updateFilter('claveDeduccion', e.target.value)}/></TableHead>
                         <TableHead className="p-1 px-2 align-top"><Input placeholder="Buscar concepto..." className="h-7 text-xs bg-background" value={filters.conceptoDeduccion || ''} onChange={e => updateFilter('conceptoDeduccion', e.target.value)}/></TableHead>
@@ -398,7 +395,6 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
                 <TableBody>
                     {paginated.map((r, i) => (
                         <TableRow key={`${r.deduccionId}-${i}`}>
-                            <TableCell className="whitespace-nowrap font-mono text-[11px]">{r.deduccionId}</TableCell>
                             <TableCell className="whitespace-nowrap font-semibold text-[11px]">{r.tipoDeduccion || '-'}</TableCell>
                             <TableCell className="whitespace-nowrap text-[11px]">{r.claveDeduccion || '-'}</TableCell>
                             <TableCell className="max-w-[320px] truncate" title={r.conceptoDeduccion ?? ''}>{r.conceptoDeduccion || '-'}</TableCell>
@@ -423,14 +419,14 @@ export function DrilldownDialogIsrRetenidoNom(props: DrilldownDialogIsrRetenidoN
                     ))}
                     {filtered.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={21} className="h-24 text-center text-muted-foreground text-sm">
+                            <TableCell colSpan={20} className="h-24 text-center text-muted-foreground text-sm">
                                 No se encontraron resultados para tu búsqueda.
                             </TableCell>
                         </TableRow>
                     )}
                     {filtered.length > 0 && (
                         <TableRow className="bg-muted/50 font-bold hover:bg-muted/50">
-                            <TableCell colSpan={4} className="text-right text-xs">
+                            <TableCell colSpan={3} className="text-right text-xs">
                                 Total Filtrado · {fmtNum(filtered.length)} retención(es) ISR
                             </TableCell>
                             <TableCell className="text-right">{fmtMxn(filteredTotals.importeIsr)}</TableCell>

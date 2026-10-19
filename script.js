@@ -1,4 +1,5 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+﻿/* eslint-disable @typescript-eslint/no-require-imports */
+ 
 const fs = require('fs');
 const lines = fs.readFileSync('src/app/dashboard_fiscal/page.tsx', 'utf8').split('\n');
 

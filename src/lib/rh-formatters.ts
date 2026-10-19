@@ -9,10 +9,11 @@
 
 export function fmtMxn(n: number | null | undefined, maxDigits = 0): string {
   const value = Number(n ?? 0);
-  if (!Number.isFinite(value)) return '$0';
+  if (!Number.isFinite(value)) return '$0.00';
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
     currency: 'MXN',
+    minimumFractionDigits: maxDigits,
     maximumFractionDigits: maxDigits,
   }).format(value);
 }
@@ -29,7 +30,9 @@ export function fmtPct(n: number | null | undefined, digits = 1): string {
   return `${value.toFixed(digits)}%`;
 }
 
-export function fmtDateEs(date: Date | string): string {
+export function fmtDateEs(date: Date | string | null | undefined): string {
+  if (!date) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('es-MX', { timeZone: 'UTC', year: 'numeric', month: 'short', day: '2-digit' });
 }

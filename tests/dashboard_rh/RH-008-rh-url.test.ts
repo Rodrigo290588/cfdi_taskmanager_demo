@@ -24,29 +24,34 @@ import {
   RH_VIEW_MODES,
   RH_DEFAULT_REVALIDATE_SECONDS,
 } from '@/lib/rh-dashboard-url';
-import { parseISO, formatISO, startOfMonth, subMonths, endOfMonth } from 'date-fns';
+import { parseISO } from 'date-fns';
 
 describe('[RH-008·A] parseRhSearchParams · default values & fail-closed', () => {
   it('null / undefined raw params → default 6 meses rango + departamento=null + view=monthly', () => {
     const out = parseRhSearchParams(undefined);
     expect(out.view).toBe('monthly');
     expect(out.departamento).toBeNull();
-    expect(out.startDate.length).toBe(10); // fecha ISO YYYY-MM-DD
-    expect(out.endDate.length).toBe(10);
-    // startDate = 6 meses antes inicio mes actual
-    const expectedStart = formatISO(subMonths(startOfMonth(new Date()), 6), { representation: 'date' });
-    expect(out.startDate).toBe(expectedStart);
-    expect(out.endDate).toBe(formatISO(endOfMonth(new Date()), { representation: 'date' }));
+    expect(out.startDate).toBeNull();
+    expect(out.endDate).toBeNull();
   });
 
   it('startDate > endDate → SWAP (fail-safe, no crash)', () => {
     const out = parseRhSearchParams({ startDate: '2026-12-01', endDate: '2026-01-01' });
-    expect(parseISO(out.startDate).getTime()).toBeLessThan(parseISO(out.endDate).getTime());
+    expect(parseISO(out.startDate as string).getTime()).toBeLessThan(parseISO(out.endDate as string).getTime());
   });
 
   it('startDate garbage "not-a-date" → default safe', () => {
     const out = parseRhSearchParams({ startDate: 'not-a-date' });
-    expect(parseISO(out.startDate).getTime()).toBeGreaterThan(0);
+    expect(parseISO(out.startDate as string).getTime()).toBeGreaterThan(0);
+  });
+
+  it('si las fechas son null, omitirlas y permitir filtro abierto', () => {
+    const out = parseRhSearchParams({
+      startDate: null as any,
+      endDate: null as any,
+    });
+    expect(out.startDate).toBeNull();
+    expect(out.endDate).toBeNull();
   });
 
   it('departamento regex allow 1-80 chars alfanum+acentosÑ+punct allowlisted', () => {
@@ -125,7 +130,7 @@ describe('[RH-008·B] buildRhDashboardUrl · DASH-SAST-006 URLSearchParams safe'
     expect(s).toMatch(/Ventas(?:\+|%20)CDMX/);
   });
   it('NO permite XSS a través de params (URLSearchParams encodea <script>)', () => {
-    const s = buildRhDashboardUrl('/r', { view: '<script>alert(1)</script>' });
+    const s = buildRhDashboardUrl('/r', { view: '<script>alert(1)</script>' as any });
     expect(s).not.toContain('<script>');
     expect(s).toContain('%3Cscript%3E');
   });
@@ -144,7 +149,7 @@ describe('[RH-008·C] rhCacheKey determinista', () => {
     const a = rhCacheKey(p); const b = rhCacheKey(p);
     expect(a).toBe(b);
     expect(a.startsWith('rh-dashboard::')).toBe(true);
-    expect(a.split('::').length).toBe(7);
+    expect(a.split('::').length).toBe(9);
   });
   it('fiscalEntityId/departamento null → wildcard *', () => {
     const a = rhCacheKey({

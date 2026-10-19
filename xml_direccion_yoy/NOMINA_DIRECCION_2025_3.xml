@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:nomina12="http://www.sat.gob.mx/nomina12" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd" Version="4.0" Fecha="2025-02-02T10:00:00" Sello="SELLO_TEST_DIR_3" FormaPago="99" NoCertificado="00001000000500000000" Certificado="CERTIFICADO_TEST" SubTotal="25000.00" Descuento="0.00" Moneda="MXN" Total="25000.00" TipoDeComprobante="N" Exportacion="01" MetodoPago="PUE" LugarExpedicion="12345">
+  <cfdi:Emisor Rfc="NMP7502257ZA" Nombre="NOMBREMPRESA SA DE CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Nombre="JOSE FAUSTO CENTENO QUINTANAR" Rfc="CEQF620906JR2" DomicilioFiscalReceptor="12345" RegimenFiscalReceptor="605" UsoCFDI="CN01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111505" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago de nómina" ValorUnitario="25000.00" Importe="25000.00" ObjetoImp="01" Descuento="0.00"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <nomina12:Nomina Version="1.2" TipoNomina="O" FechaPago="2025-02-02" FechaInicialPago="2025-02-02" FechaFinalPago="2025-02-02" NumDiasPagados="15" TotalPercepciones="25000.00" TotalDeducciones="0.00">
+      <nomina12:Emisor RegistroPatronal="A1234567890"/>
+      <nomina12:Receptor Curp="XAXX010101XXX12345" NumSeguridadSocial="12345678901" FechaInicioRelLaboral="2020-01-01" Antigüedad="P6Y" TipoContrato="01" Sindicalizado="No" TipoJornada="01" TipoRegimen="02" NumEmpleado="001" Departamento="Direccion" Puesto="Director" RiesgoPuesto="1" PeriodicidadPago="04" ClaveEntFed="CM" SalarioBaseCotApor="500.00" SalarioDiarioIntegrado="500.00"/>
+      <nomina12:Percepciones TotalSueldos="25000.00" TotalGravado="25000.00" TotalExento="0.00">
+        <nomina12:Percepcion TipoPercepcion="001" Clave="001" Concepto="Sueldo" ImporteGravado="25000.00" ImporteExento="0.00"/>
+      </nomina12:Percepciones>
+    </nomina12:Nomina>
+<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2020-09-11T09:31:04" NoCertificadoSAT="00001000000406144089" RfcProvCertif="CAD100607RY8" SelloCFD="DeOXxx9uwgZghmDER7H1Btth9lOJCA3x+JJ6fWVtXd3z6F3ihZss9+8vAp5cgHari7d8djdMd6uKQSKwHUorUNyVuPr02TPMXx7xovv1Ln1Yga5ghTBeLTrU0M6kxM4Fi9Z5XgNC6WGI083UyA8oOXAUgWbQEpdXzmFKIequ2xDK7wI+jNaiFOJDWGTL1thbj7tJN+j9GX9FWfCXrIJdb6ioZ5QdPK4WZ6UjpeSLYKpuW4q1fqmHxjvlyyrBmbG1RwHpwgs+v063Z0mmjW1X9BoHXHLErZCvjMbbYwXl/zAFtOTORXXzwpA1BPMJDQC6EY9hzi4alLWwlHtJSUbBJQ==" SelloSAT="q69W9XipIzX5kY7TZwC2STdPcuXbHMECxBtWznpv1l2NMD8K5CiyUwODcM9DD5FqH3So9+pDZug4Od00Len1wEsfPVAZgToSPHpElZ9/k++6BM/6aaZJ4MGZmJS7a0rIuuFe+dy+KkmjDNlTkC/hMFKFqjWe/CmkqBRwoZ2ILjC31iVG9FKPJG+VgrpnYG4llPk1w9rzPGf3qa/8LitqmQa5OweDRwWH1EUHJLn/xgVvqHLKyy6/i2T9boHKBaZykYbM/udwRMdBcN+U7KCa07Ir4OfK4bvG4hN31wBGxx3JDgxMn0wFhiW0PBLqN+yIZTqczPyLd+HpdWdqYqtCxQ==" UUID="00bdae8c-7567-4afe-a83c-bd1ee3840926" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

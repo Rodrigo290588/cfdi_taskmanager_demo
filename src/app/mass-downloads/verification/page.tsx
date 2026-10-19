@@ -80,7 +80,18 @@ async function loadVerificationRequests(
     const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
     if (!res.ok) throw new Error('Error al cargar peticiones')
 
-    const data: MassDownloadRequest[] = await res.json()
+    const responseData = await res.json()
+    console.log('API Response (Verification):', responseData)
+    
+    let data: MassDownloadRequest[] = []
+    if (Array.isArray(responseData)) {
+      data = responseData
+    } else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.data)) {
+      data = responseData.data
+    } else {
+      console.warn('Unexpected API response format:', responseData)
+    }
+    
     const relevant = data.filter(r => r.satPackageId !== null)
     setRequests(relevant)
   } catch (error) {
@@ -123,10 +134,15 @@ export default function VerificationMonitorPage() {
   }, [])
 
   // Fetch data
-  async function fetchRequests() {
+  async function fetchRequests(showLoadingIndicator = true) {
     if (!selectedCompany?.rfc) return
 
-    await loadVerificationRequests(selectedCompany.rfc, setLoading, setRequests)
+    if (showLoadingIndicator) {
+      await loadVerificationRequests(selectedCompany.rfc, setLoading, setRequests)
+    } else {
+      // Background fetch sin mostrar el spinner en el botón
+      await loadVerificationRequests(selectedCompany.rfc, () => {}, setRequests)
+    }
   }
 
   // Auto-fetch when company changes
@@ -146,7 +162,8 @@ export default function VerificationMonitorPage() {
     if (!selectedCompany?.rfc) return
     const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
-      void loadVerificationRequests(rfc, setLoading, setRequests)
+      // Actualización silenciosa: pasamos una función vacía en lugar de setLoading
+      void loadVerificationRequests(rfc, () => {}, setRequests)
     }, 5000)
     return () => clearInterval(interval)
   }, [selectedCompany?.rfc])

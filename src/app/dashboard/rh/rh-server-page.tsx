@@ -1,12 +1,9 @@
 import { Suspense } from 'react'
-import { format, formatISO, parseISO, subMonths, startOfMonth, endOfMonth } from 'date-fns'
+import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { ProtectedRoute } from '@/components/protected-route'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import {
-  Users, TrendingUp, ArrowDownRight, Clock, Briefcase, Gift,
-} from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 
 import {
@@ -22,11 +19,10 @@ import {
   type HeadcountKpiRow, type TurnoverRow, type IncapacidadRow,
   type HorasExtraRow, type PlantillaRow, type BeneficioRow,
 } from '@/lib/payroll-analytics-service'
-import { fmtMxn, fmtNum } from '@/lib/rh-formatters'
 
 import { RhFilterBar } from './_components/rh-filter-bar'
 import {
-  KpiCardRh, ChartPlaceholder,
+  ChartPlaceholder,
 } from './_components/rh-shared'
 
 import { RhTurnoverPanel, type TurnoverInputRow } from './_components/rh-turnover'
@@ -34,29 +30,23 @@ import { RhIncapacidadesPanel, type IncapacidadesInputRow } from './_components/
 import { RhHorasExtraPanel, type HorasExtraInputRow } from './_components/rh-horas-extra'
 import { RhPlantillaPanel, type PlantillaInputRow } from './_components/rh-plantilla'
 import { RhBeneficiosPanel, type BeneficiosInputRow } from './_components/rh-beneficios'
+import { RhKpiCardsClient } from './_components/rh-kpi-cards-client'
 
 type RawParsedRhFilters = ReturnType<typeof parseRhSearchParams>
 export type ResolvedRhFilters = RawParsedRhFilters & {
   companyId: string
-  startDate: string
-  endDate: string
+  startDate: string | null
+  endDate: string | null
   sections: RawParsedRhFilters extends { sections: infer T } ? T : never
-}
-
-function defaultStartIso(): string {
-  return formatISO(subMonths(startOfMonth(new Date()), 6), { representation: 'date' })
-}
-function defaultEndIso(): string {
-  return formatISO(endOfMonth(new Date()), { representation: 'date' })
 }
 
 function resolveFilters(initial: RawParsedRhFilters): ResolvedRhFilters {
   const startDateRaw = initial.startDate
   const endDateRaw = initial.endDate
   const startDate =
-    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : defaultStartIso()
+    typeof startDateRaw === 'string' && startDateRaw.length === 10 ? startDateRaw : null
   const endDate =
-    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : defaultEndIso()
+    typeof endDateRaw === 'string' && endDateRaw.length === 10 ? endDateRaw : null
   return {
     ...initial,
     startDate,
@@ -79,6 +69,8 @@ export async function RhDashboardServerPage({
     startDate: filters.startDate,
     endDate: filters.endDate,
     departamento: filters.departamento ?? null,
+    tipoNomina: filters.tipoNomina ?? null,
+    periodicidad: filters.periodicidad ?? null,
     view: filters.view,
     sections: filters.sections,
   } as const
@@ -109,8 +101,9 @@ export async function RhDashboardServerPage({
             </h1>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>
-                Período: {format(parseISO(filters.startDate), 'dd/MM/yyyy', { locale: es })} —{' '}
-                {format(parseISO(filters.endDate), 'dd/MM/yyyy', { locale: es })}
+                Período: {filters.startDate && filters.endDate
+                    ? `${format(parseISO(filters.startDate), 'dd/MM/yyyy', { locale: es })} — ${format(parseISO(filters.endDate), 'dd/MM/yyyy', { locale: es })}`
+                    : 'Sin fechas seleccionadas (Tablero vacío)'}
               </span>
               {filters.departamento && (
                 <>
@@ -156,37 +149,50 @@ export async function RhDashboardServerPage({
           <>
             {filters.sections.includes('kpis') && (
               <Suspense fallback={<KpiGridSkeleton />}>
-                <KpiCardsSection filters={filters} />
+                <KpiCardsSection filters={filters} companyRfc={companyRfc} />
               </Suspense>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-10 mt-6">
               {filters.sections.includes('turnover') && (
-                <Suspense fallback={<ChartPlaceholder label="Rotación (Turnover)" />}>
-                  <TurnoverSection filters={filters} />
-                </Suspense>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2">Rotación y Movimientos de Personal</h3>
+                  <Suspense fallback={<ChartPlaceholder label="Rotación (Turnover)" />}>
+                    <TurnoverSection filters={filters} companyRfc={companyRfc} />
+                  </Suspense>
+                </section>
               )}
               {filters.sections.includes('incapacidades') && (
-                <Suspense fallback={<ChartPlaceholder label="Incapacidades" />}>
-                  <IncapacidadesSection filters={filters} />
-                </Suspense>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2">Mapa de Incidencias (Incapacidades)</h3>
+                  <Suspense fallback={<ChartPlaceholder label="Incapacidades" />}>
+                    <IncapacidadesSection filters={filters} companyRfc={companyRfc} />
+                  </Suspense>
+                </section>
               )}
               {filters.sections.includes('horas_extra') && (
-                <Suspense fallback={<ChartPlaceholder label="Horas Extra" />}>
-                  <HorasExtraSection filters={filters} />
-                </Suspense>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2">Control de Horas Extra</h3>
+                  <Suspense fallback={<ChartPlaceholder label="Horas Extra" />}>
+                    <HorasExtraSection filters={filters} companyRfc={companyRfc} />
+                  </Suspense>
+                </section>
               )}
               {filters.sections.includes('plantilla') && (
-                <Suspense fallback={<ChartPlaceholder label="Plantilla / Contratos" />}>
-                  <PlantillaSection filters={filters} />
-                </Suspense>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2">Distribución de Plantilla y Contratos</h3>
+                  <Suspense fallback={<ChartPlaceholder label="Plantilla / Contratos" />}>
+                    <PlantillaSection filters={filters} companyRfc={companyRfc} />
+                  </Suspense>
+                </section>
               )}
               {filters.sections.includes('beneficios') && (
-                <div className="lg:col-span-2">
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2">Beneficios y Percepciones Adicionales</h3>
                   <Suspense fallback={<ChartPlaceholder label="Beneficios / Percepciones" />}>
-                    <BeneficiosSection filters={filters} />
+                    <BeneficiosSection filters={filters} companyRfc={companyRfc} />
                   </Suspense>
-                </div>
+                </section>
               )}
             </div>
 
@@ -210,6 +216,8 @@ export async function RhDashboardServerPage({
                   organizationId: filters.organizationId,
                   fiscalEntityId: filters.fiscalEntityId,
                   departamento: filters.departamento,
+                  tipoNomina: filters.tipoNomina,
+                  periodicidad: filters.periodicidad,
                   startDate: filters.startDate,
                   endDate: filters.endDate,
                   view: filters.view,
@@ -229,133 +237,119 @@ export async function RhDashboardServerPage({
 
 function buildScopedFilters(filters: ResolvedRhFilters) {
   return PayrollDashboardFiltersSchema.parse({
-    organizationId: filters.organizationId || filters.companyId,
+    organizationId: filters.organizationId || null,
     companyId: filters.companyId,
     fiscalEntityId: filters.fiscalEntityId,
     startDate: filters.startDate,
     endDate:   filters.endDate,
     departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
   })
 }
 
-async function KpiCardsSection({ filters }: { filters: ResolvedRhFilters }) {
+async function KpiCardsSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc: string | null }) {
   let rows: HeadcountKpiRow[] = []
   let prevRows: HeadcountKpiRow[] = []
+  let previousLabel = 'vs período previo'
+  const f = buildScopedFilters(filters)
+  
+  if (f.startDate && f.endDate) {
+    const prevStart = subMonths(f.startDate, 1)
+    const prevEnd = subMonths(f.endDate, 1)
+    
+    // Convert to local time keeping the exact UTC year, month, and day
+    const localStart = new Date(prevStart.getUTCFullYear(), prevStart.getUTCMonth(), prevStart.getUTCDate())
+    const localEnd = new Date(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), prevEnd.getUTCDate())
+    
+    previousLabel = `vs Periodo anterior del ${format(localStart, 'dd/MMM/yy', { locale: es })} - ${format(localEnd, 'dd/MMM/yy', { locale: es })}`
+  }
+
   try {
-    const f = buildScopedFilters(filters)
     rows = await fetchHeadcountKpis(f)
 
-    const s = f.startDate.getTime()
-    const e = f.endDate.getTime()
-    const span = e - s
-    const pf = { ...f, startDate: new Date(s - span), endDate: new Date(s - 1) }
-    prevRows = await fetchHeadcountKpis(pf)
-  } catch { /* fail soft */ }
+    if (f.startDate && f.endDate) {
+      const prevStart = subMonths(f.startDate, 1)
+      const prevEnd = subMonths(f.endDate, 1)
+      const pf = { ...f, startDate: prevStart, endDate: prevEnd }
+      prevRows = await fetchHeadcountKpis(pf)
+    }
+  } catch (err) {
+    console.error("ERROR IN KpiCardsSection:", err);
+  }
 
   const totalPercepciones = rows.reduce((a, r) => a + Number(r.total_percepciones || 0), 0)
   const totalDeducciones  = rows.reduce((a, r) => a + Number(r.total_deducciones || 0), 0)
   const totalOtrosPagos   = rows.reduce((a, r) => a + Number(r.total_otros_pagos || 0), 0)
   const totalDiasPagados  = rows.reduce((a, r) => a + Number(r.total_dias_pagados || 0), 0)
-  const empleadosPagados  =
-    rows.length > 0
-      ? Math.max(...rows.map(r => Number(r.empleados_pagados || 0)))
-      : 0
+  const headcountByMonth = rows.reduce((acc, r) => {
+    const monthKey = r.mes_pago.toISOString()
+    acc[monthKey] = (acc[monthKey] || 0) + Number(r.empleados_pagados || 0)
+    return acc
+  }, {} as Record<string, number>)
+
+  const empleadosPagados = Object.values(headcountByMonth).length > 0
+    ? Math.max(...Object.values(headcountByMonth))
+    : 0
+
+  const prevHeadcountByMonth = prevRows.reduce((acc, r) => {
+    const monthKey = r.mes_pago.toISOString()
+    acc[monthKey] = (acc[monthKey] || 0) + Number(r.empleados_pagados || 0)
+    return acc
+  }, {} as Record<string, number>)
+
+  const prevEmpleados = Object.values(prevHeadcountByMonth).length > 0
+    ? Math.max(...Object.values(prevHeadcountByMonth))
+    : 0
 
   const prevPercepciones = prevRows.reduce((a, r) => a + Number(r.total_percepciones || 0), 0)
-  const prevEmpleados =
-    prevRows.length > 0
-      ? Math.max(...prevRows.map(r => Number(r.empleados_pagados || 0)))
-      : 0
 
   const costoPorEmpleado = empleadosPagados ? totalPercepciones / empleadosPagados : 0
   const prevCosto = prevEmpleados ? prevPercepciones / prevEmpleados : 0
 
   return (
-    <section>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-        <KpiCardRh
-          title="Empleados Pagados"
-          value={fmtNum(empleadosPagados, 0)}
-          tone="emerald"
-          icon={<Users className="h-12 w-12 text-emerald-500" />}
-          subtext="Headcount período"
-          trendDirection={
-            empleadosPagados > prevEmpleados ? 'up' :
-            empleadosPagados < prevEmpleados ? 'down' : 'flat'
-          }
-          trendDelta={
-            prevEmpleados
-              ? `${empleadosPagados >= prevEmpleados ? '+' : ''}${fmtNum(
-                  ((empleadosPagados - prevEmpleados) / prevEmpleados) * 100, 1,
-                )}% vs período previo`
-              : null
-          }
-          trendLabel={!prevEmpleados ? 'Período anterior sin datos' : null}
-        />
-        <KpiCardRh
-          title="Percepciones Totales"
-          value={fmtMxn(totalPercepciones)}
-          tone="blue"
-          icon={<TrendingUp className="h-12 w-12 text-blue-500" />}
-          trendDirection={
-            totalPercepciones > prevPercepciones ? 'up' :
-            totalPercepciones < prevPercepciones ? 'down' : 'flat'
-          }
-          trendDelta={
-            prevPercepciones
-              ? `${totalPercepciones >= prevPercepciones ? '+' : ''}${fmtNum(
-                  ((totalPercepciones - prevPercepciones) / prevPercepciones) * 100, 1,
-                )}% vs período previo`
-              : null
-          }
-          trendLabel={!prevPercepciones ? 'Período anterior sin datos' : null}
-        />
-        <KpiCardRh
-          title="Deducciones Totales"
-          value={fmtMxn(totalDeducciones)}
-          tone="rose"
-          icon={<ArrowDownRight className="h-12 w-12 text-rose-500" />}
-        />
-        <KpiCardRh
-          title="Otros Pagos"
-          value={fmtMxn(totalOtrosPagos)}
-          tone="amber"
-          icon={<Gift className="h-12 w-12 text-amber-500" />}
-        />
-        <KpiCardRh
-          title="Días Pagados"
-          value={fmtNum(totalDiasPagados, 0)}
-          tone="indigo"
-          icon={<Clock className="h-12 w-12 text-indigo-500" />}
-        />
-        <KpiCardRh
-          title="Costo / Empleado"
-          value={fmtMxn(costoPorEmpleado)}
-          tone="violet"
-          icon={<Briefcase className="h-12 w-12 text-violet-500" />}
-          subtext={empleadosPagados > 0 ? `Sobre ${fmtNum(empleadosPagados, 0)} personas` : 'Sin datos'}
-          trendDirection={
-            prevCosto
-              ? (costoPorEmpleado > prevCosto ? 'up' :
-                 costoPorEmpleado < prevCosto ? 'down' : 'flat')
-              : 'flat'
-          }
-          trendDelta={
-            prevCosto
-              ? `${costoPorEmpleado >= prevCosto ? '+' : ''}${fmtNum(
-                  ((costoPorEmpleado - prevCosto) / prevCosto) * 100, 1,
-                )}% vs período previo`
-              : null
-          }
-          trendLabel={!prevCosto ? 'Período anterior sin datos' : null}
-        />
-      </div>
-    </section>
+      <RhKpiCardsClient
+      filters={{
+        companyId: filters.companyId,
+        companyRfc: companyRfc || filters.companyId,
+        organizationId: filters.organizationId,
+        fiscalEntityId: filters.fiscalEntityId,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        departamento: filters.departamento,
+        tipoNomina: filters.tipoNomina,
+        periodicidad: filters.periodicidad,
+      }}
+      empleadosPagados={empleadosPagados}
+      prevEmpleados={prevEmpleados}
+      totalPercepciones={totalPercepciones}
+      prevPercepciones={prevPercepciones}
+      totalDeducciones={totalDeducciones}
+      totalOtrosPagos={totalOtrosPagos}
+      totalDiasPagados={totalDiasPagados}
+      costoPorEmpleado={costoPorEmpleado}
+      prevCosto={prevCosto}
+      previousLabel={previousLabel}
+    />
   )
 }
 
-async function TurnoverSection({ filters }: { filters: ResolvedRhFilters }) {
+async function TurnoverSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc?: string | null }) {
   let rows: TurnoverInputRow[] = []
+  let previousLabel = 'vs período anterior'
+  
+  const clientFilters: Record<string, string | null | undefined> = {
+    companyId: filters.companyId,
+    companyRfc: companyRfc || filters.companyId,
+    organizationId: filters.organizationId,
+    fiscalEntityId: filters.fiscalEntityId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
+  };
+
   try {
     const f = buildScopedFilters(filters)
     const raw: TurnoverRow[] = await fetchTurnover(f)
@@ -368,13 +362,37 @@ async function TurnoverSection({ filters }: { filters: ResolvedRhFilters }) {
       empleados_activos: Number(r.empleados_activos || 0),
       total_recibos: Number(r.total_recibos || 0),
     }))
+
+    if (f.startDate && f.endDate) {
+      const prevStart = subMonths(f.startDate, 1)
+      const prevEnd = subMonths(f.endDate, 1)
+      
+      const localStart = new Date(prevStart.getUTCFullYear(), prevStart.getUTCMonth(), prevStart.getUTCDate())
+      const localEnd = new Date(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), prevEnd.getUTCDate())
+      
+      previousLabel = `vs Periodo anterior del ${format(localStart, 'dd/MMM/yy', { locale: es })} - ${format(localEnd, 'dd/MMM/yy', { locale: es })}`
+    }
   } catch { /* fail soft */ }
 
-  return <RhTurnoverPanel rows={rows} />
+  return <RhTurnoverPanel rows={rows} previousLabel={previousLabel} filters={clientFilters} />
 }
 
-async function IncapacidadesSection({ filters }: { filters: ResolvedRhFilters }) {
+async function IncapacidadesSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc: string | null }) {
   let rows: IncapacidadesInputRow[] = []
+  let previousLabel = 'vs período anterior'
+  
+  const clientFilters: Record<string, string | null | undefined> = {
+    companyId: filters.companyId,
+    companyRfc: companyRfc || filters.companyId,
+    organizationId: filters.organizationId,
+    fiscalEntityId: filters.fiscalEntityId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
+  };
+
   try {
     const f = buildScopedFilters(filters)
     const raw: IncapacidadRow[] = await fetchIncapacidades(f)
@@ -389,13 +407,36 @@ async function IncapacidadesSection({ filters }: { filters: ResolvedRhFilters })
       importe_total: Number(r.importe_total || 0),
       empleados_afectados: Number(r.empleados_afectados || 0),
     }))
+
+    if (f.startDate && f.endDate) {
+      const prevStart = subMonths(f.startDate, 1)
+      const prevEnd = subMonths(f.endDate, 1)
+      
+      const localStart = new Date(prevStart.getUTCFullYear(), prevStart.getUTCMonth(), prevStart.getUTCDate())
+      const localEnd = new Date(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), prevEnd.getUTCDate())
+      
+      previousLabel = `vs Periodo anterior del ${format(localStart, 'dd/MMM/yy', { locale: es })} - ${format(localEnd, 'dd/MMM/yy', { locale: es })}`
+    }
   } catch { /* fail soft */ }
 
-  return <RhIncapacidadesPanel rows={rows} />
+  return <RhIncapacidadesPanel rows={rows} previousLabel={previousLabel} filters={clientFilters} />
 }
 
-async function HorasExtraSection({ filters }: { filters: ResolvedRhFilters }) {
+async function HorasExtraSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc: string | null }) {
   let rows: HorasExtraInputRow[] = []
+  let previousLabel = 'vs período anterior'
+  
+  const clientFilters = {
+    companyId: filters.companyId,
+    companyRfc: companyRfc || filters.companyId,
+    organizationId: filters.organizationId,
+    fiscalEntityId: filters.fiscalEntityId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
+  };
   try {
     const f = buildScopedFilters(filters)
     const raw: HorasExtraRow[] = await fetchHorasExtra(f)
@@ -410,13 +451,36 @@ async function HorasExtraSection({ filters }: { filters: ResolvedRhFilters }) {
       total_dias: Number(r.total_dias || 0),
       importe_total: Number(r.importe_total || 0),
     }))
+
+    if (f.startDate && f.endDate) {
+      const prevStart = subMonths(f.startDate, 1)
+      const prevEnd = subMonths(f.endDate, 1)
+      
+      const localStart = new Date(prevStart.getUTCFullYear(), prevStart.getUTCMonth(), prevStart.getUTCDate())
+      const localEnd = new Date(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), prevEnd.getUTCDate())
+      
+      previousLabel = `vs Periodo anterior del ${format(localStart, 'dd/MMM/yy', { locale: es })} - ${format(localEnd, 'dd/MMM/yy', { locale: es })}`
+    }
   } catch { /* fail soft */ }
 
-  return <RhHorasExtraPanel rows={rows} />
+  return <RhHorasExtraPanel rows={rows} previousLabel={previousLabel} filters={clientFilters} />
 }
 
-async function PlantillaSection({ filters }: { filters: ResolvedRhFilters }) {
+async function PlantillaSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc: string | null }) {
   let rows: PlantillaInputRow[] = []
+  
+  const clientFilters = {
+    companyId: filters.companyId,
+    companyRfc: companyRfc || filters.companyId,
+    organizationId: filters.organizationId,
+    fiscalEntityId: filters.fiscalEntityId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
+  };
+
   try {
     const f = buildScopedFilters(filters)
     const raw: PlantillaRow[] = await fetchPlantilla(f)
@@ -430,11 +494,24 @@ async function PlantillaSection({ filters }: { filters: ResolvedRhFilters }) {
     }))
   } catch { /* fail soft */ }
 
-  return <RhPlantillaPanel rows={rows} />
+  return <RhPlantillaPanel rows={rows} filters={clientFilters} />
 }
 
-async function BeneficiosSection({ filters }: { filters: ResolvedRhFilters }) {
+async function BeneficiosSection({ filters, companyRfc }: { filters: ResolvedRhFilters, companyRfc: string | null }) {
   let rows: BeneficiosInputRow[] = []
+  
+  const clientFilters = {
+    companyId: filters.companyId,
+    companyRfc: companyRfc || filters.companyId,
+    organizationId: filters.organizationId,
+    fiscalEntityId: filters.fiscalEntityId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    departamento: filters.departamento,
+    tipoNomina: filters.tipoNomina,
+    periodicidad: filters.periodicidad,
+  };
+
   try {
     const f = buildScopedFilters(filters)
     const raw: BeneficioRow[] = await fetchBeneficios(f)
@@ -452,7 +529,7 @@ async function BeneficiosSection({ filters }: { filters: ResolvedRhFilters }) {
     }))
   } catch { /* fail soft */ }
 
-  return <RhBeneficiosPanel rows={rows} />
+  return <RhBeneficiosPanel rows={rows} filters={clientFilters} />
 }
 
 function KpiGridSkeleton() {

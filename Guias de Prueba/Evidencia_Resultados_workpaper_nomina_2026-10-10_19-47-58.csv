@@ -1,0 +1,5 @@
+Archivo,Suite,Prueba,Estado,Duracion(ms)
+"Nómina/Papel de Trabajo/workpaper_nomina.test.tsx","Papel de Trabajo de Nómina > 1. 📄 Validación de Tabla","debe cargar la tabla correctamente con la información de los empleados","EXITOSO","59"
+"Nómina/Papel de Trabajo/workpaper_nomina.test.tsx","Papel de Trabajo de Nómina > 1. 📄 Validación de Tabla","debe mostrar los montos con precisión financiera (decimales)","EXITOSO","12"
+"Nómina/Papel de Trabajo/workpaper_nomina.test.tsx","Papel de Trabajo de Nómina > 1. 📄 Validación de Tabla","no debe mostrar IDs técnicos o de base de datos en los encabezados","EXITOSO","4"
+"Nómina/Papel de Trabajo/workpaper_nomina.test.tsx","Papel de Trabajo de Nómina > 2. ⚙️ Filtros","permite interactuar con los filtros de fechas","EXITOSO","35"

@@ -5,8 +5,10 @@ import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-com
 import { parseCfdiDateTime } from '@/lib/cfdi-date'
 import { createConceptoRegexSafe, isStrictRfc4122Uuid, csvCellEscape } from '@/lib/xml-sanitize'
 import { safeErrSummary, fingerprint } from '@/lib/security'
+import { refreshHrMaterializedViews } from '@/lib/payroll-analytics-service'
+import { refreshDireccionMaterializedViews } from '@/lib/direccion-analytics-service'
 
-type ContextCache = Map<string, Promise<{ userId: string; issuerFiscalEntityId: string }>>
+export type ContextCache = Map<string, Promise<{ userId: string; issuerFiscalEntityId: string; companyId?: string | null }>>
 
 function attrNs(xml: string, tagNs: string, attrName: string): string | null {
   // IMP-002 · Longitud máxima de attrName + value por atributo (256 chars) para prevenir ReDoS
@@ -168,6 +170,125 @@ export function verifyTimbreFiscalDigitalBaseline(xml: string): SatSignatureChec
   return { valid: true, uuid: tfdUuid, fechaTimbrado: tfdFecha, rfcProvCertif: tfdPac }
 }
 
+
+function extractPayrollNodes<T>(xml: string, regex: RegExp, mapper: (attrs: (name: string) => string | null) => T | null): T[] {
+  const results: T[] = [];
+  for (const m of xml.matchAll(regex)) {
+    const attrsFn = (attr: string) => attrNs(`<Tag ${m[1]}>`, 'Tag', attr);
+    const item = mapper(attrsFn);
+    if (item) results.push(item);
+  }
+  return results;
+}
+
+export function parsePayrollFromXml(xml: string, issuanceDate: Date, receiverRfc: string, receiverName: string) {
+  const nominaTag = xml.includes('<nomina12:Nomina') ? 'nomina12:Nomina' : 'Nomina';
+  const nominaMatch = new RegExp(String.raw`<(?:\w+:)?${nominaTag}\b([^>]+)>`, 'i').exec(xml);
+  if (!nominaMatch) return null;
+  const nominaStr = nominaMatch[1];
+  const nAttrs = (attr: string) => attrNs(`<Tag ${nominaStr}>`, 'Tag', attr);
+
+  const recTag = xml.includes('<nomina12:Receptor') ? 'nomina12:Receptor' : 'Receptor';
+  const recMatch = new RegExp(String.raw`<(?:\w+:)?${recTag}\b([^>]+)>`, 'i').exec(xml);
+  const recStr = recMatch ? recMatch[1] : '';
+  const rAttrs = (attr: string) => attrNs(`<Tag ${recStr}>`, 'Tag', attr);
+
+  const percepciones = extractPayrollNodes(xml, /<(?:\w+:)?Percepcion\b([^>]+)>/gi, pAttrs => {
+    if (!pAttrs('TipoPercepcion')) return null;
+    return {
+      tipoPercepcion: pAttrs('TipoPercepcion') || '',
+      clave: pAttrs('Clave') || '',
+      concepto: pAttrs('Concepto') || '',
+      importeGravado: parseDecimal(pAttrs('ImporteGravado'), '0'),
+      importeExento: parseDecimal(pAttrs('ImporteExento'), '0')
+    };
+  });
+
+  const deducciones = extractPayrollNodes(xml, /<(?:\w+:)?Deduccion\b([^>]+)>/gi, dAttrs => {
+    if (!dAttrs('TipoDeduccion')) return null;
+    return {
+      tipoDeduccion: dAttrs('TipoDeduccion') || '',
+      clave: dAttrs('Clave') || '',
+      concepto: dAttrs('Concepto') || '',
+      importe: parseDecimal(dAttrs('Importe'), '0')
+    };
+  });
+
+  const otrosPagos = extractPayrollNodes(xml, /<(?:\w+:)?OtroPago\b([^>]+)>/gi, oAttrs => {
+    if (!oAttrs('TipoOtroPago')) return null;
+    return {
+      tipoOtroPago: oAttrs('TipoOtroPago') || '',
+      clave: oAttrs('Clave') || '',
+      concepto: oAttrs('Concepto') || '',
+      importe: parseDecimal(oAttrs('Importe'), '0')
+    };
+  });
+
+  const incapacidades = extractPayrollNodes(xml, /<(?:\w+:)?Incapacidad\b([^>]+)>/gi, iAttrs => {
+    if (!iAttrs('TipoIncapacidad')) return null;
+    const dias = iAttrs('DiasIncapacidad') || '0';
+    return {
+      incapacidad: Number.parseInt(dias, 10) || 0,
+      tipoIncapacidad: iAttrs('TipoIncapacidad') || '',
+      numDias: parseDecimal(dias, '0'),
+      importeMonetario: parseDecimal(iAttrs('ImporteMonetario'), '0')
+    };
+  });
+
+  const horasExtra = extractPayrollNodes(xml, /<(?:\w+:)?HorasExtra\b([^>]+)>/gi, heAttrs => {
+    if (!heAttrs('TipoHoras')) return null;
+    return {
+      dias: Number.parseInt(heAttrs('Dias') || '0', 10),
+      tipoHoras: heAttrs('TipoHoras') || '',
+      horasExtra: parseDecimal(heAttrs('HorasExtra'), '0'),
+      importePagado: parseDecimal(heAttrs('ImportePagado'), '0')
+    };
+  });
+
+  return {
+    version: nAttrs('Version') || '1.2',
+    tipoNomina: nAttrs('TipoNomina') || 'O',
+    fechaPago: parseCfdiDateTime(nAttrs('FechaPago') || ''),
+    fechaInicialPago: parseCfdiDateTime(nAttrs('FechaInicialPago') || ''),
+    fechaFinalPago: parseCfdiDateTime(nAttrs('FechaFinalPago') || ''),
+    numDiasPagados: parseDecimal(nAttrs('NumDiasPagados'), '0'),
+    fechaEmision: issuanceDate,
+    departamento: rAttrs('Departamento') || null,
+    clabe: rAttrs('CuentaBancaria') || null,
+    banco: rAttrs('Banco') || null,
+    totalPercepciones: parseDecimal(nAttrs('TotalPercepciones'), '0'),
+    totalDeducciones: parseDecimal(nAttrs('TotalDeducciones'), '0'),
+    totalOtrosPagos: parseDecimal(nAttrs('TotalOtrosPagos'), '0'),
+    receptor: {
+      create: {
+        rfc: receiverRfc,
+        nombre: receiverName,
+        curp: rAttrs('Curp') || null,
+        nss: rAttrs('NumSeguridadSocial') || null,
+        fechaInicioRelLaboral: rAttrs('FechaInicioRelLaboral') ? parseCfdiDateTime(rAttrs('FechaInicioRelLaboral') || '') : null,
+        antiguedad: rAttrs('Antigüedad') ? Number.parseInt(rAttrs('Antigüedad')!.replace(/\D/g, ''), 10) || null : null,
+        tipoContrato: rAttrs('TipoContrato') || null,
+        sindicalizado: rAttrs('Sindicalizado') || null,
+        tipoJornada: rAttrs('TipoJornada') || null,
+        tipoRegimen: rAttrs('TipoRegimen') || null,
+        numEmpleado: rAttrs('NumEmpleado') || null,
+        departamento: rAttrs('Departamento') || null,
+        puesto: rAttrs('Puesto') || null,
+        riesgoPuesto: rAttrs('RiesgoPuesto') || null,
+        periodicidadPago: rAttrs('PeriodicidadPago') || null,
+        salarioBaseCotApor: parseDecimal(rAttrs('SalarioBaseCotApor'), '0'),
+        salarioDiarioIntegrado: parseDecimal(rAttrs('SalarioDiarioIntegrado'), '0'),
+        claveEntFed: rAttrs('ClaveEntFed') || null,
+      }
+    },
+    percepciones: { create: percepciones },
+    deducciones: { create: deducciones },
+    otrosPagos: { create: otrosPagos },
+    incapacidades: { create: incapacidades },
+    horasExtra: { create: horasExtra },
+  };
+}
+
 export function parseInvoiceFromXml(xml: string) {
   // IMP-021 · Verificación obligatoria TimbreFiscalDigital antes de parsear
   const timbreCheck = verifyTimbreFiscalDigitalBaseline(xml)
@@ -205,6 +326,7 @@ export function parseInvoiceFromXml(xml: string) {
   const conceptos = extractConceptos(xml)
   const relatedCfdis = extractRelatedCfdis(xml)
   const total = extractTotalValue(xml, cfdiType, comprobanteTag)
+  const payrollData = cfdiType === CfdiType.NOMINA ? parsePayrollFromXml(xml, issuanceDate, receiverRfc, receiverName) : null
 
   return {
     uuid,
@@ -241,7 +363,8 @@ export function parseInvoiceFromXml(xml: string) {
     objectTaxComprobante: attrNs(xml, comprobanteTag, 'ObjetoImp') || null,
     conceptos,
     relatedCfdis,
-    _satBaselineValid: timbreCheck.valid
+    _satBaselineValid: timbreCheck.valid,
+    payrollData
   }
 }
 
@@ -389,7 +512,8 @@ async function tryResolveFromFiscalEntity(prisma: PrismaClient, cacheKey: string
       throw new Error(`BOLA detectado: FiscalEntity RFC ${cacheKey.slice(0, 6)} pertenece a otra organización`)
     }
     const userId = await resolveOrganizationUser(prisma, fiscalEntity.organizationId, fiscalEntity.organization.ownerId)
-    return { userId, issuerFiscalEntityId: fiscalEntity.id }
+    const company = await prisma.company.findUnique({ where: { rfc: cacheKey }, select: { id: true } })
+    return { userId, issuerFiscalEntityId: fiscalEntity.id, companyId: company?.id }
   }
   return null
 }
@@ -489,7 +613,7 @@ export async function resolveInvoiceImportContext(
     }
 
     const userId = await resolveOrganizationUser(prisma, organizationId, preferredUserId)
-    return { userId, issuerFiscalEntityId: createdFiscalEntity.id }
+    return { userId, issuerFiscalEntityId: createdFiscalEntity.id, companyId: company.id }
   }
 
   if (!cache) return loader()
@@ -582,6 +706,35 @@ export async function createInvoiceFromXml(
         relatedCfdis: {
           create: parsed.relatedCfdis,
         },
+        ...(parsed.payrollData ? {
+          payrollReceipt: {
+            create: {
+              organizationId: resolvedOrgId,
+              companyId: context.companyId!,
+              fiscalEntityId: context.issuerFiscalEntityId,
+              uuid: parsed.uuid,
+              version: parsed.payrollData.version,
+              tipoNomina: parsed.payrollData.tipoNomina,
+              fechaPago: parsed.payrollData.fechaPago,
+              fechaInicialPago: parsed.payrollData.fechaInicialPago,
+              fechaFinalPago: parsed.payrollData.fechaFinalPago,
+              numDiasPagados: parsed.payrollData.numDiasPagados,
+              fechaEmision: parsed.payrollData.fechaEmision,
+              departamento: parsed.payrollData.departamento,
+              clabe: parsed.payrollData.clabe,
+              banco: parsed.payrollData.banco,
+              totalPercepciones: parsed.payrollData.totalPercepciones,
+              totalDeducciones: parsed.payrollData.totalDeducciones,
+              totalOtrosPagos: parsed.payrollData.totalOtrosPagos,
+              receptor: parsed.payrollData.receptor,
+              percepciones: parsed.payrollData.percepciones,
+              deducciones: parsed.payrollData.deducciones,
+              otrosPagos: parsed.payrollData.otrosPagos,
+              incapacidades: parsed.payrollData.incapacidades,
+              horasExtra: parsed.payrollData.horasExtra,
+            }
+          }
+        } : {})
       },
       select: { id: true, uuid: true },
     })
@@ -621,5 +774,12 @@ export async function createInvoiceFromXml(
   })
 
   // IMP-014 · NO devolver Prisma id number; solo UUID y status
+  if (parsed.cfdiType === CfdiType.NOMINA) {
+    await refreshHrMaterializedViews(true).catch(e => console.error('[createInvoiceFromXml] refreshHrMaterializedViews failed:', safeErrSummary(e)))
+    await refreshDireccionMaterializedViews(true).catch(e => console.error('[createInvoiceFromXml] refreshDireccionMaterializedViews failed:', safeErrSummary(e)))
+    
+    // Also refresh fiscal view directly as there's no helper function for it
+    await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW CONCURRENTLY mv_fiscal_conciliacion_mensual;').catch(e => console.error('[createInvoiceFromXml] mv_fiscal_conciliacion_mensual failed:', safeErrSummary(e)))
+  }
   return { status: 'created' as const, uuid: invoice.uuid, message: 'Invoice importada exitosamente' }
 }

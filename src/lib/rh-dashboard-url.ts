@@ -7,13 +7,15 @@
 //            Siempre URLSearchParams (DASH-SAST-006 pattern).
 // ============================================================
 
-import { formatISO, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { formatISO, parseISO } from 'date-fns';
 
 export type RhDashboardSearchParams = {
   companyId: string;
   organizationId?: string | null;
   fiscalEntityId?: string | null;
   departamento?: string | null;
+  tipoNomina?: string | null;
+  periodicidad?: string | null;
   startDate?: string | null;
   endDate?: string | null;
   view?: 'monthly' | 'quarterly' | 'yearly';
@@ -23,6 +25,8 @@ export type RhDashboardSearchParams = {
 // --------- Parsing defensivo (Server Component recibe searchParams tipados) ---------
 export const RH_URL_ALLOW_DEPARTAMENTO =
   /^[A-Za-z0-9 ÑñáéíóúÁÉÍÓÚÜü.,_/-]{1,80}$/;
+export const RH_URL_ALLOW_TIPO = /^[A-Za-z0-9]{1,5}$/;
+
 export const RH_VIEW_MODES = ['monthly', 'quarterly', 'yearly'] as const;
 
 export const RH_SECTIONS = [
@@ -36,18 +40,51 @@ export const RH_SECTIONS = [
 export type RhSectionId = typeof RH_SECTIONS[number]['id'];
 
 const RH_SECTION_IDS = new Set<string>(RH_SECTIONS.map(s => s.id));
-const RH_ALLOW_SECTION_TOKEN = /^[A-Za-z0-9_]{1,40}$/;
+const RH_ALLOW_SECTION_TOKEN = /^\w{1,40}$/;
 
 export type RawParsedRhFilters = {
   companyId: string;
   organizationId: string | null;
   fiscalEntityId: string | null;
   departamento: string | null;
-  startDate: string;
-  endDate: string;
+  tipoNomina: string | null;
+  periodicidad: string | null;
+  startDate: string | null;
+  endDate: string | null;
   view: 'monthly' | 'quarterly' | 'yearly';
   sections: RhSectionId[];
 };
+
+/**
+ * Extrae y valida el rango de fechas de los parámetros de búsqueda.
+ * Retorna null si las fechas no son provistas o son inválidas, permitiendo
+ * un filtro abierto.
+ */
+function parseDateRange(startDateRaw: string | null, endDateRaw: string | null): { startDate: Date | null; endDate: Date | null } {
+  let startDate: Date | null = null;
+  let endDate: Date | null = null;
+  
+  try {
+    if (startDateRaw) startDate = parseISO(startDateRaw.slice(0, 10));
+    if (endDateRaw) endDate = parseISO(endDateRaw.slice(0, 10));
+    
+    if (startDate && (Number.isNaN(startDate.getTime()) || !(startDate instanceof Date))) {
+      startDate = null;
+    }
+    if (endDate && (Number.isNaN(endDate.getTime()) || !(endDate instanceof Date))) {
+      endDate = null;
+    }
+    
+    if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+      [startDate, endDate] = [endDate, startDate];
+    }
+  } catch {
+    startDate = null;
+    endDate = null;
+  }
+  
+  return { startDate, endDate };
+}
 
 /**
  * Parsea y valida searchParams recibidos en el Server Component / Route Handler.
@@ -63,27 +100,7 @@ export function parseRhSearchParams(raw: Record<string, string | string[] | unde
     return typeof v === 'string' && v !== '' ? v : null;
   };
 
-  const startDateRaw = read('startDate');
-  const endDateRaw = read('endDate');
-
-  let startDate: Date;
-  let endDate: Date;
-  try {
-    startDate = startDateRaw ? parseISO(startDateRaw.slice(0, 10)) : subMonths(startOfMonth(new Date()), 6);
-    endDate   = endDateRaw   ? parseISO(endDateRaw.slice(0, 10))   : endOfMonth(new Date());
-    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
-      startDate = subMonths(startOfMonth(new Date()), 6);
-    }
-    if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
-      endDate = endOfMonth(new Date());
-    }
-    if (startDate.getTime() > endDate.getTime()) {
-      [startDate, endDate] = [endDate, startDate];
-    }
-  } catch {
-    startDate = subMonths(startOfMonth(new Date()), 6);
-    endDate   = endOfMonth(new Date());
-  }
+  const { startDate, endDate } = parseDateRange(read('startDate'), read('endDate'));
 
   const depto = read('departamento');
   const departamento = depto && RH_URL_ALLOW_DEPARTAMENTO.test(depto) ? depto : null;
@@ -103,13 +120,21 @@ export function parseRhSearchParams(raw: Record<string, string | string[] | unde
     sections = parsed.length > 0 ? parsed : RH_SECTIONS.map(s => s.id);
   }
 
+  const rawTipoNomina = read('tipoNomina');
+  const tipoNomina = rawTipoNomina && RH_URL_ALLOW_TIPO.test(rawTipoNomina) ? rawTipoNomina : null;
+
+  const rawPeriodicidad = read('periodicidad');
+  const periodicidad = rawPeriodicidad && RH_URL_ALLOW_TIPO.test(rawPeriodicidad) ? rawPeriodicidad : null;
+
   return {
     companyId: read('companyId') ?? '',
     organizationId: read('organizationId') ?? null,
     fiscalEntityId: read('fiscalEntityId') ?? null,
     departamento,
-    startDate: formatISO(startDate, { representation: 'date' }),
-    endDate:   formatISO(endDate,   { representation: 'date' }),
+    tipoNomina,
+    periodicidad,
+    startDate: startDate ? formatISO(startDate, { representation: 'date' }) : null,
+    endDate:   endDate ? formatISO(endDate,   { representation: 'date' }) : null,
     view,
     sections,
   };
@@ -123,7 +148,14 @@ export function buildRhDashboardUrl(
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v === null || v === undefined || v === '') continue;
-    const s = typeof v === 'boolean' ? (v ? '1' : '0') : String(v);
+    
+    let s: string;
+    if (typeof v === 'boolean') {
+      s = v ? '1' : '0';
+    } else {
+      s = String(v);
+    }
+    
     sp.append(k, s);
   }
   const qs = sp.toString();
@@ -132,21 +164,25 @@ export function buildRhDashboardUrl(
 
 // --------- Claves de caché deterministas para ISR / revalidateTag ---------
 export function rhCacheKey(params: {
-  organizationId: string;
+  organizationId: string | null;
   companyId: string;
   fiscalEntityId?: string | null;
   departamento?: string | null;
-  startDate: string;
-  endDate: string;
+  tipoNomina?: string | null;
+  periodicidad?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }): string {
   const parts = [
     'rh-dashboard',
-    params.organizationId,
+    params.organizationId ?? '*',
     params.companyId,
     params.fiscalEntityId ?? '*',
     params.departamento ?? '*',
-    params.startDate,
-    params.endDate,
+    params.tipoNomina ?? '*',
+    params.periodicidad ?? '*',
+    params.startDate ?? '*',
+    params.endDate ?? '*',
   ];
   return parts.join('::');
 }
