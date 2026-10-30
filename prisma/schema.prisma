@@ -597,6 +597,12 @@ model MassDownloadRequest {
   verificationAttempts Int       @default(0) @map("verification_attempts")
   nextCheck            DateTime? @map("next_check")
 
+  // Import fields
+  importStatus         String?   @map("import_status")
+  importProgress       Int?      @default(0) @map("import_progress")
+  totalImported        Int?      @default(0) @map("total_imported")
+  totalToImport        Int?      @default(0) @map("total_to_import")
+
   thirdPartyRfc String? @map("third_party_rfc")
   complement    String?
 

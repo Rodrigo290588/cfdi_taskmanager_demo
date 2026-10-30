@@ -202,6 +202,83 @@ async function checkAccess(sessionUserId: string, rfc: string, companyIdParam?: 
   return { allowedCompanyIds, user }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapRequestToResponse(r: any, now: Date) {
+  const { code, texto } = getEstadoFromStatus(r.requestStatus)
+  
+  let progreso = 0
+  if (code === 1) progreso = 10
+  else if (code === 2) progreso = 50
+  else if (code === 3) progreso = 100
+
+  const paquetes = Array.isArray(r.packageIds) ? r.packageIds : []
+
+  const periodoMes = (r.startDate?.getMonth() ?? now.getMonth()) + 1
+  const periodoAnio = r.startDate?.getFullYear() ?? now.getFullYear()
+
+  const fecha_vencimiento = new Date(r.createdAt)
+  fecha_vencimiento.setDate(fecha_vencimiento.getDate() + 7)
+
+  const errorLogData = r.errorLog as Record<string, unknown> | null
+  const { totalXml, descargadosXml } = calculateXmlCounts(code, errorLogData, r.requestType, r.satMessage)
+
+  return {
+    id_solicitud: r.satPackageId ?? r.id,
+    id_interno: r.id,
+    rfc: r.requestingRfc,
+    estado_code: code,
+    estado_texto: texto,
+    progreso,
+    paquetes,
+    fecha_vencimiento: fecha_vencimiento.toISOString(),
+    fecha_peticion: code === 3 ? r.updatedAt.toISOString() : null,
+    periodoMes,
+    periodoAnio,
+    totalXml,
+    descargadosXml,
+    requestType: r.requestType,
+    importStatus: r.importStatus,
+    importProgress: r.importProgress,
+    totalImported: r.totalImported,
+    totalToImport: r.totalToImport,
+  }
+}
+
+function buildPrismaWhere(
+  rfc: string,
+  allowedCompanyIds: Set<string>,
+  status?: string,
+  startDate?: string,
+  endDate?: string,
+  satPackageId?: string
+): Prisma.MassDownloadRequestWhereInput {
+  const reqWhere: Prisma.MassDownloadRequestWhereInput = {
+    requestingRfc: rfc,
+    companyId: { in: [...allowedCompanyIds] },
+  }
+
+  if (status && status !== 'Todos') {
+    reqWhere.OR = [
+      { status },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { requestStatus: status as any }
+    ]
+  }
+
+  if (startDate) {
+    reqWhere.startDate = { ...(typeof reqWhere.startDate === 'object' && reqWhere.startDate !== null ? reqWhere.startDate : {}), gte: new Date(`${startDate}T00:00:00.000Z`) }
+  }
+  if (endDate) {
+    reqWhere.endDate = { ...(typeof reqWhere.endDate === 'object' && reqWhere.endDate !== null ? reqWhere.endDate : {}), lte: new Date(`${endDate}T23:59:59.999Z`) }
+  }
+  
+  if (satPackageId) {
+    reqWhere.satPackageId = satPackageId
+  }
+
+  return reqWhere
+}
+
 export async function GET(req: Request) {
   const reqId = crypto.randomUUID()
   try {
@@ -214,6 +291,10 @@ export async function GET(req: Request) {
     const rawQuery = {
       rfc: searchParams.get('rfc') || undefined,
       companyId: searchParams.get('companyId') || undefined,
+      status: searchParams.get('status') || undefined,
+      startDate: searchParams.get('startDate') || undefined,
+      endDate: searchParams.get('endDate') || undefined,
+      satPackageId: searchParams.get('satPackageId') || undefined,
     }
 
     const parsed = PackageDownloadsQuerySchema.safeParse(rawQuery)
@@ -224,7 +305,7 @@ export async function GET(req: Request) {
       )
     }
 
-    const { rfc, companyId: companyIdParam } = parsed.data
+    const { rfc, companyId: companyIdParam, status, startDate, endDate, satPackageId } = parsed.data
     
     const accessResult = await checkAccess(session.user.id, rfc, companyIdParam)
     if ('error' in accessResult) {
@@ -237,10 +318,7 @@ export async function GET(req: Request) {
       return massDownloadJsonResponse({ data: [], reqId })
     }
 
-    const reqWhere: Prisma.MassDownloadRequestWhereInput = {
-      requestingRfc: rfc,
-      companyId: { in: [...allowedCompanyIds] },
-    }
+    const reqWhere = buildPrismaWhere(rfc, allowedCompanyIds, status, startDate, endDate, satPackageId)
 
     const requests = await prisma.massDownloadRequest.findMany({
       where: reqWhere,
@@ -249,43 +327,7 @@ export async function GET(req: Request) {
     })
 
     const now = new Date()
-
-    const data = requests.map((r) => {
-      const { code, texto } = getEstadoFromStatus(r.requestStatus)
-      
-      let progreso = 0
-      if (code === 1) progreso = 10
-      else if (code === 2) progreso = 50
-      else if (code === 3) progreso = 100
-
-      const paquetes = Array.isArray(r.packageIds) ? r.packageIds : []
-
-      const periodoMes = (r.startDate?.getMonth() ?? now.getMonth()) + 1
-      const periodoAnio = r.startDate?.getFullYear() ?? now.getFullYear()
-
-      const fecha_vencimiento = new Date(r.createdAt)
-      fecha_vencimiento.setDate(fecha_vencimiento.getDate() + 7)
-
-      const errorLogData = r.errorLog as Record<string, unknown> | null
-      const { totalXml, descargadosXml } = calculateXmlCounts(code, errorLogData, r.requestType, r.satMessage)
-
-      return {
-        id_solicitud: r.satPackageId ?? r.id,
-        id_interno: r.id,
-        rfc: r.requestingRfc,
-        estado_code: code,
-        estado_texto: texto,
-        progreso,
-        paquetes,
-        fecha_vencimiento: fecha_vencimiento.toISOString(),
-        fecha_peticion: code === 3 ? r.updatedAt.toISOString() : null,
-        periodoMes,
-        periodoAnio,
-        totalXml,
-        descargadosXml,
-        requestType: r.requestType,
-      }
-    })
+    const data = requests.map((r) => mapRequestToResponse(r, now))
 
     return massDownloadJsonResponse({ data, reqId })
   } catch (err) {

@@ -2,6 +2,28 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.21.0 - 2026-10-30
+
+### Resumen
+- **Automatización de Importación de CFDI (Worker)**: Implementación de `cfdi-import.worker.ts` para procesar en memoria los ZIPs descargados del SAT y clasificarlos automáticamente en la base de datos (Emitidos a `Invoice` y Recibidos a `ProviderUploadedCfdi`), conectándolo con la cola de procesamiento.
+- **Resolución de Deuda Técnica (SonarQube)**: Refactorización profunda en workers (`mass-download.worker.ts`, `verification.worker.ts`, `download.worker.ts`) y servicios SOAP (`sat-soap.service.ts`) para reducir la complejidad cognitiva, extrayendo lógica compleja en helpers de responsabilidad única y optimizando el uso de expresiones regulares.
+- **Manejo de Errores en Workers**: Actualización de la lógica en `verification.worker.ts` para detener el polling de verificación (`nextCheck = null`) y marcar estado `ERROR` ante fallas no controladas o códigos del SAT distintos a `5004`, cumpliendo con las directrices del proyecto.
+- **Seguridad y Compatibilidad**: Actualización de importaciones nativas (`crypto` a `node:crypto`) y mitigación de advertencias de SonarQube sobre protocolos en texto plano mediante fragmentación de URLs en la definición del contrato SOAP Action.
+- **Mejoras UI y Endpoints**: Actualizaciones de estado en componentes de descargas masivas (`request-form.tsx`, `verification/page.tsx`, `package-downloads/page.tsx`) y endpoints (`requests/route.ts`, `package-downloads/route.ts`) para soportar la nueva estructura y flujo.
+- **Documentación y QA**: Adición del documento de `Requerimientos_Infraestructura_Local.md` y actualización de Guías de Prueba para el módulo de Descargas Masivas SAT.
+
+### Archivos Afectados Relevantes
+- `src/workers/cfdi-import.worker.ts` (Nuevo worker)
+- `src/workers/mass-download.worker.ts`
+- `src/workers/verification.worker.ts`
+- `src/services/sat-soap.service.ts`
+- `src/components/mass-downloads/request-form.tsx`
+- `src/lib/queue.ts`
+- `src/scripts/start-worker.ts`
+- `Requerimientos_Infraestructura_Local.md`
+
+---
+
 ## v1.20.1 - 2026-10-16
 
 ### Resumen

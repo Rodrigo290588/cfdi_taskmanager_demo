@@ -7,6 +7,10 @@ import { persistProviderAcceptedCfdis } from '@/lib/provider-cfdi-storage'
 import { prisma } from '@/lib/prisma'
 import { getCfdiImportDispatchQueue, getCfdiImportItemQueue } from '@/lib/queue'
 
+import { refreshHrMaterializedViews } from '@/lib/payroll-analytics-service'
+import { refreshDireccionMaterializedViews } from '@/lib/direccion-analytics-service'
+import { safeErrSummary } from '@/lib/security'
+
 type ImportRunStatus =
   | 'QUEUED'
   | 'DISPATCHING'
@@ -373,6 +377,24 @@ async function refreshImportRunStatus(importRunId: string) {
     WHERE id = ${importRunId}
       AND status <> 'CANCELLED'
   `)
+
+  if (nextStatus === 'COMPLETED' || nextStatus === 'COMPLETED_WITH_ERRORS') {
+    // Verificar si hay nóminas importadas en este run para refrescar vistas
+    const nominasCount = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM import_run_items iri
+      INNER JOIN invoices i ON iri.emitted_invoice_id = i.id
+      WHERE iri.import_run_id = ${importRunId}
+        AND i.cfdi_type = 'NOMINA'
+    `)
+    const hasNomina = toSafeNumber(nominasCount[0]?.count) > 0
+    if (hasNomina) {
+      console.log(`[ImportRun] Refrescando vistas materializadas al finalizar run ${importRunId}...`)
+      await refreshHrMaterializedViews(true).catch(e => console.error('[ImportRun] refreshHrMaterializedViews failed:', safeErrSummary(e)))
+      await refreshDireccionMaterializedViews(true).catch(e => console.error('[ImportRun] refreshDireccionMaterializedViews failed:', safeErrSummary(e)))
+      await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW CONCURRENTLY mv_fiscal_conciliacion_mensual;').catch(e => console.error('[ImportRun] mv_fiscal_conciliacion_mensual failed:', safeErrSummary(e)))
+    }
+  }
 }
 
 async function finalizeImportRunItem(

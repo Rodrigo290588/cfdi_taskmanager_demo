@@ -37,6 +37,10 @@ export interface PackageRequest {
   totalXml: number
   descargadosXml: number
   requestType: string
+  importStatus?: string | null
+  importProgress?: number | null
+  totalImported?: number | null
+  totalToImport?: number | null
 }
 
 function getStatusBadge(code: number, text: string) {
@@ -98,6 +102,7 @@ async function loadPackageRequests(
 export default function PackageDownloadsPage() {
   const [requests, setRequests] = useState<PackageRequest[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [autoRefresh] = useState(true)
   const [selectedRequest, setSelectedRequest] = useState<PackageRequest | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<{ id: string, rfc: string, businessName?: string } | null>(null)
@@ -149,7 +154,7 @@ export default function PackageDownloadsPage() {
 
   async function fetchData() {
     if (!selectedCompany?.rfc) return
-
+    setHasSearched(true)
     await loadPackageRequests(selectedCompany.rfc, setLoading, setRequests)
   }
 
@@ -159,6 +164,7 @@ export default function PackageDownloadsPage() {
 
     const rfc = selectedCompany.rfc
     const timeoutId = setTimeout(() => {
+      setHasSearched(true)
       void loadPackageRequests(rfc, setLoading, setRequests)
     }, 0)
 
@@ -182,6 +188,94 @@ export default function PackageDownloadsPage() {
 
   const totalMetadata = metadataRequests.reduce((acc, r) => acc + r.totalXml, 0)
   const metadataDescargados = metadataRequests.reduce((acc, r) => acc + r.descargadosXml, 0)
+
+  const renderTableBody = () => {
+    if (!hasSearched) {
+      return (
+        <TableRow>
+          <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+            Usa los filtros para realizar una búsqueda
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (loading && requests.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+            Cargando...
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (requests.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+            No hay solicitudes de descarga de paquetes. Usa Nueva Solicitud en el monitor para iniciar el flujo.
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    return requests.map((req) => (
+      <TableRow key={req.id_interno}>
+        <TableCell className="font-mono text-xs">{req.rfc}</TableCell>
+        <TableCell>
+          {req.periodoMes.toString().padStart(2, '0')}/{req.periodoAnio}
+        </TableCell>
+        <TableCell>
+          <Badge variant="outline" className={req.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
+            {req.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
+          </Badge>
+        </TableCell>
+        <TableCell className="font-mono text-xs">{req.id_solicitud}</TableCell>
+        <TableCell>{getStatusBadge(req.estado_code, req.estado_texto)}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {req.estado_code === 3 && req.fecha_peticion
+            ? formatDate(req.fecha_peticion)
+            : '-'}
+        </TableCell>
+        <TableCell className="w-48">
+          <div className="flex flex-col gap-1">
+            <Progress value={req.progreso} className="h-2" />
+            <span className="text-xs text-muted-foreground">
+              {req.progreso}% {req.estado_texto}
+            </span>
+          </div>
+        </TableCell>
+        <TableCell className="w-48">
+          {req.estado_code === 3 ? (
+            <div className="flex flex-col gap-1">
+              <Progress value={req.importProgress ?? 0} className="h-2" />
+              <span className="text-xs text-muted-foreground">
+                {req.importProgress ?? 0}% {req.importStatus ? req.importStatus : 'Pendiente'}
+                {req.totalToImport && req.totalToImport > 0 ? ` (${req.totalImported ?? 0}/${req.totalToImport})` : ''}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">Esperando descarga...</span>
+          )}
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {formatDate(req.fecha_vencimiento)}
+        </TableCell>
+        <TableCell className="text-right">
+          {req.estado_code === 3 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedRequest(req)}
+            >
+              Ver paquetes
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+    ))
+  }
 
   return (
     <ProtectedRoute>
@@ -277,56 +371,7 @@ export default function PackageDownloadsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {requests.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                        No hay solicitudes de descarga de paquetes. Usa Nueva Solicitud en el monitor para iniciar el flujo.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    requests.map((req) => (
-                      <TableRow key={req.id_interno}>
-                        <TableCell className="font-mono text-xs">{req.rfc}</TableCell>
-                        <TableCell>
-                          {req.periodoMes.toString().padStart(2, '0')}/{req.periodoAnio}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={req.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
-                            {req.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{req.id_solicitud}</TableCell>
-                        <TableCell>{getStatusBadge(req.estado_code, req.estado_texto)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {req.estado_code === 3 && req.fecha_peticion
-                            ? formatDate(req.fecha_peticion)
-                            : '-'}
-                        </TableCell>
-                        <TableCell className="w-48">
-                          <div className="flex flex-col gap-1">
-                            <Progress value={req.progreso} className="h-2" />
-                            <span className="text-xs text-muted-foreground">
-                              {req.progreso}% {req.estado_texto}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {formatDate(req.fecha_vencimiento)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {req.estado_code === 3 && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedRequest(req)}
-                            >
-                              Ver paquetes
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
+                  {renderTableBody()}
                 </TableBody>
               </Table>
             </div>

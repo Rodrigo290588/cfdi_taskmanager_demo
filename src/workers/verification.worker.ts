@@ -83,22 +83,27 @@ export function setupVerificationWorker() {
             break
           case '4':
             newStatus = RequestStatus.ERROR
-            nextCheck = null
+            nextCheck = null // Error del SAT, detener polling
             break
           case '5':
             newStatus = RequestStatus.RECHAZADO
-            nextCheck = null
+            nextCheck = null // Rechazado, detener polling
             break
           case '6':
             newStatus = RequestStatus.VENCIDO
-            nextCheck = null
+            nextCheck = null // Vencido, detener polling
             break
           default:
+            // Si el código de estado es 5004 (En espera/Procesando), sigue intentando
             if (satVerification.codigoEstadoSolicitud === '5004') {
               newStatus = RequestStatus.EN_PROCESO
               satMessage = 'Solicitud Aceptada. El SAT está procesando la petición (En espera)...'
+              nextCheck = new Date(Date.now() + nextDelayMs)
+            } else {
+              // Cualquier otro error no mapeado (ej. Error no controlado, Códigos 300+) debe detener el polling
+              newStatus = RequestStatus.ERROR
+              nextCheck = null
             }
-            nextCheck = new Date(Date.now() + nextDelayMs)
             break
         }
       } catch (satError) {

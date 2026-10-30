@@ -51,53 +51,57 @@ export class SatSoapService {
     const endStr = endDate.toISOString().split('.')[0]
 
     // Attributes for <solicitud>
-    // CRITICAL: TipoSolicitud must be "CFDI" (uppercase)
-    // Removed Id and xmlns:u to match WSDL strictly
-    let solicitudAttrs = `xmlns="${SatSoapService.NAMESPACES.des}" RfcSolicitante="${rfcSolicitante}"`
-
-    // Add common attributes based on type
-    if (retrievalType !== 'folio') {
-       // Force string comparison to avoid TS error since we might get lowercase from DB despite the type
-       const typeStr = (tipoSolicitud as string).toLowerCase();
-       const tipoFinal = typeStr === 'metadata' ? 'Metadata' : 'CFDI';
-       solicitudAttrs += ` FechaInicial="${startStr}" FechaFinal="${endStr}" TipoSolicitud="${tipoFinal}"`
+    const attributes: Record<string, string> = {}
+    
+    // Solo agregamos RfcSolicitante si no es recibidos, según requerimiento
+    if (retrievalType !== 'recibidos') {
+      attributes.RfcSolicitante = rfcSolicitante
     }
 
-    // Specific logic per Retrieval Type
+    if (retrievalType !== 'folio') {
+       const typeStr = (tipoSolicitud as string).toLowerCase();
+       const tipoFinal = typeStr === 'metadata' ? 'Metadata' : 'CFDI';
+       attributes.FechaInicial = startStr;
+       attributes.FechaFinal = endStr;
+       attributes.TipoSolicitud = tipoFinal;
+    }
+
     let rootElement = ''
-    
-    // We will build the <solicitud> content first
     let solicitudContent = ''
 
     if (retrievalType === 'folio') {
       rootElement = 'SolicitaDescargaFolio'
-      if (uuid) solicitudAttrs += ` Folio="${uuid}"`
-      if (rfcACuentaTerceros) solicitudAttrs += ` RfcACuentaTerceros="${rfcACuentaTerceros}"`
+      if (uuid) attributes.Folio = uuid
+      if (rfcACuentaTerceros) attributes.RfcACuentaTerceros = rfcACuentaTerceros
     } else if (retrievalType === 'recibidos') {
       rootElement = 'SolicitaDescargaRecibidos'
-      if (rfcEmisor) solicitudAttrs += ` RfcEmisor="${rfcEmisor}"`
-      if (rfcReceptor) solicitudAttrs += ` RfcReceptor="${rfcReceptor}"`
-      if (rfcACuentaTerceros) solicitudAttrs += ` RfcACuentaTerceros="${rfcACuentaTerceros}"`
-      if (tipoComprobante) solicitudAttrs += ` TipoComprobante="${tipoComprobante}"`
-      if (estadoComprobante) solicitudAttrs += ` EstadoComprobante="${estadoComprobante}"`
-      if (complemento) solicitudAttrs += ` Complemento="${complemento}"`
+      if (rfcEmisor) attributes.RfcEmisor = rfcEmisor
+      if (rfcReceptor) attributes.RfcReceptor = rfcReceptor
+      if (rfcACuentaTerceros) attributes.RfcACuentaTerceros = rfcACuentaTerceros
+      if (tipoComprobante) attributes.TipoComprobante = tipoComprobante
+      if (estadoComprobante) attributes.EstadoComprobante = estadoComprobante
+      if (complemento) attributes.Complemento = complemento
     } else {
-      // Default: emitidos
       rootElement = 'SolicitaDescargaEmitidos'
-      if (rfcEmisor) solicitudAttrs += ` RfcEmisor="${rfcEmisor}"`
-      if (rfcACuentaTerceros) solicitudAttrs += ` RfcACuentaTerceros="${rfcACuentaTerceros}"`
-      if (tipoComprobante) solicitudAttrs += ` TipoComprobante="${tipoComprobante}"`
-      if (estadoComprobante) solicitudAttrs += ` EstadoComprobante="${estadoComprobante}"`
-      if (complemento) solicitudAttrs += ` Complemento="${complemento}"`
+      if (rfcEmisor) attributes.RfcEmisor = rfcEmisor
+      if (rfcACuentaTerceros) attributes.RfcACuentaTerceros = rfcACuentaTerceros
+      if (tipoComprobante) attributes.TipoComprobante = tipoComprobante
+      if (estadoComprobante) attributes.EstadoComprobante = estadoComprobante
+      if (complemento) attributes.Complemento = complemento
 
       if (rfcReceptor) {
         solicitudContent = `<RfcReceptores><RfcReceptor>${rfcReceptor}</RfcReceptor></RfcReceptores>`
       }
     }
 
+    // Sort attributes strictly alphabetically to satisfy SAT signature requirements
+    const sortedKeys = Object.keys(attributes).sort((a, b) => a.localeCompare(b))
+    const solicitudAttrs = sortedKeys.map(key => `${key}="${attributes[key]}"`).join(' ')
+
     // Prepare content for signature
     // The signature goes INSIDE the <solicitud> element
-    const solicitudXml = `<solicitud ${solicitudAttrs}>${solicitudContent}</solicitud>`
+    // xmlns MUST be the first attribute to match strict SAT parser expectations
+    const solicitudXml = `<solicitud xmlns="${SatSoapService.NAMESPACES.des}" ${solicitudAttrs}>${solicitudContent}</solicitud>`
     
     // Sign the <solicitud> element content
     const signedSolicitud = this.signSolicitud(solicitudXml, privateKey, certificate)

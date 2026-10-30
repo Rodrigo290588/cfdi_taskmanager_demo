@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { getImportRunItemDetail } from '@/lib/external-cfdi-import-monitor'
 import { requireMonitorAccess, MonitorAccessError } from '@/lib/monitor-route-utils'
-import { zUuidV4 } from '@/lib/monitor-date-uuid-helpers'
 import { fp32, sanitizeZodFlatten } from '@/lib/monitor-security-helpers'
 import { safeErrSummary, fingerprint, getRealClientIp } from '@/lib/security'
 import { SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
@@ -14,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 25
 
 export const MonitorItemDetailParamsSchema = z.strictObject({
-  itemId: zUuidV4('itemId')
+  itemId: z.string().min(1, 'El ID del item es requerido')
 })
 
 export async function GET(

@@ -7,6 +7,7 @@ import { setupProviderPostLoadCancellationAlertsWorker } from '../workers/provid
 import { setupSat69BBlacklistWorker } from '../workers/sat-69b-blacklist.worker'
 import { setupCfdiImportDispatchWorker } from '../workers/cfdi-import-dispatch.worker'
 import { setupCfdiImportItemWorker } from '../workers/cfdi-import-item.worker'
+import { setupCfdiImportWorker } from '../workers/cfdi-import.worker'
 
 loadEnvConfig(process.cwd())
 
@@ -19,6 +20,7 @@ setupProviderPostLoadCancellationAlertsWorker()
 setupSat69BBlacklistWorker()
 setupCfdiImportDispatchWorker()
 setupCfdiImportItemWorker()
+setupCfdiImportWorker()
 console.log('Workers started. Listening for jobs...')
 
 // Keep process alive

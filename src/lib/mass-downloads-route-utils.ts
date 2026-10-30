@@ -1,14 +1,10 @@
 import crypto from 'node:crypto'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
-import {
-  fingerprint as fp32,
-  safeErrSummary,
-  getRealClientIp as getRealClientIpBase,
-} from '@/lib/security'
+import { getRealClientIp as getRealClientIpBase } from '@/lib/security'
 import { SECURITY_HEADERS as BASE_SECURITY_HEADERS } from '@/lib/org-dashboard-helpers'
 
-export { fp32, safeErrSummary }
+export { fingerprint as fp32, safeErrSummary } from '@/lib/security'
 
 export const MAX_DYNAMIC_FILTERS = 3
 
@@ -133,7 +129,20 @@ const DDE_PREFIX_REGEX = /^[=+@\t\r-]/
 
 export function escapeCsvValue(value: unknown): string {
   if (value === null || value === undefined) return ''
-  const raw = String(value)
+  
+  let raw = ''
+  if (typeof value === 'string') {
+    raw = value
+  } else if (typeof value === 'number' || typeof value === 'boolean') {
+    raw = value.toString()
+  } else if (value instanceof Date) {
+    raw = value.toISOString()
+  } else if (typeof value === 'object' && value !== null && 'toString' in value && typeof (value as { toString: unknown }).toString === 'function') {
+    raw = (value as { toString: () => string }).toString()
+  } else {
+    raw = Object.prototype.toString.call(value)
+  }
+
   let safe = raw
   if (DDE_PREFIX_REGEX.test(safe)) {
     safe = "'" + safe
@@ -180,24 +189,26 @@ const URL_DECODE_STEP_REGEX = /%([0-9A-Fa-f]{2})/g
 
 function stripPercentEncodedOnce(raw: string): string {
   return raw.replace(URL_DECODE_STEP_REGEX, (_, hex) => {
-    const code = parseInt(hex, 16)
+    const code = Number.parseInt(hex, 16)
     if (code <= 0x1f || code === 0x7f) return '_'
     if (code === 0x0d || code === 0x0a) return '_'
-    return String.fromCharCode(code)
+    return String.fromCodePoint(code)
   })
 }
 
 export function sanitizeFilename(raw: string, fallback = 'download'): string {
   if (!raw || typeof raw !== 'string') return fallback
   let s = stripPercentEncodedOnce(raw)
-  s = s.replace(/[\x00-\x1f\x7f\r\n]/g, '_')
+  s = s.replace(/[\x00-\x1f\x7f]/g, '_')
   for (const keyword of HEADER_INJECT_BLACKLIST) {
     s = s.replace(new RegExp(keyword, 'gi'), '_REDACT_')
   }
   s = s.replace(/x-[a-z0-9_-]+/gi, '_REDACT_XHDR_')
   s = s.replace(/\.\.\//g, '_').replace(/\.\./g, '_').replace(/\/+/g, '_').replace(/\\+/g, '_')
   s = s.replace(/[<>:"|?*;=&^%#@!`~[\]{}()+,]/g, '_')
-  s = s.trim().replace(/\s+/g, '_').replace(/^[._]+|[._]+$/g, '')
+  s = s.trim().replace(/\s+/g, '_')
+  while (s.length > 0 && (s.startsWith('.') || s.startsWith('_'))) s = s.slice(1)
+  while (s.length > 0 && (s.endsWith('.') || s.endsWith('_'))) s = s.slice(0, -1)
   if (s.length > 64) s = s.slice(0, 64)
   return s || fallback
 }
@@ -205,7 +216,7 @@ export function sanitizeFilename(raw: string, fallback = 'download'): string {
 export function buildRfc6266ContentDisposition(filename: string, type: 'attachment' | 'inline' = 'attachment'): string {
   const safe = sanitizeFilename(filename, 'download')
   const ascii = safe.replace(/[^\x20-\x7E]/g, '_')
-  const encoded = encodeURIComponent(safe).replace(/['()]/g, (c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()}`)
+  const encoded = encodeURIComponent(safe).replace(/['()]/g, (c) => `%${(c.codePointAt(0) ?? 0).toString(16).padStart(2, '0').toUpperCase()}`)
   return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`
 }
 
@@ -265,8 +276,11 @@ export function sha256Hex(input: string | Buffer): string {
   return crypto.createHash('sha256').update(input).digest('hex')
 }
 
-const RFC_REGEX = /^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$/i
-const DATE_REGEX = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/
+const RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$/i
+const DATE_PART = String.raw`^\d{4}-\d{2}-\d{2}`
+const TIME_PART = String.raw`(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?`
+const TZ_PART = String.raw`(?:Z|[+-]\d{2}:\d{2})?$`
+const DATE_REGEX = new RegExp(DATE_PART + TIME_PART + TZ_PART)
 
 export const RfcStringSchema = z
   .string()
@@ -314,6 +328,10 @@ export const FiscalControlQuerySchema = z.strictObject({
 export const PackageDownloadsQuerySchema = z.strictObject({
   rfc: RfcStringSchema,
   companyId: UuidStringSchema.optional(),
+  status: z.enum(['Todos', 'SOLICITADO', 'EN_PROCESO', 'TERMINADO', 'RECHAZADO', 'VENCIDO']).optional(),
+  startDate: DateStringSchema.optional(),
+  endDate: DateStringSchema.optional(),
+  satPackageId: z.string().trim().max(128).optional(),
 })
 
 export const RequestsListQuerySchema = z.strictObject({
@@ -324,6 +342,7 @@ export const RequestsListQuerySchema = z.strictObject({
   startDate: DateStringSchema.optional(),
   endDate: DateStringSchema.optional(),
   folio: z.string().trim().max(64).optional(),
+  satPackageId: z.string().trim().max(128).optional(),
 })
 
 export const CredentialsUploadFormSchema = z.strictObject({

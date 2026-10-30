@@ -113,6 +113,7 @@ export const SAT_69B_BLACKLIST_QUEUE_NAME = 'sat-69b-blacklist-queue'
 export const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME = 'provider-post-load-cancellation-alerts-queue'
 export const CFDI_IMPORT_DISPATCH_QUEUE_NAME = 'cfdi-import-dispatch-queue'
 export const CFDI_IMPORT_ITEM_QUEUE_NAME = 'cfdi-import-item-queue'
+export const CFDI_IMPORT_QUEUE_NAME = 'cfdi-import-queue'
 
 let _massDownloadQueue: Queue | null = null
 let _massVerificationQueue: Queue | null = null
@@ -122,6 +123,7 @@ let _sat69BBlacklistQueue: Queue | null = null
 let _providerPostLoadCancellationAlertsQueue: Queue | null = null
 let _cfdiImportDispatchQueue: Queue | null = null
 let _cfdiImportItemQueue: Queue | null = null
+let _cfdiImportQueue: Queue | null = null
 
 export function getMassDownloadQueue(): Queue {
   if (!_massDownloadQueue) {
@@ -185,4 +187,12 @@ export function getCfdiImportItemQueue(): Queue {
     _cfdiImportItemQueue = new Queue(CFDI_IMPORT_ITEM_QUEUE_NAME, { connection })
   }
   return _cfdiImportItemQueue
+}
+
+export function getCfdiImportQueue(): Queue {
+  if (!_cfdiImportQueue) {
+    const connection = resolveRedisConnection()
+    _cfdiImportQueue = new Queue(CFDI_IMPORT_QUEUE_NAME, { connection })
+  }
+  return _cfdiImportQueue
 }

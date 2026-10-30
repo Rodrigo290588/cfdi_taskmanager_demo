@@ -5,8 +5,6 @@ import { upsertInvoicePaymentComplementDetails } from '@/lib/invoice-payment-com
 import { parseCfdiDateTime } from '@/lib/cfdi-date'
 import { createConceptoRegexSafe, isStrictRfc4122Uuid, csvCellEscape } from '@/lib/xml-sanitize'
 import { safeErrSummary, fingerprint } from '@/lib/security'
-import { refreshHrMaterializedViews } from '@/lib/payroll-analytics-service'
-import { refreshDireccionMaterializedViews } from '@/lib/direccion-analytics-service'
 
 export type ContextCache = Map<string, Promise<{ userId: string; issuerFiscalEntityId: string; companyId?: string | null }>>
 
@@ -774,12 +772,5 @@ export async function createInvoiceFromXml(
   })
 
   // IMP-014 · NO devolver Prisma id number; solo UUID y status
-  if (parsed.cfdiType === CfdiType.NOMINA) {
-    await refreshHrMaterializedViews(true).catch(e => console.error('[createInvoiceFromXml] refreshHrMaterializedViews failed:', safeErrSummary(e)))
-    await refreshDireccionMaterializedViews(true).catch(e => console.error('[createInvoiceFromXml] refreshDireccionMaterializedViews failed:', safeErrSummary(e)))
-    
-    // Also refresh fiscal view directly as there's no helper function for it
-    await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW CONCURRENTLY mv_fiscal_conciliacion_mensual;').catch(e => console.error('[createInvoiceFromXml] mv_fiscal_conciliacion_mensual failed:', safeErrSummary(e)))
-  }
-  return { status: 'created' as const, uuid: invoice.uuid, message: 'Invoice importada exitosamente' }
+  return { status: 'created' as const, uuid: invoice.uuid, message: 'Invoice importada exitosamente', cfdiType: parsed.cfdiType }
 }

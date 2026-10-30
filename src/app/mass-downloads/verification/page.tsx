@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-// Removed date-fns imports
-// Dummy utility to format dates
+import { format as formatFns } from 'date-fns'
+
+// Dummy utility to format dates for timestamps
 const format = (date: string | Date, fmt?: string) => {
   try {
     const d = new Date(date)
-    if (fmt && fmt.includes('HH:mm')) {
+    if (fmt?.includes('HH:mm')) {
       return d.toLocaleString('es-MX', { 
         year: 'numeric', 
         month: '2-digit', 
@@ -20,9 +21,16 @@ const format = (date: string | Date, fmt?: string) => {
     return String(date)
   }
 }
+
+// Helper to safely format dates for CFDI period (fixes SonarQube nested ternary warning)
+const formatSafeDate = (dateStr: string | null) => {
+  if (!dateStr) return '-'
+  const isoDateStr = dateStr.endsWith('Z') ? dateStr : `${dateStr}Z`
+  return formatFns(new Date(isoDateStr), 'dd/MM/yyyy')
+}
 import { RefreshCw, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -39,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { ProtectedRoute } from '@/components/auth/protected-route'
@@ -67,15 +76,25 @@ interface MassDownloadRequest {
   packageIds: string[] | null
 }
 
+function buildMonitorParams(rfc: string, filters: { status: string; startDate: string; endDate: string; satPackageId: string }) {
+  const params = new URLSearchParams()
+  params.append('rfc', rfc)
+  if (filters.status !== 'Todos') params.append('status', filters.status)
+  if (filters.startDate) params.append('startDate', filters.startDate)
+  if (filters.endDate) params.append('endDate', filters.endDate)
+  if (filters.satPackageId) params.append('satPackageId', filters.satPackageId)
+  return params
+}
+
 async function loadVerificationRequests(
   rfc: string,
+  filters: { status: string; startDate: string; endDate: string; satPackageId: string },
   setLoading: (value: boolean) => void,
   setRequests: (value: MassDownloadRequest[]) => void
 ) {
   setLoading(true)
   try {
-    const params = new URLSearchParams()
-    params.append('rfc', rfc)
+    const params = buildMonitorParams(rfc, filters)
 
     const res = await fetch(`/api/mass-downloads/requests?${params.toString()}`)
     if (!res.ok) throw new Error('Error al cargar peticiones')
@@ -86,8 +105,8 @@ async function loadVerificationRequests(
     let data: MassDownloadRequest[] = []
     if (Array.isArray(responseData)) {
       data = responseData
-    } else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.data)) {
-      data = responseData.data
+    } else if (responseData && typeof responseData === 'object' && 'data' in responseData && Array.isArray((responseData as { data: unknown }).data)) {
+      data = (responseData as { data: MassDownloadRequest[] }).data
     } else {
       console.warn('Unexpected API response format:', responseData)
     }
@@ -105,11 +124,15 @@ async function loadVerificationRequests(
 export default function VerificationMonitorPage() {
   const [requests, setRequests] = useState<MassDownloadRequest[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<{ id: string, rfc: string, businessName?: string } | null>(null)
   
   // Filters
   const [filters, setFilters] = useState({
     status: 'Todos',
+    startDate: '',
+    endDate: '',
+    satPackageId: ''
   })
 
   // Load selected company
@@ -136,37 +159,30 @@ export default function VerificationMonitorPage() {
   // Fetch data
   async function fetchRequests(showLoadingIndicator = true) {
     if (!selectedCompany?.rfc) return
-
+    setHasSearched(true)
     if (showLoadingIndicator) {
-      await loadVerificationRequests(selectedCompany.rfc, setLoading, setRequests)
+      await loadVerificationRequests(selectedCompany.rfc, filters, setLoading, setRequests)
     } else {
       // Background fetch sin mostrar el spinner en el botón
-      await loadVerificationRequests(selectedCompany.rfc, () => {}, setRequests)
+      await loadVerificationRequests(selectedCompany.rfc, filters, () => {}, setRequests)
     }
   }
 
-  // Auto-fetch when company changes
+  // Auto-refresh every 5 seconds silently
   useEffect(() => {
-    if (!selectedCompany?.rfc) return
-
-    const rfc = selectedCompany.rfc
-    const timeoutId = setTimeout(() => {
-      void loadVerificationRequests(rfc, setLoading, setRequests)
-    }, 0)
-
-    return () => clearTimeout(timeoutId)
-  }, [selectedCompany?.rfc])
-
-  // Auto-refresh every 5 seconds
-  useEffect(() => {
-    if (!selectedCompany?.rfc) return
+    if (!selectedCompany?.rfc || !hasSearched) return
     const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
       // Actualización silenciosa: pasamos una función vacía en lugar de setLoading
-      void loadVerificationRequests(rfc, () => {}, setRequests)
+      void loadVerificationRequests(rfc, filters, () => {}, setRequests)
     }, 5000)
     return () => clearInterval(interval)
-  }, [selectedCompany?.rfc])
+  }, [filters, selectedCompany?.rfc, hasSearched])
+
+  const handleSearch = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    void fetchRequests()
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -188,10 +204,84 @@ export default function VerificationMonitorPage() {
     }
   }
 
-  const filteredRequests = requests.filter(r => {
-    if (filters.status !== 'Todos' && r.requestStatus !== filters.status) return false
-    return true
-  })
+  const renderTableBody = () => {
+    if (!hasSearched) {
+      return (
+        <TableRow>
+          <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+            Usa los filtros para realizar una búsqueda
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (loading && requests.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+            Cargando...
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (requests.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+            No hay solicitudes para verificar
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    return requests.map((request) => (
+      <TableRow key={request.id}>
+        <TableCell className="whitespace-nowrap">
+          {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
+        </TableCell>
+        <TableCell>{request.requestingRfc}</TableCell>
+        <TableCell>
+          <Badge variant="outline" className={request.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
+            {request.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
+          </Badge>
+        </TableCell>
+        <TableCell className="text-xs">
+          {formatSafeDate(request.startDate)} - {formatSafeDate(request.endDate)}
+        </TableCell>
+        <TableCell className="font-mono text-xs">{request.satPackageId}</TableCell>
+        <TableCell>{getStatusBadge(request.requestStatus)}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {request.requestStatus === 'TERMINADO'
+            ? format(new Date(request.updatedAt), 'dd/MM/yyyy HH:mm')
+            : '-'}
+        </TableCell>
+        <TableCell className="text-center">{request.verificationAttempts}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {request.nextCheck ? (
+            <div className="flex items-center space-x-1">
+              <Clock className="h-3 w-3" />
+              <span>
+                {format(new Date(request.nextCheck), 'dd/MM/yyyy HH:mm')}
+              </span>
+            </div>
+          ) : '-'}
+        </TableCell>
+        <TableCell className="max-w-[200px]">
+           <div className="truncate text-xs text-muted-foreground" title={request.satMessage || (request.errorLog as { message?: string })?.message || ''}>
+            {request.satMessage || ((request.errorLog as { message?: string })?.message ? 'Ver error en log' : '-')}
+          </div>
+        </TableCell>
+        <TableCell>
+          {request.packageIds && request.packageIds.length > 0 ? (
+            <Badge variant="outline" className="text-xs">
+              {request.packageIds.length} Paquetes
+            </Badge>
+          ) : '-'}
+        </TableCell>
+      </TableRow>
+    ))
+  }
 
   return (
     <ProtectedRoute>
@@ -218,11 +308,8 @@ export default function VerificationMonitorPage() {
         ) : (
           <div className="space-y-4">
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>Filtros</CardTitle>
-              </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <form onSubmit={handleSearch} className="grid gap-4 md:grid-cols-4 items-start">
                   <div className="space-y-2">
                     <Label>Estatus</Label>
                     <Select 
@@ -242,7 +329,40 @@ export default function VerificationMonitorPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Fecha Inicio de solicitud</Label>
+                    <Input 
+                      type="date" 
+                      value={filters.startDate}
+                      onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Fecha Fin de solicitud</Label>
+                    <Input 
+                      type="date" 
+                      value={filters.endDate}
+                      onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-1">
+                    <Label>ID Paquete SAT</Label>
+                    <Input 
+                      placeholder="Buscar por ID..." 
+                      value={filters.satPackageId}
+                      onChange={(e) => setFilters(prev => ({ ...prev, satPackageId: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="flex gap-2 md:col-span-4 justify-start self-end">
+                    <Button type="submit" disabled={loading || !selectedCompany}>
+                      Buscar
+                    </Button>
+                  </div>
+                </form>
               </CardContent>
             </Card>
 
@@ -254,6 +374,7 @@ export default function VerificationMonitorPage() {
                       <TableHead>Fecha Creación</TableHead>
                       <TableHead>RFC Solicitante</TableHead>
                       <TableHead>Tipo Archivo</TableHead>
+                      <TableHead>Rango Fechas</TableHead>
                       <TableHead>ID Paquete SAT</TableHead>
                       <TableHead>Estatus</TableHead>
                       <TableHead>Fecha de petición</TableHead>
@@ -264,57 +385,7 @@ export default function VerificationMonitorPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRequests.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                          No hay solicitudes para verificar
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredRequests.map((request) => (
-                        <TableRow key={request.id}>
-                          <TableCell className="whitespace-nowrap">
-                            {format(new Date(request.createdAt), 'dd/MM/yyyy HH:mm')}
-                          </TableCell>
-                          <TableCell>{request.requestingRfc}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={request.requestType === 'metadata' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-800'}>
-                              {request.requestType === 'metadata' ? 'Metadata' : 'CFDI'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{request.satPackageId}</TableCell>
-                          <TableCell>{getStatusBadge(request.requestStatus)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {request.requestStatus === 'TERMINADO'
-                              ? format(new Date(request.updatedAt), 'dd/MM/yyyy HH:mm')
-                              : '-'}
-                          </TableCell>
-                          <TableCell className="text-center">{request.verificationAttempts}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {request.nextCheck ? (
-                              <div className="flex items-center space-x-1">
-                                <Clock className="h-3 w-3" />
-                                <span>
-                                  {format(new Date(request.nextCheck), 'dd/MM/yyyy HH:mm')}
-                                </span>
-                              </div>
-                            ) : '-'}
-                          </TableCell>
-                          <TableCell className="max-w-[200px]">
-                             <div className="truncate text-xs text-muted-foreground" title={request.satMessage || (request.errorLog as { message?: string })?.message || ''}>
-                              {request.satMessage || ((request.errorLog as { message?: string })?.message ? 'Ver error en log' : '-')}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {request.packageIds && request.packageIds.length > 0 ? (
-                              <Badge variant="outline" className="text-xs">
-                                {request.packageIds.length} Paquetes
-                              </Badge>
-                            ) : '-'}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
+                    {renderTableBody()}
                   </TableBody>
                 </Table>
               </CardContent>

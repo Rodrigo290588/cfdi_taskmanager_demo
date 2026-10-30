@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { MASS_PACKAGE_DOWNLOAD_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
+import { MASS_PACKAGE_DOWNLOAD_QUEUE_NAME, resolveRedisConnection, getCfdiImportQueue } from '@/lib/queue'
 import { downloadMassPackages } from '@/lib/sat-service'
 import { extractAndProcessMetadataZip } from '@/services/metadata-parser.service'
 import fs from 'fs'
@@ -51,6 +51,16 @@ export function setupDownloadWorker() {
         
         // Limpieza del ZIP opcional
         fs.unlinkSync(filePath)
+      } else if (request?.requestType === 'cfdi') {
+        console.log(`[Download] Encolando procesamiento de CFDI de ${idPaquete}...`)
+        const cfdiImportQueue = getCfdiImportQueue()
+        await cfdiImportQueue.add('process-cfdi-zip', {
+          requestId,
+          idPaquete,
+          filePath,
+          rfc
+        })
+        satMsg += `\nPaquete CFDI encolado para procesamiento.`
       }
 
       if (request) {

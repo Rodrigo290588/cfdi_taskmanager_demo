@@ -127,6 +127,7 @@ async function loadMonitorRequests(
 export default function MonitorPage() {
   const [requests, setRequests] = useState<MassDownloadRequest[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<{ id: string, rfc: string, businessName?: string } | null>(null)
   
   // Filters
@@ -162,32 +163,20 @@ export default function MonitorPage() {
   // Fetch data
   async function fetchRequests() {
     if (!selectedCompany?.rfc) return
-
+    setHasSearched(true)
     await loadMonitorRequests(selectedCompany.rfc, filters, setLoading, setRequests)
   }
 
-  // Auto-fetch when company changes
-  useEffect(() => {
-    if (!selectedCompany?.rfc) return
-
-    const rfc = selectedCompany.rfc
-    const timeoutId = setTimeout(() => {
-      void loadMonitorRequests(rfc, filters, setLoading, setRequests)
-    }, 0)
-
-    return () => clearTimeout(timeoutId)
-  }, [filters, selectedCompany?.rfc])
-
   // Auto-refresh every 10 seconds silently
   useEffect(() => {
-    if (!selectedCompany?.rfc) return
+    if (!selectedCompany?.rfc || !hasSearched) return
     const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
       // Actualización silenciosa: pasamos una función vacía en lugar de setLoading
       void loadMonitorRequests(rfc, filters, () => {}, setRequests)
     }, 10000)
     return () => clearInterval(interval)
-  }, [filters, selectedCompany?.rfc])
+  }, [filters, selectedCompany?.rfc, hasSearched])
 
   const handleSearch = (formEvent: React.FormEvent<HTMLFormElement>) => {
     formEvent.preventDefault()
@@ -225,6 +214,16 @@ export default function MonitorPage() {
   }
 
   const renderTableBody = () => {
+    if (!hasSearched) {
+      return (
+        <TableRow>
+          <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+            Usa los filtros para realizar una búsqueda
+          </TableCell>
+        </TableRow>
+      )
+    }
+
     if (loading) {
       return (
         <TableRow>
@@ -318,7 +317,7 @@ export default function MonitorPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSearch} className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 items-end">
+            <form onSubmit={handleSearch} className="grid gap-4 md:grid-cols-4 items-start">
               <div className="space-y-2">
                 <Label>Tipo de Solicitud</Label>
                 <Select 
@@ -354,7 +353,7 @@ export default function MonitorPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Fecha Inicio</Label>
+                <Label>Fecha Inicio de solicitud</Label>
                 <Input 
                   type="date" 
                   value={filters.startDate}
@@ -363,7 +362,7 @@ export default function MonitorPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Fecha Fin</Label>
+                <Label>Fecha Fin de solicitud</Label>
                 <Input 
                   type="date" 
                   value={filters.endDate}
@@ -371,7 +370,7 @@ export default function MonitorPage() {
                 />
               </div>
               
-              <div className="space-y-2 md:col-span-2 lg:col-span-1">
+              <div className="space-y-2 md:col-span-1">
                 <Label>Folio (UUID)</Label>
                 <Input 
                   placeholder="Buscar por UUID..." 
@@ -380,7 +379,7 @@ export default function MonitorPage() {
                 />
               </div>
 
-              <div className="flex gap-2 lg:col-span-3 justify-end">
+              <div className="flex gap-2 md:col-span-3 justify-end self-end">
                 <Button type="button" variant="outline" onClick={() => fetchRequests()} disabled={loading || !selectedCompany}>
                   <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
                   Actualizar

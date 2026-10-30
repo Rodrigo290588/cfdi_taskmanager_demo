@@ -392,6 +392,7 @@ interface WhereClauseFilters {
   startDate: string | undefined
   endDate: string | undefined
   folio: string | undefined
+  satPackageId?: string
 }
 
 function buildWhereClauses(
@@ -414,8 +415,8 @@ function buildWhereClauses(
     andClauses.push({
       OR: [
         { status: filters.status },
-        { requestStatus: filters.status as RequestStatus },
-      ],
+        { requestStatus: filters.status as RequestStatus }
+      ]
     })
   }
 
@@ -424,13 +425,16 @@ function buildWhereClauses(
   }
 
   if (filters.startDate) {
-    andClauses.push({ startDate: { gte: new Date(filters.startDate) } })
+    andClauses.push({ startDate: { gte: new Date(`${filters.startDate}T00:00:00.000Z`) } })
   }
   if (filters.endDate) {
-    andClauses.push({ endDate: { lte: new Date(filters.endDate) } })
+    andClauses.push({ endDate: { lte: new Date(`${filters.endDate}T23:59:59.999Z`) } })
   }
   if (filters.folio) {
     andClauses.push({ folio: { contains: filters.folio } })
+  }
+  if (filters.satPackageId) {
+    andClauses.push({ satPackageId: filters.satPackageId })
   }
 
   return { AND: andClauses }
@@ -453,6 +457,7 @@ export async function GET(req: Request) {
       startDate: searchParams.get('startDate') || undefined,
       endDate: searchParams.get('endDate') || undefined,
       folio: searchParams.get('folio') || undefined,
+      satPackageId: searchParams.get('satPackageId') || undefined,
     }
 
     const parsed = RequestsListQuerySchema.safeParse(rawQuery)
@@ -481,6 +486,7 @@ export async function GET(req: Request) {
     const orgIdsAllowed = new Set(user.memberships.map(m => m.organizationId))
 
     const { companyId, rfc, status, requestType, startDate, endDate, folio } = parsed.data
+    const satPackageId = rawQuery.satPackageId ? String(rawQuery.satPackageId) : undefined
 
     const targetCompanyOrgId = await buildTargetCompanyOrgId(companyId)
     if (companyId && !targetCompanyOrgId) {
@@ -511,7 +517,8 @@ export async function GET(req: Request) {
         requestType,
         startDate,
         endDate,
-        folio
+        folio,
+        satPackageId
       }
     )
 

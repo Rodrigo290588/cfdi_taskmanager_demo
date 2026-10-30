@@ -1,0 +1,5 @@
+- [x] El worker de descargas (`download.worker.ts`) detona correctamente el proceso de importación asíncrona al terminar de descargar un paquete tipo CFDI.
+- [x] La extracción del ZIP se realiza mediante streams para evitar consumo excesivo de RAM con archivos masivos.
+- [x] Los CFDI de Ingresos y Egresos se clasifican e insertan correctamente en la base de datos sin requerir intervención manual.
+- [x] Los CFDI de Nómina se procesan con su complemento y actualizan las vistas materializadas automáticamente al concluir.
+- [x] La interfaz de usuario en el monitor de paquetes refleja el estatus y progreso de la importación.

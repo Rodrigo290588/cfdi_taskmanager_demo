@@ -65,7 +65,7 @@ const COMPLEMENT_OPTIONS = [
   { value: 'ventavehiculos11', label: 'Venta de Vehículos 1.1' },
 ]
 
-const massDownloadRequestSchema = z.object({
+const massDownloadRequestBaseSchema = z.object({
   startDate: z.string().optional().refine((val) => {
     if (!val) return true;
     const date = new Date(val);
@@ -76,7 +76,7 @@ const massDownloadRequestSchema = z.object({
     const date = new Date(val);
     return date.getFullYear() >= 2011;
   }, 'La fecha debe ser a partir del año 2011'),
-  receiverRfc: z.string().optional(), // Can be multiple, handled as string
+  receiverRfc: z.string().optional(),
   issuerRfc: z.string().optional(),
   requestingRfc: z.string().optional(),
   retrievalType: z.enum(['emitidos', 'recibidos', 'folio']).default('emitidos'),
@@ -87,51 +87,64 @@ const massDownloadRequestSchema = z.object({
   complement: z.string().default('null'),
   companyId: z.string().min(1, 'La empresa es requerida'),
   folio: z.string().optional(),
-}).superRefine((data, ctx) => {
+})
+
+type MassDownloadRequestBaseValues = z.infer<typeof massDownloadRequestBaseSchema>
+
+function validateDates(data: MassDownloadRequestBaseValues, ctx: z.RefinementCtx) {
+  if (!data.startDate) {
+    ctx.addIssue({ code: 'custom', message: 'La fecha inicial es requerida', path: ['startDate'] })
+  }
+  if (!data.endDate) {
+    ctx.addIssue({ code: 'custom', message: 'La fecha final es requerida', path: ['endDate'] })
+  }
+}
+
+function validateEmitidos(data: MassDownloadRequestBaseValues, ctx: z.RefinementCtx) {
+  validateDates(data, ctx)
+  if (!data.issuerRfc) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'El RFC Emisor es requerido',
+      path: ['issuerRfc'],
+    })
+  }
+}
+
+function validateRecibidos(data: MassDownloadRequestBaseValues, ctx: z.RefinementCtx) {
+  validateDates(data, ctx)
+  if (!data.receiverRfc) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'El RFC Receptor es requerido',
+      path: ['receiverRfc'],
+    })
+  }
+}
+
+function validateFolio(data: MassDownloadRequestBaseValues, ctx: z.RefinementCtx) {
+  if (!data.folio) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'El Folio es requerido',
+      path: ['folio'],
+    })
+  } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.folio)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'El folio debe tener un formato UUID válido',
+      path: ['folio'],
+    })
+  }
+}
+
+const massDownloadRequestSchema = massDownloadRequestBaseSchema.superRefine((data, ctx) => {
   if (data.retrievalType === 'emitidos') {
-    if (!data.startDate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'La fecha inicial es requerida', path: ['startDate'] })
-    }
-    if (!data.endDate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'La fecha final es requerida', path: ['endDate'] })
-    }
-    if (!data.issuerRfc) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'El RFC Emisor es requerido',
-        path: ['issuerRfc'],
-      })
-    }
-  }
-  if (data.retrievalType === 'recibidos') {
-    if (!data.startDate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'La fecha inicial es requerida', path: ['startDate'] })
-    }
-    if (!data.endDate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'La fecha final es requerida', path: ['endDate'] })
-    }
-    if (!data.receiverRfc) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'El RFC Receptor es requerido',
-        path: ['receiverRfc'],
-      })
-    }
-  }
-  if (data.retrievalType === 'folio') {
-    if (!data.folio) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'El Folio es requerido',
-        path: ['folio'],
-      })
-    } else if (!/^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/i.test(data.folio)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'El folio debe tener un formato UUID válido',
-        path: ['folio'],
-      })
-    }
+    validateEmitidos(data, ctx)
+  } else if (data.retrievalType === 'recibidos') {
+    validateRecibidos(data, ctx)
+  } else if (data.retrievalType === 'folio') {
+    validateFolio(data, ctx)
   }
 })
 
@@ -216,126 +229,105 @@ export function MassDownloadRequestForm() {
     control: form.control,
     name: 'retrievalType'
   })
+  const requestType = useWatch({
+    control: form.control,
+    name: 'requestType'
+  })
   const isFolio = retrievalType === 'folio'
 
   useEffect(() => {
-    const updateCompany = () => {
-      try {
-        const stored = localStorage.getItem('selectedCompany')
-        if (stored) {
-          const company = JSON.parse(stored)
-          if (company?.id) {
-            form.setValue('companyId', company.id)
-          }
-          
-          if (company?.rfc) {
-            // Always set requesting RFC
-            form.setValue('requestingRfc', company.rfc)
+    if (requestType === 'cfdi') {
+      form.setValue('status', 'Vigente')
+    }
+  }, [requestType, form])
 
-            // Dynamic assignment based on retrieval type
-            if (retrievalType === 'emitidos') {
-              form.setValue('issuerRfc', company.rfc)
-              // Ensure receiverRfc is not the company RFC if we switched
-              const currentReceiver = form.getValues('receiverRfc')
-              if (currentReceiver === company.rfc) {
-                form.setValue('receiverRfc', '')
-              }
-            } else if (retrievalType === 'recibidos') {
-              form.setValue('receiverRfc', company.rfc)
-              // Ensure issuerRfc is not the company RFC if we switched
-              const currentIssuer = form.getValues('issuerRfc')
-              if (currentIssuer === company.rfc) {
-                form.setValue('issuerRfc', '')
-              }
-            } else {
-              // Folio
-            }
-          }
+  const getSelectedCompany = () => {
+    try {
+      const stored = localStorage.getItem('selectedCompany')
+      return stored ? JSON.parse(stored) : null
+    } catch (e) {
+      console.error('Failed to parse selected company', e)
+      return null
+    }
+  }
+
+  const restoreCompanyValues = () => {
+    const company = getSelectedCompany()
+    if (company?.id) form.setValue('companyId', company.id)
+    if (company?.rfc) {
+      form.setValue('issuerRfc', company.rfc)
+      form.setValue('requestingRfc', company.rfc)
+    }
+  }
+
+  useEffect(() => {
+    const applyCompanyToForm = (company: { id?: string; rfc?: string }) => {
+      if (!company) return
+      if (company?.id) form.setValue('companyId', company.id)
+      if (company?.rfc) {
+        form.setValue('requestingRfc', company.rfc)
+        if (retrievalType === 'emitidos') {
+          form.setValue('issuerRfc', company.rfc)
+          if (form.getValues('receiverRfc') === company.rfc) form.setValue('receiverRfc', '')
+        } else if (retrievalType === 'recibidos') {
+          form.setValue('receiverRfc', company.rfc)
+          if (form.getValues('issuerRfc') === company.rfc) form.setValue('issuerRfc', '')
         }
-      } catch (e) {
-        console.error('Failed to parse selected company', e)
       }
     }
 
+    const updateCompany = () => {
+      const company = getSelectedCompany()
+      if (company) applyCompanyToForm(company)
+    }
+
     updateCompany()
-    
     const handleCompanyChange = () => updateCompany()
     window.addEventListener('company-selected', handleCompanyChange)
-    
-    return () => {
-      window.removeEventListener('company-selected', handleCompanyChange)
-    }
+    return () => window.removeEventListener('company-selected', handleCompanyChange)
   }, [form, retrievalType])
 
-    async function onSubmit(data: MassDownloadRequestValues) {
-    // Default requestingRfc to issuerRfc if not provided
-    const payload = {
-      ...data,
-      requestingRfc: data.requestingRfc || data.issuerRfc || ''
-    }
+    const buildPayload = (data: MassDownloadRequestValues) => ({
+    ...data,
+    requestingRfc: data.requestingRfc || data.issuerRfc || ''
+  })
 
+  const parseResponse = async (res: Response) => {
+    try { return await res.json() } catch { return null }
+  }
+
+  const buildSuccessMessage = (result: { satToken?: string } | Array<{ id?: string; satPackageId?: string | null }>) => {
+    if (Array.isArray(result) && result.length > 0) {
+      const ids = result.map((r) => r.id).join(', ')
+      const satIds = result.map((r) => r.satPackageId).filter(Boolean).join(', ')
+      let msg = `Solicitud registrada correctamente. ID(s) Interno(s): ${ids}.`
+      if (satIds) msg += ` ID(s) Paquete SAT: ${satIds}.`
+      msg += ' El proceso de solicitud al SAT se ha iniciado en segundo plano.'
+      return msg
+    }
+    if (!Array.isArray(result) && result?.satToken) return `Solicitud enviada. Token SAT: ${result.satToken}`
+    return 'Solicitud enviada correctamente. Procesando en segundo plano...'
+  }
+
+  async function onSubmit(data: MassDownloadRequestValues) {
+    const payload = buildPayload(data)
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/mass-downloads/requests', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-
-      let result
-      try {
-        result = await response.json()
-      } catch {
-        // Ignore JSON parse error
-      }
-
+      const result = await parseResponse(response)
       if (!response.ok) {
-        // Priorizar el mensaje de 'details' que contiene la descripción específica del SAT
         throw new Error(result?.details || result?.error || 'Error al enviar la solicitud')
       }
-
-      if (Array.isArray(result) && result.length > 0) {
-        const ids = result.map((r: { id: string }) => r.id).join(', ')
-        const satIds = result
-          .map((r: { satPackageId?: string }) => r.satPackageId)
-          .filter(Boolean)
-          .join(', ')
-
-        let message = `Solicitud registrada correctamente. ID(s) Interno(s): ${ids}.`
-        if (satIds) {
-          message += ` ID(s) Paquete SAT: ${satIds}.`
-        }
-        message += ' El proceso de solicitud al SAT se ha iniciado en segundo plano.'
-
-        toast.success(message, {
-          duration: 10000,
-        })
-      } else if (result && result.satToken) {
-        toast.success(`Solicitud enviada. Token SAT: ${result.satToken}`, {
-          duration: 10000,
-        })
-      } else {
-        toast.success('Solicitud enviada correctamente. Procesando en segundo plano...')
-      }
-
+      toast.success(buildSuccessMessage(result), { duration: 10000 })
       form.reset()
-      // Restore company info after reset
-      const stored = localStorage.getItem('selectedCompany')
-      if (stored) {
-        const company = JSON.parse(stored)
-        if (company?.id) form.setValue('companyId', company.id)
-        if (company?.rfc) {
-          form.setValue('issuerRfc', company.rfc)
-          form.setValue('requestingRfc', company.rfc)
-        }
-      }
+      restoreCompanyValues()
     } catch (error) {
       console.error(error)
-      toast.error(error instanceof Error ? error.message : 'Error al enviar la solicitud', {
-        duration: 10000,
-      })
+      toast.error(error instanceof Error ? error.message : 'Error al enviar la solicitud', { duration: 10000 })
     } finally {
       setIsSubmitting(false)
     }
@@ -426,7 +418,7 @@ export function MassDownloadRequestForm() {
             )}
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              {isFolio ? (
+              {isFolio && (
                 <FormField
                   control={form.control}
                   name="folio"
@@ -448,7 +440,8 @@ export function MassDownloadRequestForm() {
                     </FormItem>
                   )}
                 />
-              ) : retrievalType === 'emitidos' ? (
+              )}
+              {!isFolio && retrievalType === 'emitidos' && (
                 <FormField
                   control={form.control}
                   name="issuerRfc"
@@ -466,7 +459,8 @@ export function MassDownloadRequestForm() {
                     </FormItem>
                   )}
                 />
-              ) : (
+              )}
+              {!isFolio && retrievalType !== 'emitidos' && (
                 <FormField
                   control={form.control}
                   name="receiverRfc"
@@ -487,50 +481,49 @@ export function MassDownloadRequestForm() {
               )}
             </div>
 
-            {!isFolio && (
-              retrievalType === 'emitidos' ? (
-                <FormField
-                  control={form.control}
-                  name="receiverRfc"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>RFC Receptor (Filtro Opcional)</FormLabel>
-                      <FormControl>
-                        <Textarea 
-                          placeholder="Ingrese los RFCs separados por comas o saltos de línea"
-                          className="resize-none"
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Puede capturar N cantidad de RFCs para filtrar.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : (
-                <FormField
-                  control={form.control}
-                  name="issuerRfc"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>RFC Emisor (Filtro Opcional)</FormLabel>
-                      <FormControl>
-                        <Textarea 
-                          placeholder="Ingrese los RFCs separados por comas o saltos de línea"
-                          className="resize-none"
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Puede capturar N cantidad de RFCs para filtrar.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )
+            {!isFolio && retrievalType === 'emitidos' && (
+              <FormField
+                control={form.control}
+                name="receiverRfc"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>RFC Receptor (Filtro Opcional)</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Ingrese los RFCs separados por comas o saltos de línea"
+                        className="resize-none"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Puede capturar N cantidad de RFCs para filtrar.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            {!isFolio && retrievalType === 'recibidos' && (
+              <FormField
+                control={form.control}
+                name="issuerRfc"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>RFC Emisor (Filtro Opcional)</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Ingrese los RFCs separados por comas o saltos de línea"
+                        className="resize-none"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Puede capturar N cantidad de RFCs para filtrar.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             )}
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -587,7 +580,7 @@ export function MassDownloadRequestForm() {
                 render={({ field }) => (
                   <FormItem className={isFolio ? 'hidden' : ''}>
                     <FormLabel>Estado del Comprobante</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={requestType === 'cfdi'}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccione estado" />
