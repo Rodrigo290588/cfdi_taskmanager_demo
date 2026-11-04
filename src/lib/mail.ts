@@ -18,11 +18,8 @@ interface SmtpSettings {
   fromName?: string
 }
 
-// Inicializa el transportador de correo basándose en la configuración de la organización.
-// Si la organización no tiene configurado el SMTP, usa Ethereal Email como fallback para desarrollo.
-async function getTransporter(organizationId: string): Promise<{ t: nodemailer.Transporter; sender: string }> {
+async function getTransporterFromDb(organizationId: string): Promise<{ t: nodemailer.Transporter; sender: string } | null> {
   try {
-    // 1. Intentar obtener la configuración de la BD
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { systemSettings: true }
@@ -31,7 +28,7 @@ async function getTransporter(organizationId: string): Promise<{ t: nodemailer.T
     const settings = (org?.systemSettings as unknown as { smtp?: SmtpSettings }) || {}
     const smtp = settings.smtp
 
-    if (smtp && smtp.host && smtp.port && smtp.user && smtp.pass) {
+    if (smtp?.host && smtp.port && smtp.user && smtp.pass) {
       let finalPass = smtp.pass
       if (finalPass.startsWith(ENC_PREFIX)) {
         try {
@@ -60,8 +57,10 @@ async function getTransporter(organizationId: string): Promise<{ t: nodemailer.T
   } catch (error) {
     console.error('Error al obtener la configuración SMTP de la BD:', error)
   }
+  return null
+}
 
-  // 2. Si no hay configuración en la BD, usamos variables de entorno (Fallback 1)
+async function getTransporterFromEnv(): Promise<{ t: nodemailer.Transporter; sender: string } | null> {
   if (process.env.SMTP_HOST) {
     if (!transporter) {
       transporter = nodemailer.createTransport({
@@ -77,8 +76,10 @@ async function getTransporter(organizationId: string): Promise<{ t: nodemailer.T
     const sender = process.env.SMTP_USER || 'no-reply@plataforma.com'
     return { t: transporter, sender }
   }
+  return null
+}
 
-  // 3. Si no hay nada, creamos cuenta de prueba en Ethereal (Fallback 2)
+async function getTransporterFallback(): Promise<{ t: nodemailer.Transporter; sender: string }> {
   console.log('No se encontró configuración SMTP. Creando cuenta de prueba en Ethereal Email...')
   if (!testAccount) {
     testAccount = await nodemailer.createTestAccount()
@@ -93,6 +94,21 @@ async function getTransporter(organizationId: string): Promise<{ t: nodemailer.T
     })
   }
   return { t: transporter!, sender: testAccount!.user }
+}
+
+// Inicializa el transportador de correo basándose en la configuración de la organización.
+// Si la organización no tiene configurado el SMTP, usa Ethereal Email como fallback para desarrollo.
+async function getTransporter(organizationId: string): Promise<{ t: nodemailer.Transporter; sender: string }> {
+  // 1. Intentar obtener la configuración de la BD
+  const dbConfig = await getTransporterFromDb(organizationId)
+  if (dbConfig) return dbConfig
+
+  // 2. Si no hay configuración en la BD, usamos variables de entorno (Fallback 1)
+  const envConfig = await getTransporterFromEnv()
+  if (envConfig) return envConfig
+
+  // 3. Si no hay nada, creamos cuenta de prueba en Ethereal (Fallback 2)
+  return getTransporterFallback()
 }
 
 interface SendInvitationEmailParams {
