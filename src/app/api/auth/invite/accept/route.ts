@@ -55,16 +55,16 @@ function checkOriginOrReferer(headers: Headers): boolean {
 
 export async function POST(request: NextRequest) {
   const startTs = Date.now()
-  const res = NextResponse.next()
-  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => res.headers.set(k, v))
-  res.headers.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
+  const baseHeaders = new Headers()
+  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
+  baseHeaders.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
 
   try {
     const ip = getRealClientIp(request.headers)
 
     if (!checkOriginOrReferer(request.headers)) {
       console.warn('[auth:invite-accept] CSRF origin/referer mismatch ip=' + ip.slice(0, 32))
-      return NextResponse.json({ error: 'Solicitud no autorizada (CSRF).' }, { status: 403, headers: res.headers })
+      return NextResponse.json({ error: 'Solicitud no autorizada (CSRF).' }, { status: 403, headers: baseHeaders })
     }
 
     try {
@@ -77,11 +77,11 @@ export async function POST(request: NextRequest) {
     const contentLenRaw = request.headers.get('content-length')
     const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
     if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
     const rawBodyBuf = await request.arrayBuffer()
     if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
     const rawBodyText = Buffer.from(rawBodyBuf).toString('utf8')
     let body: unknown
@@ -89,14 +89,14 @@ export async function POST(request: NextRequest) {
       body = {}
     } else {
       try { body = JSON.parse(rawBodyText) } catch {
-        return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: res.headers })
+        return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders })
       }
     }
     const tokenRaw = typeof body === 'object' && body !== null && 'token' in body ? (body as Record<string, unknown>).token : undefined
     const token = typeof tokenRaw === 'string' && TOKEN_ALLOWED_RE.test(tokenRaw) ? tokenRaw : null
 
     if (!token) {
-      return NextResponse.json({ error: 'Token no proporcionado o formato inválido' }, { status: 400, headers: res.headers })
+      return NextResponse.json({ error: 'Token no proporcionado o formato inválido' }, { status: 400, headers: baseHeaders })
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       if (delta < BASE_MIN_RESP_MS) await new Promise<void>((r) => setTimeout(r, BASE_MIN_RESP_MS - delta))
       return NextResponse.json(
         { error: 'La invitación no es válida, expiró o ya fue aceptada' },
-        { status: 404, headers: res.headers }
+        { status: 404, headers: baseHeaders }
       )
     }
 
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     } catch (txErr: unknown) {
       const message = txErr instanceof Error ? txErr.message : String(txErr)
       if (message === 'INVITE_ALREADY_CLAIMED') {
-        return NextResponse.json({ error: 'La invitación ya fue aceptada. Inicia sesión o solicita una nueva.' }, { status: 409, headers: res.headers })
+        return NextResponse.json({ error: 'La invitación ya fue aceptada. Inicia sesión o solicita una nueva.' }, { status: 409, headers: baseHeaders })
       }
       throw txErr
     }
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
     if (!needsPassword) {
       const delta = Date.now() - startTs
       if (delta < BASE_MIN_RESP_MS) await new Promise<void>((r) => setTimeout(r, BASE_MIN_RESP_MS - delta))
-      return NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: res.headers })
+      return NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: baseHeaders })
     }
 
     const secret = getAuthSecretOrThrow()
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
     const sessionTokenSigned = signCookieValue(sessionTokenUnsigned, hmacKey)
     void fingerprint
 
-    const response = NextResponse.json({ success: true, redirect: '/auth/complete-registration' }, { headers: res.headers })
+    const response = NextResponse.json({ success: true, redirect: '/auth/complete-registration' }, { headers: baseHeaders })
 
     response.cookies.set({
       name: 'invite_session',
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     console.error('[auth:invite-accept] fatal err name=' + safe.name + ' fp=' + safe.incidentFingerprint)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
-      { status: 500, headers: res.headers }
+      { status: 500, headers: baseHeaders }
     )
   }
 }
