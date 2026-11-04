@@ -1,5 +1,8 @@
 import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
+import { decrypt } from '@/lib/encryption'
+
+const ENC_PREFIX = '__enc_v1__:'
 
 let testAccount: nodemailer.TestAccount | null = null
 let transporter: nodemailer.Transporter | null = null
@@ -29,13 +32,22 @@ async function getTransporter(organizationId: string): Promise<{ t: nodemailer.T
     const smtp = settings.smtp
 
     if (smtp && smtp.host && smtp.port && smtp.user && smtp.pass) {
+      let finalPass = smtp.pass
+      if (finalPass.startsWith(ENC_PREFIX)) {
+        try {
+          finalPass = decrypt(finalPass.slice(ENC_PREFIX.length))
+        } catch (e) {
+          console.error('Error al desencriptar la contraseña SMTP:', e)
+        }
+      }
+
       const dbTransporter = nodemailer.createTransport({
         host: smtp.host,
         port: smtp.port,
         secure: smtp.secure ?? (smtp.port === 465),
         auth: {
           user: smtp.user,
-          pass: smtp.pass,
+          pass: finalPass,
         },
       })
       
