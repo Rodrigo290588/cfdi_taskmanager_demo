@@ -83,9 +83,14 @@ export async function POST(request: NextRequest) {
     if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
       return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
     }
+    const rawBodyText = Buffer.from(rawBodyBuf).toString('utf8')
     let body: unknown
-    try { body = JSON.parse(Buffer.from(rawBodyBuf).toString('utf8') || '{}') } catch {
-      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: res.headers })
+    if (rawBodyText.trim() === '') {
+      body = {}
+    } else {
+      try { body = JSON.parse(rawBodyText) } catch {
+        return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: res.headers })
+      }
     }
     const tokenRaw = typeof body === 'object' && body !== null && 'token' in body ? (body as Record<string, unknown>).token : undefined
     const token = typeof tokenRaw === 'string' && TOKEN_ALLOWED_RE.test(tokenRaw) ? tokenRaw : null

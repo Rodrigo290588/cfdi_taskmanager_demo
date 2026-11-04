@@ -26,8 +26,8 @@ function AcceptInviteContent() {
   const [success, setSuccess] = useState(false)
   const [inviteData, setInviteData] = useState<{
     organizationName: string
-    userEmail: string
-    userName: string
+    userEmailMasked: string
+    userNameMasked: string
     needsPassword: boolean
   } | null>(null)
 
@@ -160,13 +160,15 @@ function AcceptInviteContent() {
       <form onSubmit={handleAccept}>
         <CardContent className="space-y-4">
           <div className="bg-muted/50 p-4 rounded-lg text-sm space-y-2 mb-6">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Usuario:</span>
-              <span className="font-medium">{inviteData?.userName || 'Usuario'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Correo:</span>
-              <span className="font-medium">{inviteData?.userEmail}</span>
+            <div className="grid grid-cols-3 gap-2">
+              <span className="text-muted-foreground font-medium col-span-1">Usuario:</span>
+              <span className="col-span-2 font-medium truncate" title={inviteData?.userNameMasked || 'Usuario'}>
+                {inviteData?.userNameMasked || 'Usuario'}
+              </span>
+              <span className="text-muted-foreground font-medium col-span-1">Correo:</span>
+              <span className="col-span-2 font-medium truncate" title={inviteData?.userEmailMasked || 'Correo'}>
+                {inviteData?.userEmailMasked || 'Correo'}
+              </span>
             </div>
           </div>
 
