@@ -47,7 +47,8 @@ import {
   Scale,
   Activity,
   XCircle,
-  Landmark
+  Landmark,
+  Settings
 } from "lucide-react"
 
 function isAbortError(error: unknown) {
@@ -472,6 +473,9 @@ function AdminNavigation() {
         )}
         {hasPermission(Permission.ADMIN_COMPANIES, orgId) && (
           <SubNavLinkItem href="/admin/dashboard" icon={Building2} title="Administrar Empresas" />
+        )}
+        {hasPermission(Permission.ADMIN_SETTINGS, orgId) && (
+          <SubNavLinkItem href="/settings" icon={Settings} title="Configuración del Sistema" isActive={pathname?.startsWith('/settings')} />
         )}
         {hasPermission(Permission.ADMIN_SETTINGS, orgId) && (
           <SubNavLinkItem href="/preferences" icon={Sliders} title="Preferencias del Sistema" isActive={pathname?.startsWith('/preferences')} />
