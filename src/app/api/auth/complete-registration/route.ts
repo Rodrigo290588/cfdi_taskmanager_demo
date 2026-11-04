@@ -44,9 +44,9 @@ function verifyAndStripCookieSig(signed: string, key: Uint8Array): string | null
 
 export async function POST(request: NextRequest) {
   const startTs = Date.now()
-  const res = NextResponse.next()
-  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => res.headers.set(k, v))
-  res.headers.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
+  const baseHeaders = new Headers()
+  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
+  baseHeaders.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
 
   try {
     const ip = getRealClientIp(request.headers)
@@ -55,19 +55,19 @@ export async function POST(request: NextRequest) {
     if (!sessionCookie?.value) {
       return NextResponse.json(
         { error: 'Sesión de registro inválida o expirada' },
-        { status: 401, headers: res.headers }
+        { status: 401, headers: baseHeaders }
       )
     }
 
     const contentLenRaw = request.headers.get('content-length')
     const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
     if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
 
     const rawBodyBuf = await request.arrayBuffer()
     if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
     const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
 
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
         const waitMin = Math.ceil((rl.retryAfterMs || 0) / 60000)
         return NextResponse.json(
           { error: waitMin > 0 ? `Demasiados intentos. Intenta en ${waitMin} minutos.` : 'Demasiados intentos. Intenta más tarde.' },
-          { status: 429, headers: res.headers }
+          { status: 429, headers: baseHeaders }
         )
       }
     } catch (rlErr) {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     let body: unknown
     try { body = rawBody ? JSON.parse(rawBody) : {} } catch {
-      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: res.headers })
+      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders })
     }
     const password = typeof body === 'object' && body !== null && 'password' in body ? String((body as Record<string, unknown>).password) : undefined
     const secret = getAuthSecretOrThrow()
@@ -112,11 +112,11 @@ export async function POST(request: NextRequest) {
       console.warn(
         `[auth:complete-registration] jwt_verify_failed fp=${fpSession} errName=${safe.name} fp=${safe.incidentFingerprint}`
       )
-      return NextResponse.json({ error: 'Sesión de registro inválida o expirada' }, { status: 401, headers: res.headers })
+      return NextResponse.json({ error: 'Sesión de registro inválida o expirada' }, { status: 401, headers: baseHeaders })
     }
 
     if (!userId || !memberId) {
-      return NextResponse.json({ error: 'Token malformado' }, { status: 400, headers: res.headers })
+      return NextResponse.json({ error: 'Token malformado' }, { status: 400, headers: baseHeaders })
     }
 
     const passSchema = z.object({ password: z.string().min(12).max(128) })
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
         nivel_fuerza: 'Debil',
         errores: ['La contraseña no cumple con los requisitos mínimos de seguridad.'],
         sugerencia: 'Debe tener al menos 12 caracteres. Máximo 128.'
-      } as const, { status: 400, headers: res.headers })
+      } as const, { status: 400, headers: baseHeaders })
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } })
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       user?.email || ''
     )
     if (!validationResult.valida) {
-      return NextResponse.json(validationResult, { status: 400, headers: res.headers })
+      return NextResponse.json(validationResult, { status: 400, headers: baseHeaders })
     }
 
     try {
@@ -193,26 +193,29 @@ export async function POST(request: NextRequest) {
       }
       const mapped = codeMap[message]
       if (mapped) {
-        return NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: res.headers })
+        return NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: baseHeaders })
       }
       throw txErr
     }
 
+    const r = NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: baseHeaders })
+    r.cookies.set({
+      name: 'invite_session',
+      value: '',
+      maxAge: -1,
+      path: '/api/auth'
+    })
+    
     const delta = Date.now() - startTs
-    if (delta < BASE_MIN_RESP_MS) {
-      await new Promise<void>((r) => setTimeout(r, BASE_MIN_RESP_MS - delta))
-    }
-
-    const response = NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: res.headers })
-    response.cookies.delete('invite_session')
-    return response
+    if (delta < BASE_MIN_RESP_MS) await new Promise<void>((res) => setTimeout(res, BASE_MIN_RESP_MS - delta))
+    return r
 
   } catch (error) {
     const safe = safeErrSummarySat(error)
-    console.error('[auth:complete-registration] fatal err name=' + safe.name + ' fp=' + safe.incidentFingerprint)
+    console.error('[auth:complete-reg] fatal err name=' + safe.name + ' fp=' + safe.incidentFingerprint)
     return NextResponse.json(
-      { error: 'Error interno del servidor al completar el registro' },
-      { status: 500, headers: res.headers }
+      { error: 'Error interno del servidor' },
+      { status: 500, headers: baseHeaders }
     )
   }
 }

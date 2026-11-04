@@ -47,14 +47,14 @@ function badPass(mensaje: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const res = NextResponse.next()
-  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => res.headers.set(k, v))
-  res.headers.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
+  const baseHeaders = new Headers()
+  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
+  baseHeaders.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
 
   try {
     const contentType = request.headers.get('content-type') || ''
     if (!contentType.includes('application/json')) {
-      return NextResponse.json(badPass('Solicitud inválida'), { status: 415, headers: res.headers })
+      return NextResponse.json(badPass('Solicitud inválida'), { status: 415, headers: baseHeaders })
     }
 
     const ip = getRealClientIp(request.headers)
@@ -63,18 +63,18 @@ export async function POST(request: NextRequest) {
       { interval: AUTH_RATE_LIMITS.validatePassIp.windowMs, limit: AUTH_RATE_LIMITS.validatePassIp.limit }
     )
     if (!rl.success) {
-      return NextResponse.json(badPass('Demasiadas solicitudes. Intenta más tarde.'), { status: 429, headers: res.headers })
+      return NextResponse.json(badPass('Demasiadas solicitudes. Intenta más tarde.'), { status: 429, headers: baseHeaders })
     }
 
     const contentLenRaw = request.headers.get('content-length')
     const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
     if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: res.headers })
+      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders })
     }
 
     const rawBodyBuf = await request.arrayBuffer()
     if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: res.headers })
+      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders })
     }
     const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
 
@@ -110,10 +110,10 @@ export async function POST(request: NextRequest) {
       const parsed = schema.parse(rawBody.length ? JSON.parse(rawBody) : {})
       password = parsed.password
     } catch {
-      return NextResponse.json(badPass('Datos inválidos'), { status: 400, headers: res.headers })
+      return NextResponse.json(badPass('Datos inválidos'), { status: 400, headers: baseHeaders })
     }
 
-    return NextResponse.json(validatePasswordStrength(password, userName, userEmail), { headers: res.headers })
+    return NextResponse.json(validatePasswordStrength(password, userName, userEmail), { headers: baseHeaders })
 
   } catch (err) {
     const safe = safeErrSummarySat(err)
@@ -123,6 +123,6 @@ export async function POST(request: NextRequest) {
       nivel_fuerza: "Debil" as const,
       errores: ["Error interno al validar la contraseña"],
       sugerencia: "Intenta de nuevo más tarde."
-    }, { status: 500, headers: res.headers })
+    }, { status: 500, headers: baseHeaders })
   }
 }
