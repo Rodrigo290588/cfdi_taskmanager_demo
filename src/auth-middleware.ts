@@ -81,7 +81,7 @@ const _isProdRuntime = process.env.NODE_ENV === "production"
 
 export const { auth: authMiddleware, handlers: _h, signIn: _sI, signOut: _sO } = NextAuth({
   session: { strategy: "jwt" },
-  secret: process.env['NEXTAUTH_SECRET'],
+  secret: process.env.NEXTAUTH_SECRET,
   trustHost: _trustHostValue,
   useSecureCookies: _isProdRuntime,
   providers: [
