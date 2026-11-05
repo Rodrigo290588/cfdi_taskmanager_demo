@@ -2,7 +2,10 @@ import { TextEncoder } from 'util'
 import crypto from 'node:crypto'
 
 export function getAuthSecretOrThrow(): Uint8Array {
-  const envSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  // Evitar que Next.js congele la variable como "undefined" en tiempo de build
+  const getEnv = (key: string) => process.env[key]
+  const envSecret = getEnv('AUTH_SECRET') || getEnv('NEXTAUTH_SECRET')
+  
   const raw = envSecret?.trim()
   if (!raw || raw.length < 32) {
     const msg =
