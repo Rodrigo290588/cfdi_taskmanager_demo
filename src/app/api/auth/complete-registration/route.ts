@@ -6,6 +6,7 @@ import { validatePasswordStrength } from '@/lib/password-validator'
 import { getAuthSecretOrThrow, fingerprint } from '@/lib/security'
 import { PASSWORD_BCRYPT_ROUNDS } from '@/lib/auth-config'
 import * as crypto from 'node:crypto'
+import { updateTenantProgress } from '@/lib/tenant'
 import { z } from 'zod'
 import { rateLimit, AUTH_RATE_LIMITS } from '@/lib/rate-limit'
 import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
@@ -113,13 +114,16 @@ async function verifySessionAndGetIds(sessionCookieValue: string, secret: Uint8A
 }
 
 async function executeRegistrationTransaction(userId: string, memberId: string, passwordString: string, baseHeaders: Headers) {
+  let organizationId = ''
   try {
     await prisma.$transaction(async (tx) => {
-      const memberLocked = await tx.$queryRaw<Array<{ user_id: string; status: string; invitationExpiresAt: Date | null }>>`
-        SELECT user_id, status, "invitationExpiresAt" FROM members WHERE id = ${memberId} FOR NO KEY UPDATE
+      const memberLocked = await tx.$queryRaw<Array<{ user_id: string; status: string; invitationExpiresAt: Date | null; organizationId: string }>>`
+        SELECT user_id, status, "invitationExpiresAt", "organizationId" FROM members WHERE id = ${memberId} FOR NO KEY UPDATE
       `
       const member = memberLocked?.[0]
       if (!member) throw new Error('MEMBER_NOT_FOUND')
+      organizationId = member.organizationId
+
       if (member.user_id !== userId) {
         console.error(`[complete-registration] CRITICAL mismatch: member ${memberId} no pertenece a user ${userId}`)
         throw new Error('TOKEN_MISMATCH')
@@ -156,7 +160,7 @@ async function executeRegistrationTransaction(userId: string, memberId: string, 
         }
       })
     })
-    return null
+    return { errorResponse: null, organizationId }
   } catch (txErr: unknown) {
     const message = txErr instanceof Error ? txErr.message : String(txErr)
     const codeMap: Record<string, { msg: string, status: number }> = {
@@ -169,7 +173,7 @@ async function executeRegistrationTransaction(userId: string, memberId: string, 
     }
     const mapped = codeMap[message]
     if (mapped) {
-      return NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: baseHeaders })
+      return { errorResponse: NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: baseHeaders }) }
     }
     throw txErr
   }
@@ -226,8 +230,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(validationResult, { status: 400, headers: baseHeaders })
     }
 
-    const txErrorResponse = await executeRegistrationTransaction(userId as string, memberId as string, passParsed.data.password, baseHeaders)
-    if (txErrorResponse) return txErrorResponse
+    const txResult = await executeRegistrationTransaction(userId as string, memberId as string, passParsed.data.password, baseHeaders)
+    if ('errorResponse' in txResult && txResult.errorResponse) return txResult.errorResponse
+
+    if ('organizationId' in txResult && txResult.organizationId) {
+      await updateTenantProgress(txResult.organizationId).catch(err => {
+        console.error('[auth:complete-reg] Error updating tenant progress:', err)
+      })
+    }
 
     const r = NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: baseHeaders })
     r.cookies.set({

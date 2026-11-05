@@ -4,6 +4,7 @@ import * as crypto from 'node:crypto'
 import { SignJWT } from 'jose'
 import { getAuthSecretOrThrow, getPublicHostsAllowlist, getRealClientIp, fingerprint } from '@/lib/security'
 import { rateLimit, AUTH_RATE_LIMITS } from '@/lib/rate-limit'
+import { updateTenantProgress } from '@/lib/tenant'
 import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
 
 export const runtime = 'nodejs'
@@ -204,6 +205,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (!needsPassword) {
+      await updateTenantProgress(membership.organizationId).catch(err => {
+        console.error('[auth:invite-accept] Error updating tenant progress:', err)
+      })
       await enforceMinResponseTime(startTs)
       return NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: baseHeaders })
     }
