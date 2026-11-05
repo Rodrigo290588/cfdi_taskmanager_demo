@@ -41,10 +41,8 @@ function buildApiKeyCreateData(params: {
   const expiresAt = new Date(Date.now() + NINETY_DAYS_MS)
   const base: Record<string, unknown> = {
     userId: params.userId,
-    organizationId: params.organizationId,
     name: params.name,
     key: encryptedKey,
-    keyHash: hash512,
     permissions: params.permissions,
     isActive: params.isActive,
     expiresAt,
@@ -60,7 +58,6 @@ function buildApiKeyUpdateData(params: {
   const expiresAt = new Date(Date.now() + NINETY_DAYS_MS)
   const base: Record<string, unknown> = {
     key: encryptedKey,
-    keyHash: hash512,
     lastUsedAt: null,
     expiresAt,
   }

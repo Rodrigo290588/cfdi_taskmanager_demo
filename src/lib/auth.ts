@@ -102,7 +102,7 @@ async function verifyAndRehashPassword(password: string, userPasswordHash: strin
 }
 
 const authOptionsBase: NextAuthConfig = {
-  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  secret: process.env['AUTH_SECRET'] || process.env['NEXTAUTH_SECRET'],
   adapter: PrismaAdapter(prisma) as Adapter,
   trustHost: false,
   useSecureCookies: process.env.NODE_ENV === "production",
