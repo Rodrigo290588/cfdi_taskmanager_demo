@@ -53,7 +53,7 @@ function checkOriginOrReferer(headers: Headers): boolean {
   return false
 }
 
-function parseBodyPayload(rawBodyText: string, baseHeaders: Headers) {
+function parseBodyPayload(rawBodyText: string) {
   if (rawBodyText.trim() === '') {
     return {}
   }
@@ -96,7 +96,7 @@ async function getValidatedToken(request: NextRequest, baseHeaders: Headers): Pr
     return { errorResponse: NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders }) }
   }
   const rawBodyText = Buffer.from(rawBodyBuf).toString('utf8')
-  const body = parseBodyPayload(rawBodyText, baseHeaders)
+  const body = parseBodyPayload(rawBodyText)
   if (!body) {
     return { errorResponse: NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders }) }
   }
@@ -110,7 +110,7 @@ async function getValidatedToken(request: NextRequest, baseHeaders: Headers): Pr
 }
 
 async function executeAcceptTransaction(membershipId: string, userId: string, needsPassword: boolean): Promise<void> {
-  await prisma.$transaction(async (tx: any) => {
+  await prisma.$transaction(async (tx) => {
     const updated = await tx.member.updateMany({
       where: {
         id: membershipId,

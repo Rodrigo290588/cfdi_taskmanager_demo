@@ -37,7 +37,6 @@ function buildApiKeyCreateData(params: {
   isActive: boolean
 }) {
   const encryptedKey = encrypt(params.plaintextKey)
-  const hash512 = sha512Hex(params.plaintextKey)
   const expiresAt = new Date(Date.now() + NINETY_DAYS_MS)
   const base: Record<string, unknown> = {
     userId: params.userId,
@@ -54,7 +53,6 @@ function buildApiKeyUpdateData(params: {
   plaintextKey: string
 }) {
   const encryptedKey = encrypt(params.plaintextKey)
-  const hash512 = sha512Hex(params.plaintextKey)
   const expiresAt = new Date(Date.now() + NINETY_DAYS_MS)
   const base: Record<string, unknown> = {
     key: encryptedKey,

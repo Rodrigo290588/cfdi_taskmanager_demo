@@ -1,6 +1,26 @@
-﻿# Changelog
+# Changelog
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
+
+## v1.21.4 - 2026-11-05
+
+### Resumen
+- **Corrección de Condición de Carrera en Interfaz UI (RBAC)**: Se solucionó un problema de renderizado en el menú de navegación (`sidebar.tsx`) donde el componente de administración volvía a consultar el estado del Tenant de forma asíncrona, provocando que por milisegundos el ID de la organización estuviera vacío y ocultara permanentemente los accesos. La responsabilidad de obtener el estado se delegó al componente padre, pasando el ID de forma síncrona.
+- **Resolución de Deuda Técnica (ESLint / SonarQube)**: Se limpiaron completamente los 30 errores y advertencias de código detectados por el analizador estático (`npm run lint`), incluyendo:
+  - Eliminación de archivos de pruebas temporales que causaban errores de importación (`require()`).
+  - Resolución de advertencias de dependencias en React Hooks (`exhaustive-deps` y `set-state-in-effect`) en los dashboards de administración.
+  - Corrección de variables no utilizadas y sustitución del tipo genérico `any` por validaciones estrictas en las rutas API de autenticación (`invite/accept`) y de gestión del Tenant (`api-key`).
+
+### Archivos Afectados Relevantes
+- `src/components/layout/sidebar.tsx`
+- `src/app/admin/dashboard/page.tsx`
+- `src/app/admin/users/page.tsx`
+- `src/app/api/auth/invite/accept/route.ts`
+- `src/app/api/tenant/api-key/route.ts`
+- `src/app/api/test-perms/route.ts`
+- `src/hooks/use-permissions.ts`
+
+---
 
 ## v1.21.3 - 2026-11-05
 

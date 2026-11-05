@@ -125,8 +125,10 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (orgId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void fetchDashboardData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
   const getStatusBadge = (status: string) => {

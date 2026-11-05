@@ -335,11 +335,9 @@ function SubNavLinkItem({
   );
 }
 
-function useNavigationPermissions(moduleFlags: FiscalEntity['moduleFlags']) {
-  const { tenantState } = useTenant();
+function useNavigationPermissions(moduleFlags: FiscalEntity['moduleFlags'], orgId?: string) {
   const { hasPermission } = usePermissions();
   const { hasAccess: hasCompanyAccess } = useCompanyAccess();
-  const orgId = tenantState?.organizationId;
 
   const isEmissionEnabled = moduleFlags?.canViewEmission !== false;
   const isReceptionEnabled = moduleFlags?.canViewReception !== false;
@@ -368,13 +366,11 @@ function useNavigationPermissions(moduleFlags: FiscalEntity['moduleFlags']) {
   };
 }
 
-function MainNavigation({ moduleFlags }: Readonly<{ moduleFlags: FiscalEntity['moduleFlags'] }>) {
+function MainNavigation({ moduleFlags, orgId }: Readonly<{ moduleFlags: FiscalEntity['moduleFlags'], orgId?: string }>) {
   const pathname = usePathname();
-  const { tenantState } = useTenant();
   const { hasPermission } = usePermissions();
-  const orgId = tenantState?.organizationId;
   
-  const perms = useNavigationPermissions(moduleFlags);
+  const perms = useNavigationPermissions(moduleFlags, orgId);
 
   return (
     <>
@@ -428,11 +424,9 @@ function MainNavigation({ moduleFlags }: Readonly<{ moduleFlags: FiscalEntity['m
   );
 }
 
-function AdminNavigation() {
+function AdminNavigation({ orgId }: Readonly<{ orgId?: string }>) {
   const pathname = usePathname();
-  const { tenantState } = useTenant();
   const { hasPermission, hasAnyPermission } = usePermissions();
-  const orgId = tenantState?.organizationId;
   const [adminOpen, setAdminOpen] = useState(false);
 
   const canShowAdmin = hasAnyPermission([
@@ -874,8 +868,8 @@ export function Sidebar({ isOpen, onToggle }: Readonly<SidebarProps>) {
           
           {canAccessOperationalFeatures() && (
             <>
-              <MainNavigation moduleFlags={moduleFlags} />
-              <AdminNavigation />
+              <MainNavigation moduleFlags={moduleFlags} orgId={tenantState?.organizationId} />
+              <AdminNavigation orgId={tenantState?.organizationId} />
             </>
           )}
         </nav>

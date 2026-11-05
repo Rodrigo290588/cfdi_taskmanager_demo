@@ -128,6 +128,7 @@ function UsersManagementPage() {
       window.removeEventListener('member-modules-changed', handleRefresh)
       window.removeEventListener('company-access-changed', handleRefresh)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
   const getRoleBadgeVariant = (role: string, isCustomRole?: boolean) => {

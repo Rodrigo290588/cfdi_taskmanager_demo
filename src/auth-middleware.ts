@@ -164,7 +164,8 @@ export const { auth: authMiddleware, handlers: _h, signIn: _sI, signOut: _sO } =
               organizationId: m.organizationId,
               role: m.role as MemberRole,
             })) as JWT["memberships"]
-          } catch {
+          } catch (e) {
+            console.error("JWT ERROR:", e);
             // JWT mint no debe hard-fallar por DB transient errors.
           }
         }

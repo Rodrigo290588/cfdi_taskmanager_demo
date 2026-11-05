@@ -1,5 +1,5 @@
 import { useSession } from 'next-auth/react'
-import { hasPermission, hasAnyPermission, hasAllPermissions, getUserPermissions, isAdmin, isSuperAdmin, canAccessAdminPanel, Permission } from '@/lib/permissions'
+import { hasPermission, hasAnyPermission, hasAllPermissions, getUserPermissions, isAdmin, isSuperAdmin, Permission } from '@/lib/permissions'
 import { User } from '@/lib/permissions'
 import { useTenant } from '@/hooks/use-tenant'
 
