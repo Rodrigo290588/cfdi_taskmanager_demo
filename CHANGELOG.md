@@ -2,6 +2,21 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.21.2 - 2026-11-04
+
+### Resumen
+- **Correcciones Críticas de Seguridad y Entorno**:
+  - Se modificó la lectura de la variable `NEXTAUTH_SECRET` en el middleware (`src/auth-middleware.ts` y `src/lib/auth.ts`) a `process.env['NEXTAUTH_SECRET']` para evitar que Next.js la congele como `undefined` durante el proceso de build estático (`npm run build`). Esto asegura que PM2 y el entorno de producción puedan inyectar la variable correctamente en tiempo de ejecución, eliminando el error `FATAL: NEXTAUTH_SECRET no configurado`.
+  - Se corrigió un error en el esquema y validación de `api-key/route.ts` que intentaba insertar campos inexistentes (`organizationId`, `keyHash`), resolviendo el error `[API-KEY-GET] PrismaClientValidationError` y permitiendo la correcta lectura y creación de claves de API.
+
+### Archivos Afectados Relevantes
+- `src/auth-middleware.ts`
+- `src/lib/auth.ts`
+- `src/app/api/tenant/api-key/route.ts`
+- `package.json`
+
+---
+
 ## v1.21.1 - 2026-11-04
 
 ### Resumen
