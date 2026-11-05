@@ -54,9 +54,9 @@ function mapZodToSafe(_err: z.ZodError): { error: string; details: string } {
 
 export async function POST(request: NextRequest) {
   const startTs = Date.now()
-  const res = NextResponse.next()
-  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => res.headers.set(k, v))
-  res.headers.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
+  const baseHeaders = new Headers()
+  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
+  baseHeaders.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
 
   try {
     const ip = getRealClientIp(request.headers)
@@ -64,24 +64,24 @@ export async function POST(request: NextRequest) {
     const contentLenRaw = request.headers.get('content-length')
     const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
     if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
 
     const rawBodyBuf = await request.arrayBuffer()
     if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: res.headers })
+      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
     }
 
     let body: unknown
     try {
       body = JSON.parse(Buffer.from(rawBodyBuf).toString('utf8') || '{}')
     } catch {
-      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: res.headers })
+      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders })
     }
 
     const validatedData = signUpSchema.safeParse(body)
     if (!validatedData.success) {
-      return NextResponse.json(mapZodToSafe(validatedData.error), { status: 400, headers: res.headers })
+      return NextResponse.json(mapZodToSafe(validatedData.error), { status: 400, headers: baseHeaders })
     }
     const { name, email, password } = validatedData.data
     const normalizedEmail = email.toLowerCase().trim()
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     if (!rlIpOk) {
       return NextResponse.json(
         { error: 'Demasiados intentos de registro. Por favor intente más tarde.' },
-        { status: 429, headers: res.headers }
+        { status: 429, headers: baseHeaders }
       )
     }
 
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     if (!rlIpEmailOk) {
       const delta = Date.now() - startTs
       if (delta < 250) await new Promise<void>((r) => setTimeout(r, 250 - delta))
-      return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: res.headers })
+      return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: baseHeaders })
     }
 
     const existingUser = await prisma.user.findUnique({
@@ -116,14 +116,14 @@ export async function POST(request: NextRequest) {
       }
       const delta = Date.now() - startTs
       if (delta < 250) await new Promise<void>((r) => setTimeout(r, 250 - delta))
-      return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: res.headers })
+      return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: baseHeaders })
     }
 
     const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
     const localPart = normalizedEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
     if (!localPart) {
-      return NextResponse.json({ error: 'Email inválido para crear organización' }, { status: 400, headers: res.headers })
+      return NextResponse.json({ error: 'Email inválido para crear organización' }, { status: 400, headers: baseHeaders })
     }
     const baseSlug = localPart
     const collisionCount = await prisma.organization.count({ where: { slug: { startsWith: baseSlug } } })
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const delta = Date.now() - startTs
     if (delta < 250) await new Promise<void>((r) => setTimeout(r, 250 - delta))
-    return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: res.headers })
+    return NextResponse.json(UNIFORM_REGISTER_RESP, { status: 202, headers: baseHeaders })
 
   } catch (error) {
     const safe = safeErrSummarySat(error)
@@ -197,12 +197,12 @@ export async function POST(request: NextRequest) {
 
     if (error instanceof z.ZodError) {
       const safeZod = mapZodToSafe(error)
-      return NextResponse.json(safeZod, { status: 400, headers: res.headers })
+      return NextResponse.json(safeZod, { status: 400, headers: baseHeaders })
     }
 
     return NextResponse.json(
       { error: 'Error interno del servidor' },
-      { status: 500, headers: res.headers }
+      { status: 500, headers: baseHeaders }
     )
   }
 }
