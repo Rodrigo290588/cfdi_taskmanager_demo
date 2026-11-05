@@ -2,7 +2,8 @@ import { TextEncoder } from 'util'
 import crypto from 'node:crypto'
 
 export function getAuthSecretOrThrow(): Uint8Array {
-  const raw = process.env.NEXTAUTH_SECRET?.trim()
+  const envSecret = process.env['AUTH_SECRET'] || process.env['NEXTAUTH_SECRET']
+  const raw = envSecret?.trim()
   if (!raw || raw.length < 32) {
     const msg =
       process.env.NODE_ENV === 'production'
