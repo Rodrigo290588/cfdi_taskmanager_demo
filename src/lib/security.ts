@@ -2,11 +2,21 @@ import { TextEncoder } from 'util'
 import crypto from 'node:crypto'
 
 export function getAuthSecretOrThrow(): Uint8Array {
-  // Evitar que Next.js congele la variable como "undefined" en tiempo de build
-  const getEnv = (key: string) => process.env[key]
-  const envSecret = getEnv('AUTH_SECRET') || getEnv('NEXTAUTH_SECRET')
+  // Try to get from process.env directly first to allow runtime overrides (PM2, etc)
+  let raw = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+
+  // If not found, try the dynamic accessor in case it was hidden from webpack
+  if (!raw) {
+    const getEnv = (key: string) => process.env[key]
+    raw = getEnv('AUTH_SECRET') || getEnv('NEXTAUTH_SECRET')
+  }
+
+  // Remove potential quotes if passed incorrectly via PM2
+  if (raw && (raw.startsWith('"') || raw.startsWith("'"))) {
+    raw = raw.replace(/^["']|["']$/g, '')
+  }
   
-  const raw = envSecret?.trim()
+  raw = raw?.trim()
   if (!raw || raw.length < 32) {
     const msg =
       process.env.NODE_ENV === 'production'

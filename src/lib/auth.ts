@@ -272,26 +272,7 @@ const authOptionsBase: NextAuthConfig = {
   pages: { signIn: "/auth/signin" }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
-  const host = request?.headers?.get?.("host")
-  console.log("[auth.ts] NextAuth callback called. request is undefined?", !request, "host:", host);
-  const normalizedHost = (host ?? "").trim().toLowerCase()
-  const hostnameOnly = normalizedHost.split(":")[0]
-  const isLocalDevHost =
-    normalizedHost === "localhost:3000" ||
-    normalizedHost === "localhost:3001" ||
-    normalizedHost === "127.0.0.1:3000" ||
-    normalizedHost === "127.0.0.1:3001" ||
-    hostnameOnly === "localhost" ||
-    hostnameOnly === "127.0.0.1" ||
-    hostnameOnly === "::1"
-  const strictlyTrusted = isHostTrustedStrict(host)
-  const isProd = process.env.NODE_ENV === "production"
-  let trustHost: boolean
-  if (isProd) {
-    trustHost = strictlyTrusted
-  } else {
-    trustHost = strictlyTrusted || isLocalDevHost || process.env.AUTH_TRUST_HOST === "true"
-  }
-  return { ...authOptionsBase, trustHost }
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authOptionsBase,
+  trustHost: process.env.NODE_ENV !== "production" || process.env.AUTH_TRUST_HOST === "true",
 })
