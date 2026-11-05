@@ -18,6 +18,8 @@ import { ProtectedRoute } from '@/components/auth/protected-route'
 import { PermissionRequired } from '@/components/auth/permission-guard'
 import { Permission } from '@/lib/permissions'
 
+import { useTenant } from '@/hooks/use-tenant'
+
 export interface Invitation {
   id: string
   email: string
@@ -34,6 +36,8 @@ interface ActiveUser extends Invitation {
 }
 
 function UsersManagementPage() {
+  const { tenantState } = useTenant()
+  const orgId = tenantState?.organizationId
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,7 +73,8 @@ function UsersManagementPage() {
 
   async function fetchInvitations() {
     try {
-      const response = await fetch('/api/admin/users/invite')
+      const url = orgId ? `/api/admin/users/invite?orgId=${orgId}` : '/api/admin/users/invite'
+      const response = await fetch(url)
       const data = await response.json()
 
       if (!response.ok) {
@@ -86,7 +91,8 @@ function UsersManagementPage() {
 
   async function fetchActiveUsers() {
     try {
-      const response = await fetch('/api/admin/users', { cache: 'no-store' })
+      const url = orgId ? `/api/admin/users?orgId=${orgId}` : '/api/admin/users'
+      const response = await fetch(url, { cache: 'no-store' })
       const data = await response.json()
 
       if (!response.ok) {
@@ -102,6 +108,7 @@ function UsersManagementPage() {
   }
 
   useEffect(() => {
+    if (!orgId) return;
     const timeoutId = setTimeout(() => {
       void fetchInvitations()
       void fetchActiveUsers()
@@ -121,7 +128,7 @@ function UsersManagementPage() {
       window.removeEventListener('member-modules-changed', handleRefresh)
       window.removeEventListener('company-access-changed', handleRefresh)
     }
-  }, [])
+  }, [orgId])
 
   const getRoleBadgeVariant = (role: string, isCustomRole?: boolean) => {
     if (isCustomRole) return 'default'

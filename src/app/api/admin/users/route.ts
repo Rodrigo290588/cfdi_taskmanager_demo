@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma'
 // - Anterior: permitía membership.role === 'ADMIN' (rol de membresía local)
 // - Ahora: permitir sólo (organization.ownerId === session.user.id) OR (session.user.systemRole in {SUPER_ADMIN, ADMIN})
 // - reqId añadido para trazabilidad
-export async function GET() {
+export async function GET(request: NextRequest) {
   const reqId = crypto.randomUUID()
   try {
     const session = await auth()
@@ -19,11 +19,15 @@ export async function GET() {
       )
     }
 
+    const url = new URL(request.url);
+    const requestedOrgId = url.searchParams.get('orgId');
+
     // Get user's organization
     const membership = await prisma.member.findFirst({
       where: {
         userId: session.user.id,
-        status: 'APPROVED'
+        status: 'APPROVED',
+        ...(requestedOrgId ? { organizationId: requestedOrgId } : {})
       },
       include: { organization: true }
     })
@@ -37,8 +41,9 @@ export async function GET() {
 
     const isOwner = membership.organization.ownerId === session.user.id
     const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+    const isAdmin = membership.role === 'ADMIN'
 
-    if (!isOwner && !isSuperAdmin) {
+    if (!isOwner && !isSuperAdmin && !isAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para ver los usuarios', reqId },
         { status: 403, headers: { 'X-Request-Id': reqId } }

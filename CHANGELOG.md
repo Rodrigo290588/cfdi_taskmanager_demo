@@ -1,6 +1,24 @@
-# Changelog
+﻿# Changelog
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
+
+## v1.21.3 - 2026-11-05
+
+### Resumen
+- **Corrección de Asignación de Roles (RBAC)**: Se solucionó un problema crítico donde el sistema no respetaba el rol de "Administrador" de un usuario recién invitado. El fallo ocurría debido a una validación errónea en el frontend que no proporcionaba el identificador de la organización (`organizationId`), lo que causaba que el sistema evaluara los permisos a nivel global en lugar del nivel de la empresa.
+- **Flexibilización de Permisos Administrativos**: Se ajustaron las políticas de seguridad en las rutas del API de administración de usuarios (`/api/admin/users/route.ts`, `/api/admin/users/invite/route.ts`, etc.) para permitir explícitamente que los miembros con rol `ADMIN` en la organización local puedan listar, invitar y gestionar usuarios, comportamiento que antes estaba restringido únicamente al propietario original (Owner) o a los Super Administradores.
+
+### Archivos Afectados Relevantes
+- `src/hooks/use-permissions.ts`
+- `src/app/admin/dashboard/page.tsx`
+- `src/app/admin/users/page.tsx`
+- `src/app/api/admin/dashboard/route.ts`
+- `src/app/api/admin/users/route.ts`
+- `src/app/api/admin/users/invite/route.ts`
+- `src/app/api/admin/users/bulk-invite/route.ts`
+- `src/app/api/admin/users/invite/[id]/route.ts`
+
+---
 
 ## v1.21.2 - 2026-11-04
 
@@ -721,4 +739,5 @@ Actualizado `tests/provider/fixtures/payloads.ts` L1+L41+L306-L314:
 
 ### Documentacion
 - Se agrego la guia `docs/arquitectura/trae-reinstalacion-correcciones.md` para reaplicar correcciones base en futuras instalaciones.
+
 

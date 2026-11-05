@@ -87,14 +87,19 @@ interface DashboardData {
   recentAuditLogs: RecentAuditLog[]
 }
 
+import { useTenant } from '@/hooks/use-tenant'
+
 export default function AdminDashboardPage() {
   const router = useRouter()
+  const { tenantState } = useTenant()
+  const orgId = tenantState?.organizationId
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   async function fetchDashboardData() {
     try {
-      const response = await fetch('/api/admin/dashboard', {
+      const url = orgId ? `/api/admin/dashboard?orgId=${orgId}` : '/api/admin/dashboard'
+      const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -119,12 +124,10 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
+    if (orgId) {
       void fetchDashboardData()
-    }, 0)
-
-    return () => clearTimeout(timeoutId)
-  }, [])
+    }
+  }, [orgId])
 
   const getStatusBadge = (status: string) => {
     const variants = {

@@ -216,8 +216,9 @@ const authOptionsBase: NextAuthConfig = {
             select: { organizationId: true, role: true },
           })
           token.memberships = mems as JWT["memberships"]
-        } catch {
-          // JWT mint no debe hard-fallar por DB transient errors.
+          console.log('[auth.ts] jwt() fetched memberships:', mems)
+        } catch (e) {
+          console.error('[auth.ts] jwt() error fetching memberships:', e)
         }
       }
       return token
@@ -233,6 +234,7 @@ const authOptionsBase: NextAuthConfig = {
         if (token.memberships) {
           ;(session.user as { memberships?: unknown }).memberships = token.memberships
         }
+        console.log('[auth.ts] session() returning memberships:', token.memberships)
       }
       return session
     },

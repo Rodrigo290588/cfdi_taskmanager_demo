@@ -46,11 +46,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only organization owner or super admin can invite users
+    // Only organization owner, admin or super admin can invite users
     const isOwner = membership.organization.ownerId === session.user.id
     const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+    const isAdmin = membership.role === 'ADMIN'
 
-    if (!isOwner && !isSuperAdmin) {
+    if (!isOwner && !isSuperAdmin && !isAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para invitar usuarios' },
         { status: 403 }
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth()
     
@@ -112,11 +113,15 @@ export async function GET() {
       )
     }
 
+    const url = new URL(request.url);
+    const requestedOrgId = url.searchParams.get('orgId');
+
     // Get user's organization
     const membership = await prisma.member.findFirst({
       where: {
         userId: session.user.id,
-        status: { equals: 'APPROVED' }
+        status: { equals: 'APPROVED' },
+        ...(requestedOrgId ? { organizationId: requestedOrgId } : {})
       },
       include: {
         organization: true
@@ -130,11 +135,12 @@ export async function GET() {
       )
     }
 
-    // Only organization owner or super admin can view pending invitations
+    // Only organization owner, admin or super admin can view pending invitations
     const isOwner = membership.organization.ownerId === session.user.id
     const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
+    const isAdmin = membership.role === 'ADMIN'
 
-    if (!isOwner && !isSuperAdmin) {
+    if (!isOwner && !isSuperAdmin && !isAdmin) {
       return NextResponse.json(
         { error: 'No tienes permisos para ver las invitaciones' },
         { status: 403 }

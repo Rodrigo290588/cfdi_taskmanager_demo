@@ -86,22 +86,28 @@ export async function GET(request: NextRequest) {
     // Permiso ADMIN_DASHBOARD (ya existía). Enriquecer user para hasPermission con memberships.
     // ------------------------------------------------------------------
     const enrichedAdmin = await enrichUserWithMemberships({ id: user.id, systemRole: user.systemRole as SystemRole });
-    if (!hasPermission(enrichedAdmin, Permission.ADMIN_DASHBOARD)) {
-      return NextResponse.json(
-        { ok:false, error:'No tienes permisos de administrador' },
-        { status: 403, headers: SECURITY_HEADERS }
-      );
-    }
 
     // [SAST-FIX #2] Multi-tenant scoping: resolver organizationId con status=APPROVED
     //              y filtrar TODAS las queries para NO exponer datos de otras organizaciones.
-    const member = await prisma.member.findFirst({
-      where: {
-        userId: user.id,
-        status: 'APPROVED'
-      },
-      select: { organizationId: true, role: true }
-    });
+    // Try to get orgId from query param first
+    const url = new URL(request.url);
+    const requestedOrgId = url.searchParams.get('orgId');
+
+    let member;
+    if (requestedOrgId) {
+      member = await prisma.member.findFirst({
+        where: { userId: user.id, status: 'APPROVED', organizationId: requestedOrgId },
+        select: { organizationId: true, role: true }
+      });
+    } else {
+      // Find the first membership where the user has ADMIN_DASHBOARD permission
+      const memberships = await prisma.member.findMany({
+        where: { userId: user.id, status: 'APPROVED' },
+        select: { organizationId: true, role: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      member = memberships.find(m => hasPermission(enrichedAdmin, Permission.ADMIN_DASHBOARD, m.organizationId)) || memberships[0];
+    }
 
     if (!member) {
       return NextResponse.json(
@@ -109,7 +115,15 @@ export async function GET(request: NextRequest) {
         { status: 403, headers: SECURITY_HEADERS }
       );
     }
+
     const organizationId = member.organizationId;
+
+    if (!hasPermission(enrichedAdmin, Permission.ADMIN_DASHBOARD, organizationId)) {
+      return NextResponse.json(
+        { ok:false, error:'No tienes permisos de administrador' },
+        { status: 403, headers: SECURITY_HEADERS }
+      );
+    }
 
     const orgRl = await rateLimit(`admin-dash-org:${organizationId}`, { limit: 120, interval: 60_000 });
     if (!orgRl.success) {

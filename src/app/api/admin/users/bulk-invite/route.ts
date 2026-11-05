@@ -313,9 +313,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No perteneces a ninguna organización' }, { status: 404 })
     }
 
+    // Only organization owner, admin or super admin can invite users
     const isOwner = membership.organization.ownerId === session.user.id
     const isSuperAdmin = (session.user.systemRole as string) === 'SUPER_ADMIN'
-    if (!isOwner && !isSuperAdmin) {
+    const isAdmin = membership.role === 'ADMIN'
+
+    if (!isOwner && !isSuperAdmin && !isAdmin) {
       return NextResponse.json({ error: 'No tienes permisos para invitar usuarios' }, { status: 403 })
     }
 
