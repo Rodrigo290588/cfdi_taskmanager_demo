@@ -1,0 +1,1 @@
+﻿SELECT u.email, o.name as org_name, m.role, m.status, o."ownerId", u.id FROM users u JOIN members m ON u.id = m."userId" JOIN organizations o ON o.id = m."organizationId" WHERE u.email = 'admin@itcomplements.com';

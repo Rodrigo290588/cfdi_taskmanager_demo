@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import crypto from 'crypto'
-import { rateLimit } from '@/lib/rate-limit'
+import * as crypto from 'node:crypto'
+import { rateLimit, AUTH_RATE_LIMITS } from '@/lib/rate-limit'
 import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
 import { getRealClientIp, fingerprint } from '@/lib/security'
-import { AUTH_RATE_LIMITS } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +29,10 @@ function applySecHeaders(res: NextResponse, cachePrivate = true): NextResponse {
 function maskEmail(email: string | null | undefined): string {
   if (!email || typeof email !== 'string') return ''
   const e = email.trim().toLowerCase()
-  if (!/^[^@]+@[^@]+\.[^@]+$/.test(e)) return ''
+  const atIdx = e.indexOf('@')
+  if (atIdx <= 0 || atIdx !== e.lastIndexOf('@')) return ''
+  const domainPart = e.slice(atIdx + 1)
+  if (!domainPart.includes('.')) return ''
   const [local, domain] = e.split('@') as [string, string]
   const pre = local.slice(0, Math.min(3, Math.max(1, local.length)))
   return `${pre}${'*'.repeat(Math.max(3, local.length - pre.length))}@${domain}`
@@ -104,8 +106,7 @@ export async function GET(request: NextRequest) {
           user: { select: { email: true, name: true, password: true } }
         }
       })
-    } catch (dbErr) {
-      void dbErr
+    } catch {
       membership = null
     }
 
@@ -141,7 +142,6 @@ export async function GET(request: NextRequest) {
       sameSite: 'strict',
       path: '/api/auth',
       maxAge: 60,
-      partitioned: true,
       priority: 'high'
     })
 

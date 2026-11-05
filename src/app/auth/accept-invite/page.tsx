@@ -11,7 +11,7 @@ import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 const TOKEN_RE = /^[A-Za-z0-9\-_]{8,128}$/
 
 function sanitizeHtmlString(raw: string): string {
-  return String(raw || '').replace(/[<>`]/g, '')
+  return String(raw || '').replaceAll(/[<>`]/g, '')
 }
 
 function AcceptInviteContent() {
@@ -64,7 +64,7 @@ function AcceptInviteContent() {
     return () => clearTimeout(timeoutId)
   }, [tokenValid])
 
-  const handleAccept = async (e: React.FormEvent) => {
+  const handleAccept = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setSubmitting(true)
 

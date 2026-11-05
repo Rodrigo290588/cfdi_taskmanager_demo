@@ -57,7 +57,7 @@ function isAbortError(error: unknown) {
 
 type NavIcon = React.ComponentType<{ className?: string }>
 
-type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | string
+type CompanyRole = 'ADMIN' | 'AUDITOR' | 'VIEWER' | (string & {})
 interface FiscalEntity {
   id: string
   rfc: string
@@ -847,9 +847,11 @@ export function Sidebar({ isOpen, onToggle }: Readonly<SidebarProps>) {
   return (
     <>
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-600 bg-opacity-75 z-40 lg:hidden"
+        <button 
+          type="button"
+          className="fixed inset-0 bg-gray-600 bg-opacity-75 z-40 lg:hidden w-full h-full cursor-default border-none outline-none"
           onClick={onToggle}
+          aria-label="Cerrar menú"
         />
       )}
 

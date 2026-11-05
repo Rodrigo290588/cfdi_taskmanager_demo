@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { validatePasswordStrength } from '@/lib/password-validator'
 import { rateLimit, AUTH_RATE_LIMITS } from '@/lib/rate-limit'
 import { z } from 'zod'
-import crypto from 'crypto'
+import * as crypto from 'node:crypto'
 import { getAuthSecretOrThrow, getRealClientIp, fingerprint } from '@/lib/security'
 import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
 
@@ -46,6 +46,71 @@ function badPass(mensaje: string) {
   }
 }
 
+async function applyRateLimit(request: NextRequest, baseHeaders: Headers): Promise<NextResponse | null> {
+  const ip = getRealClientIp(request.headers)
+  const rl = await rateLimit(
+    AUTH_RATE_LIMITS.validatePassIp.key + ':' + ip,
+    { interval: AUTH_RATE_LIMITS.validatePassIp.windowMs, limit: AUTH_RATE_LIMITS.validatePassIp.limit }
+  )
+  if (!rl.success) {
+    return NextResponse.json(badPass('Demasiadas solicitudes. Intenta más tarde.'), { status: 429, headers: baseHeaders })
+  }
+  return null
+}
+
+async function extractPasswordFromBody(request: NextRequest, baseHeaders: Headers): Promise<{ password?: string, errorResponse?: NextResponse }> {
+  const contentLenRaw = request.headers.get('content-length')
+  const contentLen = contentLenRaw ? Number.parseInt(contentLenRaw, 10) : Number.NaN
+  if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
+    return { errorResponse: NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders }) }
+  }
+
+  const rawBodyBuf = await request.arrayBuffer()
+  if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
+    return { errorResponse: NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders }) }
+  }
+  const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
+
+  const schema = z.object({ password: z.string().max(128) })
+  try {
+    const parsed = schema.parse(rawBody.length ? JSON.parse(rawBody) : {})
+    return { password: parsed.password }
+  } catch {
+    return { errorResponse: NextResponse.json(badPass('Datos inválidos'), { status: 400, headers: baseHeaders }) }
+  }
+}
+
+async function getUserFromSession(request: NextRequest): Promise<{ userName: string, userEmail: string }> {
+  const sessionCookie = request.cookies.get('invite_session')
+  if (!sessionCookie?.value) {
+    return { userName: '', userEmail: '' }
+  }
+
+  try {
+    const secret = getAuthSecretOrThrow()
+    const hmacKey = deriveHmacKey(secret)
+    const unsignedToken = verifyAndStripCookieSig(sessionCookie.value, hmacKey) || sessionCookie.value
+    const { payload } = await jwtVerify(unsignedToken, secret, { algorithms: ['HS256'] })
+    
+    if (payload.userId) {
+      const user = await prisma.user.findUnique({ where: { id: payload.userId as string } })
+      if (user) {
+        return { userName: user.name || '', userEmail: user.email || '' }
+      }
+    }
+  } catch (jwtErr) {
+    const ip = getRealClientIp(request.headers)
+    const fp = fingerprint(sessionCookie.value)
+    const ua = (request.headers.get('user-agent') || '').slice(0, 96)
+    const safe = safeErrSummarySat(jwtErr)
+    console.warn(
+      `[auth:validate-password] jwt_verify_failed fp=${fp} ip=${ip.slice(0, 32)} ua=${ua.slice(0, 64)} name=${safe.name} safeFp=${safe.incidentFingerprint}`
+    )
+  }
+  
+  return { userName: '', userEmail: '' }
+}
+
 export async function POST(request: NextRequest) {
   const baseHeaders = new Headers()
   Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
@@ -57,61 +122,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(badPass('Solicitud inválida'), { status: 415, headers: baseHeaders })
     }
 
-    const ip = getRealClientIp(request.headers)
-    const rl = await rateLimit(
-      AUTH_RATE_LIMITS.validatePassIp.key + ':' + ip,
-      { interval: AUTH_RATE_LIMITS.validatePassIp.windowMs, limit: AUTH_RATE_LIMITS.validatePassIp.limit }
-    )
-    if (!rl.success) {
-      return NextResponse.json(badPass('Demasiadas solicitudes. Intenta más tarde.'), { status: 429, headers: baseHeaders })
-    }
+    const rateLimitError = await applyRateLimit(request, baseHeaders)
+    if (rateLimitError) return rateLimitError
 
-    const contentLenRaw = request.headers.get('content-length')
-    const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
-    if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders })
-    }
+    const { password, errorResponse } = await extractPasswordFromBody(request, baseHeaders)
+    if (errorResponse || !password) return errorResponse as NextResponse
 
-    const rawBodyBuf = await request.arrayBuffer()
-    if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json(badPass('Payload excede tamaño permitido'), { status: 413, headers: baseHeaders })
-    }
-    const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
-
-    const sessionCookie = request.cookies.get('invite_session')
-    let userName = ''
-    let userEmail = ''
-    if (sessionCookie?.value) {
-      try {
-        const secret = getAuthSecretOrThrow()
-        const hmacKey = deriveHmacKey(secret)
-        const unsignedToken = verifyAndStripCookieSig(sessionCookie.value, hmacKey) || sessionCookie.value
-        const { payload } = await jwtVerify(unsignedToken, secret, { algorithms: ['HS256'] })
-        if (payload.userId) {
-          const user = await prisma.user.findUnique({ where: { id: payload.userId as string } })
-          if (user) {
-            userName = user.name || ''
-            userEmail = user.email || ''
-          }
-        }
-      } catch (jwtErr) {
-        const fp = fingerprint(sessionCookie.value)
-        const ua = (request.headers.get('user-agent') || '').slice(0, 96)
-        const safe = safeErrSummarySat(jwtErr)
-        console.warn(
-          `[auth:validate-password] jwt_verify_failed fp=${fp} ip=${ip.slice(0, 32)} ua=${ua.slice(0, 64)} name=${safe.name} safeFp=${safe.incidentFingerprint}`
-        )
-      }
-    }
-
-    const schema = z.object({ password: z.string().max(128) })
-    let password: string
-    try {
-      const parsed = schema.parse(rawBody.length ? JSON.parse(rawBody) : {})
-      password = parsed.password
-    } catch {
-      return NextResponse.json(badPass('Datos inválidos'), { status: 400, headers: baseHeaders })
-    }
+    const { userName, userEmail } = await getUserFromSession(request)
 
     return NextResponse.json(validatePasswordStrength(password, userName, userEmail), { headers: baseHeaders })
 

@@ -3,9 +3,9 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { jwtVerify } from 'jose'
 import { validatePasswordStrength } from '@/lib/password-validator'
-import { getAuthSecretOrThrow, fingerprint, getRealClientIp } from '@/lib/security'
+import { getAuthSecretOrThrow, fingerprint } from '@/lib/security'
 import { PASSWORD_BCRYPT_ROUNDS } from '@/lib/auth-config'
-import crypto from 'crypto'
+import * as crypto from 'node:crypto'
 import { z } from 'zod'
 import { rateLimit, AUTH_RATE_LIMITS } from '@/lib/rate-limit'
 import { SAT_SECURITY_HEADERS, safeErrSummarySat } from '@/lib/sat-gate-helpers'
@@ -42,16 +42,147 @@ function verifyAndStripCookieSig(signed: string, key: Uint8Array): string | null
   return raw
 }
 
+async function checkRateLimitRegistration(sessionCookieValue: string, baseHeaders: Headers) {
+  const fpSession = fingerprint(sessionCookieValue)
+  const rlKeySession = AUTH_RATE_LIMITS.completeRegId.key + ':' + fpSession
+  try {
+    const rl = await rateLimit(rlKeySession, { interval: AUTH_RATE_LIMITS.completeRegId.windowMs, limit: AUTH_RATE_LIMITS.completeRegId.limit })
+    if (!rl.success) {
+      const waitMin = Math.ceil((rl.retryAfterMs || 0) / 60000)
+      return NextResponse.json(
+        { error: waitMin > 0 ? `Demasiados intentos. Intenta en ${waitMin} minutos.` : 'Demasiados intentos. Intenta más tarde.' },
+        { status: 429, headers: baseHeaders }
+      )
+    }
+  } catch (rlErr) {
+    const s = safeErrSummarySat(rlErr)
+    console.warn('[auth:complete-reg] rate limit unavailable:', s.name, s.incidentFingerprint)
+  }
+  return null
+}
+
+async function extractPayload(request: NextRequest, baseHeaders: Headers) {
+  const contentLenRaw = request.headers.get('content-length')
+  const contentLen = contentLenRaw ? Number.parseInt(contentLenRaw, 10) : Number.NaN
+  if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
+    return { errorResponse: NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders }) }
+  }
+
+  const rawBodyBuf = await request.arrayBuffer()
+  if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
+    return { errorResponse: NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders }) }
+  }
+  const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
+
+  let body: unknown
+  try { 
+    body = rawBody ? JSON.parse(rawBody) : {} 
+  } catch {
+    return { errorResponse: NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders }) }
+  }
+  return { body }
+}
+
+async function verifySessionAndGetIds(sessionCookieValue: string, secret: Uint8Array, baseHeaders: Headers) {
+  const hmacKey = deriveHmacKey(secret)
+  const unsignedCookie = verifyAndStripCookieSig(sessionCookieValue, hmacKey) || sessionCookieValue
+
+  let userId: string | undefined
+  let memberId: string | undefined
+
+  try {
+    const { payload } = await jwtVerify(unsignedCookie, secret, {
+      algorithms: ['HS256']
+    })
+    userId = payload.userId as string
+    memberId = payload.memberId as string
+  } catch (jwtErr) {
+    const safe = safeErrSummarySat(jwtErr)
+    const fpSession = fingerprint(sessionCookieValue)
+    console.warn(
+      `[auth:complete-registration] jwt_verify_failed fp=${fpSession} errName=${safe.name} fp=${safe.incidentFingerprint}`
+    )
+    return { errorResponse: NextResponse.json({ error: 'Sesión de registro inválida o expirada' }, { status: 401, headers: baseHeaders }) }
+  }
+
+  if (!userId || !memberId) {
+    return { errorResponse: NextResponse.json({ error: 'Token malformado' }, { status: 400, headers: baseHeaders }) }
+  }
+
+  return { userId, memberId }
+}
+
+async function executeRegistrationTransaction(userId: string, memberId: string, passwordString: string, baseHeaders: Headers) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      const memberLocked = await tx.$queryRaw<Array<{ user_id: string; status: string; invitationExpiresAt: Date | null }>>`
+        SELECT user_id, status, "invitationExpiresAt" FROM members WHERE id = ${memberId} FOR NO KEY UPDATE
+      `
+      const member = memberLocked?.[0]
+      if (!member) throw new Error('MEMBER_NOT_FOUND')
+      if (member.user_id !== userId) {
+        console.error(`[complete-registration] CRITICAL mismatch: member ${memberId} no pertenece a user ${userId}`)
+        throw new Error('TOKEN_MISMATCH')
+      }
+      const validStatuses = new Set(['PENDING', 'APPROVED'])
+      if (!validStatuses.has(String(member.status))) throw new Error('MEMBER_WRONG_STATUS')
+      if (member.invitationExpiresAt && member.invitationExpiresAt < new Date()) {
+        throw new Error('INVITATION_EXPIRED')
+      }
+      
+      const user = await tx.user.findUnique({ where: { id: userId } })
+      if (!user) throw new Error('USER_NOT_FOUND')
+      if (user.password) {
+        throw new Error('USER_ALREADY_HAS_PASSWORD')
+      }
+      
+      const hashedPassword = await bcrypt.hash(passwordString, PASSWORD_BCRYPT_ROUNDS)
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          password: hashedPassword,
+          emailVerified: new Date(),
+          onboardingStep: 'COMPLETED'
+        }
+      })
+      await tx.member.update({
+        where: { id: memberId },
+        data: {
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          approvedBy: userId,
+          invitationTokenHash: null,
+          invitationExpiresAt: null
+        }
+      })
+    })
+    return null
+  } catch (txErr: unknown) {
+    const message = txErr instanceof Error ? txErr.message : String(txErr)
+    const codeMap: Record<string, { msg: string, status: number }> = {
+      MEMBER_NOT_FOUND: { msg: 'La sesión de registro no es válida.', status: 404 },
+      TOKEN_MISMATCH: { msg: 'Token de sesión inválido.', status: 403 },
+      MEMBER_WRONG_STATUS: { msg: 'Estado de membresía inválido para completar registro.', status: 409 },
+      INVITATION_EXPIRED: { msg: 'La invitación expiró. Solicita una nueva.', status: 410 },
+      USER_NOT_FOUND: { msg: 'Usuario no encontrado.', status: 404 },
+      USER_ALREADY_HAS_PASSWORD: { msg: 'El usuario ya tiene contraseña. Inicia sesión.', status: 409 }
+    }
+    const mapped = codeMap[message]
+    if (mapped) {
+      return NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: baseHeaders })
+    }
+    throw txErr
+  }
+}
+
 export async function POST(request: NextRequest) {
   const startTs = Date.now()
   const baseHeaders = new Headers()
-  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v))
+  Object.entries(SAT_SECURITY_HEADERS).forEach(([k, v]) => baseHeaders.set(k, v as string))
   baseHeaders.set('Cache-Control', 'no-store, private, no-cache, max-age=0')
 
   try {
-    const ip = getRealClientIp(request.headers)
     const sessionCookie = request.cookies.get('invite_session')
-
     if (!sessionCookie?.value) {
       return NextResponse.json(
         { error: 'Sesión de registro inválida o expirada' },
@@ -59,66 +190,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const contentLenRaw = request.headers.get('content-length')
-    const contentLen = contentLenRaw ? Number(contentLenRaw) : NaN
-    if (Number.isFinite(contentLen) && contentLen > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
-    }
+    const rlResponse = await checkRateLimitRegistration(sessionCookie.value, baseHeaders)
+    if (rlResponse) return rlResponse
 
-    const rawBodyBuf = await request.arrayBuffer()
-    if (rawBodyBuf.byteLength > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: 'Payload excede tamaño permitido' }, { status: 413, headers: baseHeaders })
-    }
-    const rawBody = Buffer.from(rawBodyBuf).toString('utf8')
-
-    const fpSession = fingerprint(sessionCookie.value)
-    const rlKeySession = AUTH_RATE_LIMITS.completeRegId.key + ':' + fpSession
-    try {
-      const rl = await rateLimit(rlKeySession, { interval: AUTH_RATE_LIMITS.completeRegId.windowMs, limit: AUTH_RATE_LIMITS.completeRegId.limit })
-      if (!rl.success) {
-        const waitMin = Math.ceil((rl.retryAfterMs || 0) / 60000)
-        return NextResponse.json(
-          { error: waitMin > 0 ? `Demasiados intentos. Intenta en ${waitMin} minutos.` : 'Demasiados intentos. Intenta más tarde.' },
-          { status: 429, headers: baseHeaders }
-        )
-      }
-    } catch (rlErr) {
-      const s = safeErrSummarySat(rlErr)
-      console.warn('[auth:complete-reg] rate limit unavailable:', s.name, s.incidentFingerprint)
-    }
-    void ip
-
-    let body: unknown
-    try { body = rawBody ? JSON.parse(rawBody) : {} } catch {
-      return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400, headers: baseHeaders })
-    }
+    const payloadResult = await extractPayload(request, baseHeaders)
+    if (payloadResult.errorResponse) return payloadResult.errorResponse
+    
+    const body = payloadResult.body
     const password = typeof body === 'object' && body !== null && 'password' in body ? String((body as Record<string, unknown>).password) : undefined
-    const secret = getAuthSecretOrThrow()
-
-    const hmacKey = deriveHmacKey(secret)
-    const unsignedCookie = verifyAndStripCookieSig(sessionCookie.value, hmacKey) || sessionCookie.value
-
-    let userId: string | undefined
-    let memberId: string | undefined
-
-    try {
-      const { payload } = await jwtVerify(unsignedCookie, secret, {
-        algorithms: ['HS256']
-      })
-      userId = payload.userId as string
-      memberId = payload.memberId as string
-    } catch (jwtErr) {
-      const safe = safeErrSummarySat(jwtErr)
-      console.warn(
-        `[auth:complete-registration] jwt_verify_failed fp=${fpSession} errName=${safe.name} fp=${safe.incidentFingerprint}`
-      )
-      return NextResponse.json({ error: 'Sesión de registro inválida o expirada' }, { status: 401, headers: baseHeaders })
-    }
-
-    if (!userId || !memberId) {
-      return NextResponse.json({ error: 'Token malformado' }, { status: 400, headers: baseHeaders })
-    }
-
+    
     const passSchema = z.object({ password: z.string().min(12).max(128) })
     const passParsed = passSchema.safeParse({ password })
     if (!passParsed.success) {
@@ -130,6 +210,12 @@ export async function POST(request: NextRequest) {
       } as const, { status: 400, headers: baseHeaders })
     }
 
+    const secret = getAuthSecretOrThrow()
+    const sessionIds = await verifySessionAndGetIds(sessionCookie.value, secret, baseHeaders)
+    if (sessionIds.errorResponse) return sessionIds.errorResponse
+    
+    const { userId, memberId } = sessionIds
+
     const user = await prisma.user.findUnique({ where: { id: userId } })
     const validationResult = validatePasswordStrength(
       passParsed.data.password,
@@ -140,63 +226,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(validationResult, { status: 400, headers: baseHeaders })
     }
 
-    try {
-      await prisma.$transaction(async (tx) => {
-        const memberLocked = await tx.$queryRawUnsafe<Array<{ user_id: string; status: string; invitation_expires_at: Date | null }>>(
-          `SELECT user_id, status, invitation_expires_at FROM "Member" WHERE id = $1 FOR NO KEY UPDATE`,
-          [memberId]
-        )
-        const member = memberLocked?.[0]
-        if (!member) throw new Error('MEMBER_NOT_FOUND')
-        if (member.user_id !== userId) {
-          console.error(`[complete-registration] CRITICAL mismatch: member ${memberId} no pertenece a user ${userId}`)
-          throw new Error('TOKEN_MISMATCH')
-        }
-        const validStatuses = new Set(['PENDING', 'APPROVED'])
-        if (!validStatuses.has(String(member.status))) throw new Error('MEMBER_WRONG_STATUS')
-        if (member.invitation_expires_at && member.invitation_expires_at < new Date()) {
-          throw new Error('INVITATION_EXPIRED')
-        }
-        if (!user) throw new Error('USER_NOT_FOUND')
-        if (user.password) {
-          throw new Error('USER_ALREADY_HAS_PASSWORD')
-        }
-        const hashedPassword = await bcrypt.hash(passParsed.data.password, PASSWORD_BCRYPT_ROUNDS)
-        await tx.user.update({
-          where: { id: userId },
-          data: {
-            password: hashedPassword,
-            emailVerified: new Date(),
-            onboardingStep: 'COMPLETED'
-          }
-        })
-        await tx.member.update({
-          where: { id: memberId },
-          data: {
-            status: 'APPROVED',
-            approvedAt: new Date(),
-            approvedBy: userId,
-            invitationTokenHash: null,
-            invitationExpiresAt: null
-          }
-        })
-      })
-    } catch (txErr: unknown) {
-      const message = txErr instanceof Error ? txErr.message : String(txErr)
-      const codeMap: Record<string, { msg: string, status: number }> = {
-        MEMBER_NOT_FOUND: { msg: 'La sesión de registro no es válida.', status: 404 },
-        TOKEN_MISMATCH: { msg: 'Token de sesión inválido.', status: 403 },
-        MEMBER_WRONG_STATUS: { msg: 'Estado de membresía inválido para completar registro.', status: 409 },
-        INVITATION_EXPIRED: { msg: 'La invitación expiró. Solicita una nueva.', status: 410 },
-        USER_NOT_FOUND: { msg: 'Usuario no encontrado.', status: 404 },
-        USER_ALREADY_HAS_PASSWORD: { msg: 'El usuario ya tiene contraseña. Inicia sesión.', status: 409 }
-      }
-      const mapped = codeMap[message]
-      if (mapped) {
-        return NextResponse.json({ error: mapped.msg }, { status: mapped.status, headers: baseHeaders })
-      }
-      throw txErr
-    }
+    const txErrorResponse = await executeRegistrationTransaction(userId as string, memberId as string, passParsed.data.password, baseHeaders)
+    if (txErrorResponse) return txErrorResponse
 
     const r = NextResponse.json({ success: true, redirect: '/auth/signin' }, { headers: baseHeaders })
     r.cookies.set({

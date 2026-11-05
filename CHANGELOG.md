@@ -2,6 +2,27 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.21.1 - 2026-11-04
+
+### Resumen
+- **Resolución de Deuda Técnica (SonarQube)**: Se resolvieron múltiples advertencias de análisis estático en endpoints de autenticación e invitaciones, reduciendo la complejidad cognitiva mediante la extracción de lógicas complejas en funciones de ayuda (helpers), reemplazando importaciones genéricas por módulos nativos de Node.js (`node:crypto`), utilizando propiedades y métodos estáticos en lugar de globales (`Number.parseInt()`, `Number.NaN`), y eliminando importaciones redundantes y palabras reservadas innecesarias (`void`).
+- **Mejora de Accesibilidad y DOM**: Actualización del menú de navegación lateral (`sidebar.tsx`) reemplazando elementos no interactivos con manejadores (divs simulados) por botones nativos y eliminando tipos redundantes mediante el patrón de intersección `(string & {})`.
+- **Correcciones Críticas de Seguridad y Sesión (Errores 500 y 401)**:
+  - Se eliminó el uso de la bandera `partitioned: true` en cookies de sesión de entornos de desarrollo, resolviendo el error de "Sesión inválida o expirada" provocado por el rechazo de navegadores sin conexión HTTPS.
+  - Se corrigió un error crítico 500 en `complete-registration` derivado de discrepancias en la convención de nomenclatura de tablas (`members` vs `"Member"`) y columnas en consultas SQL nativas (`$queryRaw`) contra PostgreSQL.
+  - Se corrigieron los fallos causados por el uso inadecuado de `NextResponse.next()` para enviar respuestas JSON en endpoints API de Next.js.
+- **Optimización de Expresiones Regulares**: Se refactorizó la validación del formato de correo electrónico para prevenir posibles fallos de rendimiento (backtracking no lineal) utilizando métodos de manipulación de cadenas en lugar de Regex.
+
+### Archivos Afectados Relevantes
+- `src/app/api/auth/complete-registration/route.ts`
+- `src/app/api/auth/invite/accept/route.ts`
+- `src/app/api/auth/invite/verify/route.ts`
+- `src/app/api/auth/validate-password/route.ts`
+- `src/components/layout/sidebar.tsx`
+- `src/app/auth/accept-invite/page.tsx`
+
+---
+
 ## v1.21.0 - 2026-10-30
 
 ### Resumen
