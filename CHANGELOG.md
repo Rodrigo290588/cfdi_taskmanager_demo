@@ -2,6 +2,18 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.21.5 - 2026-11-05
+
+### Resumen
+- **Corrección de Registro de Usuario (Error 500)**: Se corrigió un error en el endpoint de finalización de registro (`/api/auth/complete-registration`) causado por un nombre de columna incorrecto (`organizationId` en lugar de `organization_id`) en una consulta SQL directa (`$queryRaw`) con Prisma. Esto impedía que se guardara la contraseña en la base de datos y generaba un error interno del servidor.
+- **Configuración Estática de NextAuth**: Se modificó la exportación de configuración en `src/lib/auth.ts` para evitar usar funciones "factory" que rompían la compatibilidad con el App Router de Next.js, eliminando los errores `NextResponse.next() was used in a app route handler`.
+- **Limpieza de variables de entorno de PM2**: Se añadió saneamiento en `src/lib/security.ts` para eliminar comillas residuales que PM2 en Windows inyecta en la variable `NEXTAUTH_SECRET`, lo que resolvía el fallo criptográfico de descifrado `JWTSessionError`.
+
+### Archivos Afectados Relevantes
+- `src/app/api/auth/complete-registration/route.ts`
+- `src/lib/auth.ts`
+- `src/lib/security.ts`
+
 ## v1.21.4 - 2026-11-05
 
 ### Resumen
