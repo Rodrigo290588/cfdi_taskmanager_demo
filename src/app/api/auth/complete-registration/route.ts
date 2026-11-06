@@ -117,12 +117,12 @@ async function executeRegistrationTransaction(userId: string, memberId: string, 
   let organizationId = ''
   try {
     await prisma.$transaction(async (tx) => {
-      const memberLocked = await tx.$queryRaw<Array<{ user_id: string; status: string; invitationExpiresAt: Date | null; organizationId: string }>>`
-        SELECT user_id, status, "invitationExpiresAt", "organizationId" FROM members WHERE id = ${memberId} FOR NO KEY UPDATE
+      const memberLocked = await tx.$queryRaw<Array<{ user_id: string; status: string; invitationExpiresAt: Date | null; organization_id: string }>>`
+        SELECT user_id, status, "invitationExpiresAt", "organization_id" FROM members WHERE id = ${memberId} FOR NO KEY UPDATE
       `
       const member = memberLocked?.[0]
       if (!member) throw new Error('MEMBER_NOT_FOUND')
-      organizationId = member.organizationId
+      organizationId = member.organization_id
 
       if (member.user_id !== userId) {
         console.error(`[complete-registration] CRITICAL mismatch: member ${memberId} no pertenece a user ${userId}`)
