@@ -20,7 +20,7 @@ jest.mock('@/lib/prisma', () => ({
 import { prisma } from '@/lib/prisma'
 import { createAuditEntry } from '@/lib/audit'
 
-const mockCreate = prisma.auditLog.create as jest.Mock<Promise<any>, any[]>
+const mockCreate = prisma.auditLog.create as unknown as jest.Mock<Promise<any>, any[]>
 
 beforeEach(() => mockCreate.mockClear())
 

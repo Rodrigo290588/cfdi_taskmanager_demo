@@ -1,6 +1,7 @@
 import { Prisma, CfdiType, SatStatus } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { createLogger } from "@/lib/logger"
 import { hasPermission, Permission } from "@/lib/permissions"
 import {
   FiscalControlQuerySchema,
@@ -11,26 +12,496 @@ import {
   parsePositiveInt,
   massDownloadJsonResponse,
 } from "@/lib/mass-downloads-route-utils"
+import {
+  readFiscalControlConciliationPage,
+  readFiscalControlConciliationTotals,
+  readFiscalControlMonthlyTypeDistribution,
+  readFiscalControlStatusDifferences,
+} from "@/lib/fiscal-control-conciliation-service"
+import {
+  FISCAL_CONTROL_STATUS_DIFFERENCES,
+  type FiscalControlStatusDifference,
+} from "@/lib/fiscal-control-conciliation-types"
+import {
+  canAccessFiscalControlOrganization,
+  mapFiscalControlConciliationRow,
+} from "@/lib/fiscal-control-response-adapter"
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-function parseNumber(value: string | null): number | null {
-  if (!value) return null
+function parseNumber(value: string | null): number | undefined {
+  if (!value) return undefined
   const n = Number(value)
-  return Number.isFinite(n) ? n : null
+  return Number.isFinite(n) ? n : undefined
+}
+
+type IssuanceRange = {
+  issuanceStartDate?: Date
+  issuanceEndDate?: Date
+}
+
+type CompleteIssuanceRange = Required<IssuanceRange>
+
+function parseDateOnly(value: string | undefined, endOfDay = false): Date | undefined {
+  if (!value) return undefined
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999Z" : "00:00:00.000Z"}`)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+function resolveRequestedIssuanceRange(
+  startDate: string | undefined,
+  endDate: string | undefined,
+): CompleteIssuanceRange | undefined {
+  const issuanceStartDate = parseDateOnly(startDate)
+  const issuanceEndDate = parseDateOnly(endDate, true)
+  if (!issuanceStartDate || !issuanceEndDate || issuanceStartDate > issuanceEndDate) {
+    return undefined
+  }
+
+  return { issuanceStartDate, issuanceEndDate }
+}
+
+const FISCAL_CONTROL_USER_SELECT = {
+  id: true,
+  systemRole: true,
+  memberships: {
+    where: { status: 'APPROVED' },
+    select: { id: true, organizationId: true, role: true, status: true },
+  },
+} satisfies Prisma.UserSelect
+
+const FISCAL_CONTROL_COMPANY_SELECT = {
+  rfc: true,
+  businessName: true,
+  id: true,
+} satisfies Prisma.CompanySelect
+
+type FiscalControlAccess = {
+  user: Prisma.UserGetPayload<{ select: typeof FISCAL_CONTROL_USER_SELECT }>
+  company: Prisma.CompanyGetPayload<{ select: typeof FISCAL_CONTROL_COMPANY_SELECT }>
+  targetOrgId: string
+  fiscalEntityId: string | undefined
+}
+
+type FiscalControlAccessResult =
+  | { access: FiscalControlAccess }
+  | { error: string; status: 403 | 404 }
+
+async function resolveFiscalControlAccess(
+  userId: string,
+  companyId: string,
+): Promise<FiscalControlAccessResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: FISCAL_CONTROL_USER_SELECT,
+  })
+  if (!user || user.memberships.length === 0) {
+    return { error: "Sin membresía activa", status: 403 }
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: FISCAL_CONTROL_COMPANY_SELECT,
+  })
+  if (!company) {
+    return { error: "Empresa no encontrada", status: 404 }
+  }
+
+  const fiscalEntity = await prisma.fiscalEntity.findFirst({
+    where: { rfc: company.rfc, isActive: true },
+    select: { organizationId: true, id: true },
+  })
+  const companyAccess = fiscalEntity
+    ? null
+    : await prisma.companyAccess.findFirst({
+        where: { companyId: company.id },
+        select: { organizationId: true },
+      })
+  const targetOrgId = fiscalEntity?.organizationId ?? companyAccess?.organizationId ?? null
+
+  if (!targetOrgId) {
+    return { error: "Empresa sin organización asociada", status: 403 }
+  }
+
+  const organizationIds = new Set(user.memberships.map(membership => membership.organizationId))
+  if (!canAccessFiscalControlOrganization(organizationIds, targetOrgId)) {
+    return { error: "Sin acceso a la empresa", status: 403 }
+  }
+
+  if (!user.memberships.some(membership => membership.organizationId === targetOrgId)) {
+    return { error: "Sin acceso a la organización", status: 403 }
+  }
+
+  if (!hasPermission(user, Permission.DASHBOARD_FISCAL_VIEW, targetOrgId)) {
+    return { error: "Permiso insuficiente: Panel Fiscal", status: 403 }
+  }
+
+  return {
+    access: {
+      user,
+      company,
+      targetOrgId,
+      fiscalEntityId: fiscalEntity?.id,
+    },
+  }
+}
+
+const CFDI_TYPE_TO_SAT_EFFECT = {
+  INGRESO: 'I',
+  EGRESO: 'E',
+  TRASLADO: 'T',
+  NOMINA: 'N',
+  PAGO: 'P',
+} as const
+
+const SAT_EFFECT_TO_CFDI_TYPE = {
+  ingreso: 'I',
+  egreso: 'E',
+  traslado: 'T',
+  nomina: 'N',
+  pago: 'P',
+} as const
+
+function buildColumnDateRange(parts: number[]): { gte: Date; lte: Date } | undefined {
+  if (parts.length === 3) {
+    const [day, month, year] = parts
+    if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return {
+        gte: new Date(year, month - 1, day, 0, 0, 0),
+        lte: new Date(year, month - 1, day, 23, 59, 59, 999),
+      }
+    }
+  }
+
+  if (parts.length === 2) {
+    const [month, year] = parts
+    if (year > 1900 && month >= 1 && month <= 12) {
+      return {
+        gte: new Date(year, month - 1, 1, 0, 0, 0),
+        lte: new Date(year, month, 0, 23, 59, 59, 999),
+      }
+    }
+  }
+
+  if (parts.length === 1) {
+    const [year] = parts
+    if (year > 2000 && year < 2100) {
+      return {
+        gte: new Date(year, 0, 1, 0, 0, 0),
+        lte: new Date(year, 11, 31, 23, 59, 59, 999),
+      }
+    }
+  }
+
+  return undefined
+}
+
+function buildDynamicColumnFilter(
+  key: string,
+  value: string,
+): Prisma.SatMetadataWhereInput | undefined {
+  const dbField = ALLOWED_FC_DB_FIELDS[key]
+  if (!dbField) {
+    return undefined
+  }
+
+  const query = value.toLowerCase()
+  if (['uuid', 'issuerRfc', 'receiverRfc', 'receiverName', 'issuerName', 'certificationPac'].includes(key)) {
+    return { [dbField]: { contains: query, mode: 'insensitive' } }
+  }
+
+  if (key === 'cfdiType') {
+    return { [dbField]: SAT_EFFECT_TO_CFDI_TYPE[query as keyof typeof SAT_EFFECT_TO_CFDI_TYPE] ?? { contains: query, mode: 'insensitive' } }
+  }
+
+  if (key === 'total') {
+    const total = Number(query.replace(/[^0-9.-]+/g, ""))
+    return Number.isNaN(total) ? undefined : { [dbField]: { equals: total } }
+  }
+
+  if (!['issuanceDate', 'certificationDate', 'cancelationDate'].includes(key)) {
+    return undefined
+  }
+
+  const parts = query.split(/[/-]/).map(Number).filter(part => !Number.isNaN(part))
+  const range = buildColumnDateRange(parts)
+  return range ? { [dbField]: range } : undefined
+}
+
+function applyDynamicColumnFilters(
+  baseSatWhere: Prisma.SatMetadataWhereInput,
+  columnFilters: Record<string, string>,
+): void {
+  if (Object.keys(columnFilters).length === 0) {
+    return
+  }
+
+  const filters = baseSatWhere.AND ??= []
+  if (!Array.isArray(filters)) {
+    return
+  }
+
+  for (const [key, value] of Object.entries(columnFilters)) {
+    const filter = buildDynamicColumnFilter(key, value)
+    if (filter) {
+      filters.push(filter)
+    }
+  }
+}
+
+type LegacyFiscalControlWhereInput = {
+  targetRfc: string
+  fiscalEntityId: string | undefined
+  rfcFilter: string
+  cfdiType: string | undefined
+  satStatus: string | undefined
+  issuanceRange: CompleteIssuanceRange
+  columnFilters: Record<string, string>
+}
+
+function buildLegacyFiscalControlWheres(input: LegacyFiscalControlWhereInput) {
+  return {
+    baseSatWhere: buildLegacySatMetadataWhere(input, input.issuanceRange),
+    baseInvoiceWhere: buildLegacyInvoiceWhere(input, input.issuanceRange),
+  }
+}
+
+function buildLegacySatMetadataWhere(
+  input: LegacyFiscalControlWhereInput,
+  issuanceRange: CompleteIssuanceRange,
+): Prisma.SatMetadataWhereInput {
+  const baseSatWhere: Prisma.SatMetadataWhereInput = {
+    OR: [{ rfcEmisor: input.targetRfc }, { rfcReceptor: input.targetRfc }],
+  }
+  if (input.rfcFilter) {
+    baseSatWhere.AND = [{
+      OR: [{ rfcEmisor: input.rfcFilter }, { rfcReceptor: input.rfcFilter }],
+    }]
+  }
+  if (input.cfdiType && input.cfdiType !== "ALL" && input.cfdiType in CFDI_TYPE_TO_SAT_EFFECT) {
+    baseSatWhere.efectoComprobante = CFDI_TYPE_TO_SAT_EFFECT[
+      input.cfdiType as keyof typeof CFDI_TYPE_TO_SAT_EFFECT
+    ]
+  }
+  if (input.satStatus && input.satStatus !== "ALL") {
+    baseSatWhere.estatus = input.satStatus === "VIGENTE" ? "1" : "0"
+  }
+  baseSatWhere.fechaEmision = {
+    gte: issuanceRange.issuanceStartDate,
+    lte: issuanceRange.issuanceEndDate,
+  }
+  applyDynamicColumnFilters(baseSatWhere, input.columnFilters)
+  return baseSatWhere
+}
+
+function buildLegacyInvoiceWhere(
+  input: LegacyFiscalControlWhereInput,
+  issuanceRange: CompleteIssuanceRange,
+): Prisma.InvoiceWhereInput {
+  const baseInvoiceWhere: Prisma.InvoiceWhereInput = input.fiscalEntityId
+    ? { issuerFiscalEntityId: input.fiscalEntityId, issuerRfc: input.targetRfc }
+    : { id: { equals: "__FISCAL_ENTITY_REQUIRED__" } }
+  if (input.rfcFilter && Array.isArray(baseInvoiceWhere.AND)) {
+    baseInvoiceWhere.AND.push({
+      OR: [{ issuerRfc: input.rfcFilter }, { receiverRfc: input.rfcFilter }],
+    })
+  }
+  if (input.cfdiType && input.cfdiType !== "ALL" && input.cfdiType in CfdiType) {
+    baseInvoiceWhere.cfdiType = input.cfdiType as CfdiType
+  }
+  if (input.satStatus && input.satStatus !== "ALL" && input.satStatus in SatStatus) {
+    baseInvoiceWhere.satStatus = input.satStatus as SatStatus
+  }
+  baseInvoiceWhere.issuanceDate = {
+    gte: issuanceRange.issuanceStartDate,
+    lte: issuanceRange.issuanceEndDate,
+  }
+  return baseInvoiceWhere
+}
+
+type MonthlyFiscalControlSummary = {
+  label: string
+  metadataCount: number
+  xmlCount: number
+  ingreso: number
+  egreso: number
+  traslado: number
+  nomina: number
+  pago: number
+}
+
+type MetadataTypeBreakdown = {
+  ingreso: number
+  egreso: number
+  nomina: number
+  pago: number
+  traslado: number
+}
+
+type MetadataTypeDirectionBreakdown = Record<
+  keyof MetadataTypeBreakdown,
+  Readonly<{ emitidos: number; recibidos: number }>
+>
+
+function buildMetadataTypeDirectionBreakdown(
+  emittedGroups: readonly { efectoComprobante: string | null; _count: { _all: number } }[],
+  receivedGroups: readonly { efectoComprobante: string | null; _count: { _all: number } }[],
+): MetadataTypeDirectionBreakdown {
+  const countByType = (
+    groups: readonly { efectoComprobante: string | null; _count: { _all: number } }[],
+    type: string,
+  ) => groups.find(group => group.efectoComprobante === type)?._count._all ?? 0
+  const directionCounts = (type: string) => ({
+    emitidos: countByType(emittedGroups, type),
+    recibidos: countByType(receivedGroups, type),
+  })
+  return {
+    ingreso: directionCounts('I'),
+    egreso: directionCounts('E'),
+    nomina: directionCounts('N'),
+    pago: directionCounts('P'),
+    traslado: directionCounts('T'),
+  }
+}
+
+async function readLegacyFiscalControlSummary(
+  baseSatWhere: Prisma.SatMetadataWhereInput,
+  baseInvoiceWhere: Prisma.InvoiceWhereInput,
+  issuanceRange: CompleteIssuanceRange,
+  targetRfc: string,
+) {
+  const [vigentes, cancelados, canceladosTotalResult, emittedTypeGroups, receivedTypeGroups] = await Promise.all([
+    prisma.satMetadata.count({ where: { ...baseSatWhere, estatus: "1" } }),
+    prisma.satMetadata.count({ where: { ...baseSatWhere, estatus: "0" } }),
+    prisma.satMetadata.aggregate({
+      where: { ...baseSatWhere, estatus: "0" },
+      _sum: { monto: true },
+    }),
+    prisma.satMetadata.groupBy({
+      by: ['efectoComprobante'],
+      where: { ...baseSatWhere, rfcEmisor: targetRfc },
+      _count: { _all: true },
+    }),
+    prisma.satMetadata.groupBy({
+      by: ['efectoComprobante'],
+      where: { ...baseSatWhere, rfcReceptor: targetRfc },
+      _count: { _all: true },
+    }),
+  ])
+  const monthly = await Promise.all(
+    getMonthsInRange(issuanceRange).map(monthStart =>
+      readLegacyFiscalControlMonth(
+        monthStart,
+        issuanceRange,
+        baseSatWhere,
+        baseInvoiceWhere,
+      ),
+    ),
+  )
+
+  return {
+    cancelationStats: {
+      vigentes,
+      cancelados,
+      totalCanceladoAmount: Number(canceladosTotalResult._sum.monto ?? 0),
+    },
+    metadataTypeBreakdown: buildMetadataTypeDirectionBreakdown(
+      emittedTypeGroups,
+      receivedTypeGroups,
+    ),
+    monthly,
+  }
+}
+
+function getMonthsInRange(issuanceRange: CompleteIssuanceRange): Date[] {
+  const months: Date[] = []
+  const current = new Date(
+    issuanceRange.issuanceStartDate.getFullYear(),
+    issuanceRange.issuanceStartDate.getMonth(),
+    1,
+  )
+  const last = new Date(
+    issuanceRange.issuanceEndDate.getFullYear(),
+    issuanceRange.issuanceEndDate.getMonth(),
+    1,
+  )
+  while (current <= last) {
+    months.push(new Date(current))
+    current.setMonth(current.getMonth() + 1)
+  }
+  return months
+}
+
+async function readLegacyFiscalControlMonth(
+  monthStart: Date,
+  issuanceRange: CompleteIssuanceRange,
+  baseSatWhere: Prisma.SatMetadataWhereInput,
+  baseInvoiceWhere: Prisma.InvoiceWhereInput,
+): Promise<MonthlyFiscalControlSummary> {
+  const monthEnd = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  )
+  const start = new Date(Math.max(monthStart.getTime(), issuanceRange.issuanceStartDate.getTime()))
+  const end = new Date(Math.min(monthEnd.getTime(), issuanceRange.issuanceEndDate.getTime()))
+  const satWhere: Prisma.SatMetadataWhereInput = {
+    ...baseSatWhere,
+    fechaEmision: { gte: start, lte: end },
+  }
+  const invoiceWhere: Prisma.InvoiceWhereInput = {
+    ...baseInvoiceWhere,
+    issuanceDate: { gte: start, lte: end },
+  }
+  const [metadataCount, xmlCount, typeGroups] = await Promise.all([
+    prisma.satMetadata.count({ where: satWhere }),
+    prisma.invoice.count({ where: invoiceWhere }),
+    prisma.satMetadata.groupBy({
+      by: ['efectoComprobante'],
+      where: satWhere,
+      _sum: { monto: true },
+    }),
+  ])
+  const sumByType = (type: string) => {
+    const group = typeGroups.find(item => item.efectoComprobante === type)
+    return Number(group?._sum.monto ?? 0)
+  }
+
+  return {
+    label: `${String(monthStart.getMonth() + 1).padStart(2, "0")}/${monthStart.getFullYear()}`,
+    metadataCount,
+    xmlCount,
+    ingreso: sumByType('I'),
+    egreso: sumByType('E'),
+    traslado: sumByType('T'),
+    nomina: sumByType('N'),
+    pago: sumByType('P'),
+  }
 }
 
 export async function GET(request: Request) {
   const reqId = crypto.randomUUID()
+  const startedAt = performance.now()
+  const logger = createLogger({ service: 'fiscal-control-api', correlationId: reqId })
   try {
     const session = await auth()
     if (!session?.user?.id) {
       return massDownloadJsonResponse({ error: "No autorizado", reqId }, { status: 401 })
     }
-
     const { searchParams } = new URL(request.url)
+    const summaryOnly = searchParams.get("summaryOnly") === "true"
+    const statusDifferenceParam = searchParams.get("statusDifference")
+    const statusDifference = FISCAL_CONTROL_STATUS_DIFFERENCES.includes(
+      statusDifferenceParam as FiscalControlStatusDifference,
+    )
+      ? statusDifferenceParam as FiscalControlStatusDifference
+      : undefined
     const rawQuery = {
       companyId: searchParams.get("companyId") || undefined,
       rfc: searchParams.get("rfc")?.trim().toUpperCase() || undefined,
@@ -38,8 +509,14 @@ export async function GET(request: Request) {
       satStatus: searchParams.get("satStatus") || undefined,
       year: parseNumber(searchParams.get("year")),
       month: parseNumber(searchParams.get("month")),
+      payrollStartDate: searchParams.get("payrollStartDate") || undefined,
+      payrollEndDate: searchParams.get("payrollEndDate") || undefined,
+      startDate: searchParams.get("startDate") || undefined,
+      endDate: searchParams.get("endDate") || undefined,
+      origin: searchParams.get("origin") || undefined,
+      cursor: searchParams.get("cursor") || undefined,
       page: parsePositiveInt(searchParams.get("page") || null, 1, 10000),
-      pageSize: parsePositiveInt(searchParams.get("pageSize") || null, 50, 200),
+      pageSize: parsePositiveInt(searchParams.get("pageSize") || null, 50, 100),
     }
 
     const parsedQuery = FiscalControlQuerySchema.safeParse(rawQuery)
@@ -50,81 +527,39 @@ export async function GET(request: Request) {
       )
     }
 
-    const { companyId, cfdiType: cfdiTypeParam, satStatus: satStatusParam, year: yearParam, month: monthParam, page: pageParam, pageSize: pageSizeParam, rfc: rfcParam } = parsedQuery.data
+    const {
+      companyId,
+      cfdiType: cfdiTypeParam,
+      satStatus: satStatusParam,
+      page: pageParam,
+      pageSize: pageSizeParam,
+      rfc: rfcParam,
+      cursor,
+      payrollStartDate,
+      payrollEndDate,
+      startDate,
+      endDate,
+      origin,
+    } = parsedQuery.data
     const rfcFilter = rfcParam?.trim().toUpperCase() || ""
-
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        systemRole: true,
-        memberships: {
-          where: { status: 'APPROVED' },
-          select: { id: true, organizationId: true, role: true, status: true }
-        }
-      }
-    })
-    if (!user || user.memberships.length === 0) {
-      return massDownloadJsonResponse({ error: "Sin membresía activa", reqId }, { status: 403 })
+    const issuanceRange = resolveRequestedIssuanceRange(startDate, endDate)
+    if (!issuanceRange) {
+      return massDownloadJsonResponse(
+        { error: "Selecciona una fecha inicial y una fecha final válidas", reqId },
+        { status: 400 },
+      )
     }
 
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: {
-        rfc: true,
-        businessName: true,
-        id: true,
-      },
-    })
-
-    if (!company) {
-      return massDownloadJsonResponse({ error: "Empresa no encontrada", reqId }, { status: 404 })
+    const accessResult = await resolveFiscalControlAccess(session.user.id, companyId)
+    if ('error' in accessResult) {
+      return massDownloadJsonResponse(
+        { error: accessResult.error, reqId },
+        { status: accessResult.status },
+      )
     }
-
-    const fiscalEntityForCompany = await prisma.fiscalEntity.findFirst({
-      where: { rfc: company.rfc, isActive: true },
-      select: { organizationId: true, id: true },
-    })
-
-    const fallbackOrgViaAccess = fiscalEntityForCompany
-      ? null
-      : await prisma.companyAccess.findFirst({
-          where: { companyId: company.id },
-          select: { organizationId: true },
-        })
-
-    const targetOrgId = fiscalEntityForCompany?.organizationId ?? fallbackOrgViaAccess?.organizationId ?? null
-
-    if (!targetOrgId) {
-      return massDownloadJsonResponse({ error: "Empresa sin organización asociada", reqId }, { status: 403 })
-    }
-
-    const orgIdsAllowed = new Set(user.memberships.map(m => m.organizationId))
-    if (!orgIdsAllowed.has(targetOrgId)) {
-      return massDownloadJsonResponse({ error: "Sin acceso a la empresa", reqId }, { status: 403 })
-    }
-
-    const member = user.memberships.find(m => m.organizationId === targetOrgId)
-    if (!member) {
-      return massDownloadJsonResponse({ error: "Sin acceso a la organización", reqId }, { status: 403 })
-    }
-
-    const canViewFiscal = hasPermission(user, Permission.DASHBOARD_FISCAL_VIEW, targetOrgId)
-    if (!canViewFiscal) {
-      return massDownloadJsonResponse({ error: "Permiso insuficiente: Panel Fiscal", reqId }, { status: 403 })
-    }
-
+    const { company, targetOrgId, fiscalEntityId } = accessResult.access
     const targetRfc = company.rfc
 
-    const typeMap: Record<string, string> = {
-      'INGRESO': 'I',
-      'EGRESO': 'E',
-      'TRASLADO': 'T',
-      'NOMINA': 'N',
-      'PAGO': 'P'
-    }
-
-    // Extract dynamic column filters (whitelist only)
     const rawFilters: Record<string, string> = {}
     searchParams.forEach((value, key) => {
       if (key.startsWith("filter_") && value.trim() !== "") {
@@ -132,384 +567,120 @@ export async function GET(request: Request) {
       }
     })
     const columnFilters = validateFcDynamicFilters(rawFilters)
-
-    const baseSatWhere: Prisma.SatMetadataWhereInput = {
-      OR: [
-        { rfcEmisor: targetRfc },
-        { rfcReceptor: targetRfc }
-      ]
+    const reconciliationFilters = {
+      organizationId: targetOrgId,
+      companyId: company.id,
+      companyRfc: targetRfc,
+      fiscalEntityId,
+      origins: origin && origin !== "ALL" ? [origin] : undefined,
+      rfc: rfcFilter || undefined,
+      cfdiType: cfdiTypeParam,
+      satStatus: satStatusParam,
+      columnFilters,
+      ...issuanceRange,
+      payrollPaymentStartDate: parseDateOnly(payrollStartDate),
+      payrollPaymentEndDate: parseDateOnly(payrollEndDate, true),
     }
 
-    if (rfcFilter) {
-      baseSatWhere.AND = [
-        {
-          OR: [
-            { rfcEmisor: rfcFilter },
-            { rfcReceptor: rfcFilter }
-          ]
-        }
-      ]
-    }
-
-    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && typeMap[cfdiTypeParam]) {
-      baseSatWhere.efectoComprobante = typeMap[cfdiTypeParam]
-    }
-
-    if (satStatusParam && satStatusParam !== "ALL") {
-      // SAT Metadata usually uses "1" for Vigente and "0" for Cancelado, or literal "1"/"0"
-      baseSatWhere.estatus = satStatusParam === "VIGENTE" ? "1" : "0"
-    }
-
-    if (yearParam && monthParam) {
-      const start = new Date(yearParam, monthParam - 1, 1)
-      const end = new Date(yearParam, monthParam, 0, 23, 59, 59, 999)
-      baseSatWhere.fechaEmision = {
-        gte: start,
-        lte: end,
-      }
-    } else if (yearParam) {
-      const start = new Date(yearParam, 0, 1)
-      const end = new Date(yearParam, 11, 31, 23, 59, 59, 999)
-      baseSatWhere.fechaEmision = {
-        gte: start,
-        lte: end,
-      }
-    }
-
-    // Apply dynamic column filters to baseSatWhere (whitelist only)
-    if (Object.keys(columnFilters).length > 0) {
-      if (!baseSatWhere.AND) baseSatWhere.AND = []
-      
-      Object.entries(columnFilters).forEach(([key, value]) => {
-        const query = value.toLowerCase()
-        const andArray = baseSatWhere.AND as Prisma.SatMetadataWhereInput[]
-        const dbField = ALLOWED_FC_DB_FIELDS[key]
-        if (!dbField) return
-
-        switch(key) {
-          case 'uuid':
-          case 'issuerRfc':
-          case 'receiverRfc':
-          case 'receiverName':
-          case 'issuerName':
-          case 'certificationPac':
-            andArray.push({ [dbField]: { contains: query, mode: 'insensitive' } })
-            break
-          case 'cfdiType':
-            const mapInverse: Record<string, string> = {
-              'ingreso': 'I', 'egreso': 'E', 'traslado': 'T', 'nomina': 'N', 'pago': 'P'
-            }
-            if (mapInverse[query]) {
-              andArray.push({ [dbField]: mapInverse[query] })
-            } else {
-              andArray.push({ [dbField]: { contains: query, mode: 'insensitive' } })
-            }
-            break
-          case 'total':
-            const num = Number(query.replace(/[^0-9.-]+/g, ""))
-            if (!isNaN(num)) andArray.push({ [dbField]: { equals: num } })
-            break
-          case 'issuanceDate':
-          case 'certificationDate':
-          case 'cancelationDate':
-            const parts = query.split(/[\/\-]/).map(Number).filter(n => !isNaN(n))
-            if (parts.length === 3) {
-              const [day, month, year] = parts
-              if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-                andArray.push({
-                  [dbField]: {
-                    gte: new Date(year, month - 1, day, 0, 0, 0),
-                    lte: new Date(year, month - 1, day, 23, 59, 59, 999)
-                  }
-                })
-              }
-            } else if (parts.length === 2) {
-              const [month, year] = parts
-              if (year > 1900 && month >= 1 && month <= 12) {
-                andArray.push({
-                  [dbField]: {
-                    gte: new Date(year, month - 1, 1, 0, 0, 0),
-                    lte: new Date(year, month, 0, 23, 59, 59, 999)
-                  }
-                })
-              }
-            } else if (parts.length === 1) {
-              const [year] = parts
-              if (year > 2000 && year < 2100) {
-                andArray.push({
-                  [dbField]: {
-                    gte: new Date(year, 0, 1, 0, 0, 0),
-                    lte: new Date(year, 11, 31, 23, 59, 59, 999)
-                  }
-                })
-              }
-            }
-            break
-        }
+    if (statusDifference) {
+      const differences = await readFiscalControlStatusDifferences(
+        reconciliationFilters,
+        statusDifference,
+      )
+      return massDownloadJsonResponse({
+        reqId,
+        status: statusDifference,
+        rows: differences,
       })
     }
 
-    const baseInvoiceWhere: Prisma.InvoiceWhereInput = {
-      AND: [
-        {
-          OR: [
-            { issuerRfc: targetRfc },
-            { receiverRfc: targetRfc },
-          ],
+    if (summaryOnly) {
+      const { baseSatWhere, baseInvoiceWhere } = buildLegacyFiscalControlWheres({
+        targetRfc,
+        fiscalEntityId,
+        rfcFilter,
+        cfdiType: cfdiTypeParam,
+        satStatus: satStatusParam,
+        issuanceRange,
+        columnFilters,
+      })
+      const [summary, totals, monthly] = await Promise.all([
+        readLegacyFiscalControlSummary(baseSatWhere, baseInvoiceWhere, issuanceRange, targetRfc),
+        readFiscalControlConciliationTotals(reconciliationFilters),
+        readFiscalControlMonthlyTypeDistribution(reconciliationFilters),
+      ])
+      const completenessPercent = totals.metadataTotal > 0
+        ? Number(((totals.xmlTotal / totals.metadataTotal) * 100).toFixed(2))
+        : 0
+      const discrepancyPercent = totals.metadataTotal > 0
+        ? Number(((totals.metadataTotal - totals.xmlTotal) / totals.metadataTotal * 100).toFixed(2))
+        : 0
+
+      logger.info('fiscal_control.summary_completed', {
+        durationMs: Math.round(performance.now() - startedAt),
+        monthlyBuckets: monthly.length,
+        metadataTotal: totals.metadataTotal,
+        xmlTotal: totals.xmlTotal,
+      })
+      return massDownloadJsonResponse({
+        reqId,
+        ...summary,
+        monthlyTypeDistribution: monthly,
+        kpis: {
+          metadataTotal: totals.metadataTotal,
+          xmlTotal: totals.xmlTotal,
+          completenessPercent,
         },
-      ],
+        xmlTypeBreakdown: totals.xmlTypeBreakdown,
+        discrepancyAlert: discrepancyPercent > 5,
+        discrepancyPercent,
+      })
     }
-
-    if (rfcFilter) {
-      if (Array.isArray(baseInvoiceWhere.AND)) {
-        baseInvoiceWhere.AND.push({
-          OR: [{ issuerRfc: rfcFilter }, { receiverRfc: rfcFilter }],
-        })
-      }
-    }
-
-    if (cfdiTypeParam && cfdiTypeParam !== "ALL" && cfdiTypeParam in CfdiType) {
-      baseInvoiceWhere.cfdiType = cfdiTypeParam as CfdiType
-    }
-
-    if (satStatusParam && satStatusParam !== "ALL" && satStatusParam in SatStatus) {
-      baseInvoiceWhere.satStatus = satStatusParam as SatStatus
-    }
-
-    if (yearParam && monthParam) {
-      const start = new Date(yearParam, monthParam - 1, 1)
-      const end = new Date(yearParam, monthParam, 0, 23, 59, 59, 999)
-      baseInvoiceWhere.issuanceDate = {
-        gte: start,
-        lte: end,
-      }
-    } else if (yearParam) {
-      const start = new Date(yearParam, 0, 1)
-      const end = new Date(yearParam, 11, 31, 23, 59, 59, 999)
-      baseInvoiceWhere.issuanceDate = {
-        gte: start,
-        lte: end,
-      }
-    }
-
-    const [metadataTotal, xmlTotal] = await Promise.all([
-      prisma.satMetadata.count({ where: baseSatWhere }),
-      prisma.invoice.count({ where: baseInvoiceWhere }),
-    ])
-
-    const completenessPercent =
-      metadataTotal > 0 ? Number(((xmlTotal / metadataTotal) * 100).toFixed(2)) : 0
-    const discrepancyPercent = metadataTotal > 0 ? Number(((metadataTotal - xmlTotal) / metadataTotal * 100).toFixed(2)) : 0
-    const discrepancyAlert = discrepancyPercent > 5
-
-    // New: Cancelation Stats (Donut Chart)
-    const [vigentesCount, canceladosCount, canceladosTotalResult] = await Promise.all([
-      prisma.satMetadata.count({
-        where: {
-          ...baseSatWhere,
-          estatus: "1", // 1 = Vigente
-        },
-      }),
-      prisma.satMetadata.count({
-        where: {
-          ...baseSatWhere,
-          estatus: "0", // 0 = Cancelado
-        },
-      }),
-      prisma.satMetadata.aggregate({
-        where: {
-          ...baseSatWhere,
-          estatus: "0",
-        },
-        _sum: {
-          monto: true,
-        },
-      }),
-    ])
-
-    const cancelationStats = {
-      vigentes: vigentesCount,
-      cancelados: canceladosCount,
-      totalCanceladoAmount: Number(canceladosTotalResult._sum.monto || 0),
-    }
-
-    const now = new Date()
-    const monthlyPromises: Array<Promise<{
-      label: string
-      metadataCount: number
-      xmlCount: number
-      ingreso: number
-      egreso: number
-      traslado: number
-      nomina: number
-      pago: number
-    }>> = []
-
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const start = new Date(d.getFullYear(), d.getMonth(), 1)
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
-      const label = `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`
-
-      const satWhere: Prisma.SatMetadataWhereInput = {
-        ...baseSatWhere,
-        fechaEmision: {
-          gte: start,
-          lte: end,
-        },
-      }
-
-      const invoiceWhere: Prisma.InvoiceWhereInput = {
-        ...baseInvoiceWhere,
-        issuanceDate: {
-          gte: start,
-          lte: end,
-        },
-      }
-
-      monthlyPromises.push(
-        Promise.all([
-          prisma.satMetadata.count({ where: satWhere }),
-          prisma.invoice.count({ where: invoiceWhere }),
-          prisma.satMetadata.groupBy({
-            by: ['efectoComprobante'],
-            where: satWhere,
-            _sum: {
-              monto: true
-            }
-          })
-        ]).then(([mc, xc, typeGroups]) => {
-          const getSum = (type: string) => {
-            const group = typeGroups.find(g => g.efectoComprobante === type)
-            return Number(group?._sum.monto || 0)
-          }
-
-          return {
-            label,
-            metadataCount: mc,
-            xmlCount: xc,
-            ingreso: getSum('I'),
-            egreso: getSum('E'),
-            traslado: getSum('T'),
-            nomina: getSum('N'),
-            pago: getSum('P'),
-          }
-        })
-      )
-    }
-
-    const monthly = await Promise.all(monthlyPromises)
 
     const page = Math.max(1, pageParam)
-    const pageSize = Math.min(200, Math.max(10, pageSizeParam))
-    const skip = (page - 1) * pageSize
-
-    const [satRows, satTotal] = await Promise.all([
-      prisma.satMetadata.findMany({
-        where: baseSatWhere,
-        orderBy: { fechaEmision: "desc" },
-        skip,
-        take: pageSize,
-        select: {
-          uuid: true,
-          rfcEmisor: true,
-          nombreEmisor: true,
-          rfcReceptor: true,
-          nombreReceptor: true,
-          fechaEmision: true,
-          monto: true,
-          estatus: true,
-          efectoComprobante: true,
-          fechaCertificacionSat: true,
-          fechaCancelacion: true,
-          rfcPac: true,
-        },
-      }),
-      prisma.satMetadata.count({ where: baseSatWhere }),
-    ])
-
-    // [MD-008 FIX] Batch IN query: single findMany instead of N findUnique + no xmlContent leak
-    const satRowUuids = satRows.map(r => r.uuid)
-    const existingInvoicesMap = new Map<string, { id: string }>()
-    if (satRowUuids.length > 0) {
-      const existingInvoices = await prisma.invoice.findMany({
-        where: { uuid: { in: satRowUuids } },
-        select: { uuid: true, id: true },
-      })
-      for (const inv of existingInvoices) {
-        existingInvoicesMap.set(inv.uuid, { id: inv.id })
-      }
-    }
-
-    const mapType = (t: string | null) => {
-      if (t === 'I') return 'INGRESO'
-      if (t === 'E') return 'EGRESO'
-      if (t === 'T') return 'TRASLADO'
-      if (t === 'N') return 'NOMINA'
-      if (t === 'P') return 'PAGO'
-      return 'DESCONOCIDO'
-    }
-
-    const rowsWithXml = satRows.map((row) => {
-      const xml = existingInvoicesMap.get(row.uuid)
-      return {
-        uuid: row.uuid,
-        issuerRfc: row.rfcEmisor,
-        issuerName: row.nombreEmisor || "",
-        receiverRfc: row.rfcReceptor,
-        receiverName: row.nombreReceptor || "",
-        issuanceDate: row.fechaEmision,
-        total: Number(row.monto || 0),
-        satStatus: row.estatus === "1" ? "VIGENTE" : "CANCELADO",
-        hasXml: Boolean(xml),
-        xmlContent: "",
-        cfdiType: mapType(row.efectoComprobante),
-        series: "",
-        folio: "",
-        currency: "MXN",
-        exchangeRate: 1,
-        subtotal: 0,
-        discount: 0,
-        ivaTrasladado: 0,
-        ivaRetenido: 0,
-        isrRetenido: 0,
-        iepsRetenido: 0,
-        certificationDate: row.fechaCertificacionSat,
-        cancelationDate: row.fechaCancelacion,
-        certificationPac: row.rfcPac || "",
-        paymentMethod: "",
-        paymentForm: "",
-        usageCfdi: "",
-        expeditionPlace: "",
-      }
+    const pageSize = Math.min(100, Math.max(10, pageSizeParam))
+    const conciliationPage = await readFiscalControlConciliationPage({
+      filters: reconciliationFilters,
+      cursor,
+      pageSize,
+      cache: true,
     })
-
-    const totalPages = satTotal === 0 ? 0 : Math.ceil(satTotal / pageSize)
+    const globalSummary = conciliationPage.summary
+    logger.info('fiscal_control.page_completed', {
+      durationMs: Math.round(performance.now() - startedAt),
+      returnedRows: conciliationPage.rows.length,
+      pageSize,
+      hasNextCursor: Boolean(conciliationPage.nextCursor),
+      origin: origin ?? 'ALL',
+      reconciliationScope: globalSummary.scope,
+      cacheStatus: conciliationPage.cacheStatus,
+    })
 
     return massDownloadJsonResponse({
       reqId,
-      kpis: {
-        metadataTotal,
-        xmlTotal,
-        completenessPercent,
-      },
-      cancelationStats,
-      monthly,
-      discrepancyAlert,
-      discrepancyPercent,
+      sourceCounts: globalSummary.sourceCounts,
+      reconciliationSummary: globalSummary.reconciliationSummary,
+      statusComparison: globalSummary.statusComparison,
       table: {
-        rows: rowsWithXml,
+        rows: conciliationPage.rows.map(mapFiscalControlConciliationRow),
         pagination: {
           page,
           pageSize,
-          total: satTotal,
-          totalPages,
+          total: 0,
+          totalPages: 0,
+          nextCursor: conciliationPage.nextCursor,
+          mode: "CURSOR",
+          reconciliationScope: globalSummary.scope,
         },
       },
     })
   } catch (err) {
     const summary = safeErrSummary(err)
     const errId = fp32(JSON.stringify(summary))
+    logger.error('fiscal_control.query_failed', err, {
+      durationMs: Math.round(performance.now() - startedAt),
+      errId,
+    })
     console.error('[fiscal-control 500]', { reqId, errId, summary })
     return massDownloadJsonResponse(
       { error: "Error al obtener datos del Panel de Control Fiscal", reqId, errId },

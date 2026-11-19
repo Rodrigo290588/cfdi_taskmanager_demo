@@ -44,7 +44,7 @@ describeIfIntegrationDb('[FASE2] Dashboard Fiscal · KPI Queries / Drilldown / I
     const u = await createUser(integrationPrisma, 'int-dash-admin@itcomplements.com', 'Dash Admin', SystemRole.ADMIN)
     userId = u.id
     const m = await ensureMembership(integrationPrisma, userId, orgId, MemberRole.ADMIN, 'APPROVED')
-    memberId = m.id
+    _memberId = m.id
   })
 
   const createTestInvoicesBatch = async (count: number, conceptsPerInvoice = 50, spreadDays = 365) => {
@@ -72,7 +72,7 @@ describeIfIntegrationDb('[FASE2] Dashboard Fiscal · KPI Queries / Drilldown / I
       const n = 548
       const c = 50
       const uuids = await createTestInvoicesBatch(n, c, 365)
-      expect(uuids.length).toBe(n)
+      expect(uuids).toHaveLength(n)
       const invCount = await integrationPrisma.invoice.count({ where: { issuerFiscalEntityId: feId } })
       const conCount = await integrationPrisma.invoiceConcept.count()
       expect(invCount).toBeGreaterThanOrEqual(n)
@@ -167,7 +167,7 @@ describeIfIntegrationDb('[FASE2] Dashboard Fiscal · KPI Queries / Drilldown / I
         where: { receiverRfc: RECEPTOR_RFC_BULK, issuerFiscalEntityId: feId },
         select: { uuid: true },
       })
-      expect(rows.length).toBe(5)
+      expect(rows).toHaveLength(5)
     })
   })
 
@@ -202,7 +202,7 @@ describeIfIntegrationDb('[FASE2] Dashboard Fiscal · KPI Queries / Drilldown / I
         orderBy: [{ issuanceDate: 'asc' }],
         take: 1000,
       })
-      expect(top10.length).toBe(10)
+      expect(top10).toHaveLength(10)
       expect(top1000.length).toBeGreaterThanOrEqual(100)
       for (let i = 0; i < 10; i++) {
         expect(top10[i].uuid).toBe(top1000[i].uuid)

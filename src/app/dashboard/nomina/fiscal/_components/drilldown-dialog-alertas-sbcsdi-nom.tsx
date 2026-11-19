@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { FiscalNomEmptyState } from './fiscal-nomina-shared';
 import { fmtMxn, fmtNum, fmtDateEs } from '@/lib/fiscal-nomina-formatters';
-import { sanitizeDownloadFilename } from '@/lib/dashboard-fiscal-route-utils';
+import { sanitizeDownloadFilename } from '@/lib/download-filename';
 
 export const DRILLDOWN_ALERTAS_PAGE_SIZE = 200;
 
@@ -520,7 +520,7 @@ export function DrilldownDialogAlertasSbcSdiNom(props: DrilldownDialogAlertasSbc
                         case 'number':
                         case 'bigint':
                         case 'boolean': s = String(v); break;
-                        default:        s = '';
+                        default:        break;
                     }
                     s = s.replace(/"/g, '""');
                     return /[",\n]/.test(s) ? `"${s}"` : s;

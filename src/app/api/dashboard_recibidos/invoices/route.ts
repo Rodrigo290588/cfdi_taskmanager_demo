@@ -29,9 +29,33 @@ function normalizeUpperText(value: string | null | undefined) {
   return normalizeText(value).toUpperCase()
 }
 
+function toFiniteNumber(value: number) {
+  return Number.isFinite(value) ? value : 0
+}
+
 function toNumber(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
-  return Number.isFinite(parsed) ? parsed : 0
+  if (typeof value === 'number') {
+    return toFiniteNumber(value)
+  }
+
+  if (typeof value === 'bigint') {
+    return toFiniteNumber(Number(value))
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, '').trim())
+    return toFiniteNumber(parsed)
+  }
+
+  if (value && typeof value === 'object') {
+    const decimalLike = value as { toNumber?: () => unknown }
+    if (typeof decimalLike.toNumber === 'function') {
+      const parsed = decimalLike.toNumber()
+      return typeof parsed === 'number' ? toFiniteNumber(parsed) : 0
+    }
+  }
+
+  return 0
 }
 
 function toIsoString(value: Date | string | null | undefined) {
@@ -110,6 +134,227 @@ type ProviderUploadedCfdiWorkpaperRow = Prisma.ProviderUploadedCfdiGetPayload<{
   }
 }>
 
+const DIRECT_TEXT_FILTER_MAP: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+  id: 'id',
+  userId: 'uploadedByUserId',
+  uploadedByUserId: 'uploadedByUserId',
+  issuerFiscalEntityId: 'receiverCompanyId',
+  uuid: 'uuid',
+  series: 'series',
+  folio: 'folio',
+  currency: 'currency',
+  issuerRfc: 'issuerRfc',
+  issuerName: 'issuerName',
+  receiverRfc: 'receiverRfc',
+  receiverName: 'receiverName',
+  paymentMethod: 'paymentMethod',
+  paymentForm: 'paymentForm'
+}
+
+const DIRECT_NUMERIC_FILTER_MAP: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+  subtotal: 'subtotal',
+  discount: 'discount',
+  total: 'total'
+}
+
+const DIRECT_DATE_FILTER_MAP: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = {
+  issuanceDate: 'issuanceDate',
+  certificationDate: 'certificationDate',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+}
+
+const RESERVED_QUERY_PARAMS = new Set([
+  'companyId',
+  'page',
+  'limit',
+  'query',
+  'cfdiType',
+  'status',
+  'satStatus',
+  'dateFrom',
+  'dateTo',
+  'export',
+  'origin',
+  'orgId'
+])
+
+type DynamicFilterState = {
+  hasFilterCount: number
+  numericProjectionCount: number
+}
+
+function createDateFilter(dateFrom?: string, dateTo?: string): Prisma.DateTimeFilter | undefined {
+  if (!dateFrom && !dateTo) return undefined
+
+  const filter: Prisma.DateTimeFilter = Object.create(null)
+  if (dateFrom) filter.gte = new Date(dateFrom)
+  if (dateTo) {
+    const endDateExclusive = new Date(`${dateTo}T00:00:00.000Z`)
+    endDateExclusive.setUTCDate(endDateExclusive.getUTCDate() + 1)
+    filter.lt = endDateExclusive
+  }
+  return filter
+}
+
+function createBaseInvoiceWhere(params: {
+  organizationId: string
+  companyId: string
+  query: string
+  cfdiTypes: string[]
+  satStatus: string
+  status: string
+  dateFrom?: string
+  dateTo?: string
+}): Prisma.ProviderUploadedCfdiWhereInput {
+  const where: Prisma.ProviderUploadedCfdiWhereInput = Object.create(null)
+  where.organizationId = params.organizationId
+  where.receiverCompanyId = params.companyId
+  where.validationStatus = 'APPROVED'
+
+  if (params.cfdiTypes.length > 0) where.cfdiType = { in: params.cfdiTypes }
+  if (params.satStatus) where.satEstado = params.satStatus
+  if (params.status) where.validationStatus = { contains: params.status, mode: 'insensitive' }
+
+  const dateFilter = createDateFilter(params.dateFrom, params.dateTo)
+  if (dateFilter) where.issuanceDate = dateFilter
+
+  if (params.query) {
+    where.OR = [
+      { uuid: { contains: params.query, mode: 'insensitive' } },
+      { issuerRfc: { contains: params.query, mode: 'insensitive' } },
+      { issuerName: { contains: params.query, mode: 'insensitive' } },
+      { receiverRfc: { contains: params.query, mode: 'insensitive' } },
+      { receiverName: { contains: params.query, mode: 'insensitive' } },
+      { series: { contains: params.query, mode: 'insensitive' } },
+      { folio: { contains: params.query, mode: 'insensitive' } },
+      { fileName: { contains: params.query, mode: 'insensitive' } }
+    ]
+  }
+
+  return where
+}
+
+function appendDirectFilter(
+  filters: Prisma.ProviderUploadedCfdiWhereInput[],
+  rawKey: string,
+  rawValue: string,
+): boolean {
+  const textField = DIRECT_TEXT_FILTER_MAP[rawKey]
+  if (textField) {
+    filters.push({ [textField]: { contains: rawValue, mode: 'insensitive' } })
+    return true
+  }
+
+  const dateField = DIRECT_DATE_FILTER_MAP[rawKey]
+  if (dateField) {
+    const dateValue = rawValue.trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      const start = new Date(`${dateValue}T00:00:00.000Z`)
+      const end = new Date(start)
+      end.setUTCDate(end.getUTCDate() + 1)
+      filters.push({ [dateField]: { gte: start, lt: end } })
+    }
+    return true
+  }
+
+  const numericField = DIRECT_NUMERIC_FILTER_MAP[rawKey]
+  if (numericField && !Number.isNaN(Number(rawValue))) {
+    filters.push({ [numericField]: new Prisma.Decimal(Number(rawValue).toFixed(6)) })
+    return true
+  }
+
+  return false
+}
+
+function appendProjectedFilter(
+  filters: Prisma.ProviderUploadedCfdiWhereInput[],
+  rawKey: string,
+  rawValue: string,
+  state: DynamicFilterState,
+): void {
+  const key = rawKey.startsWith('attr.') ? rawKey.slice(5) : rawKey
+  const hasKeyRaw = rawKey.startsWith('has.') ? rawKey.slice(4) : null
+  const hasKey = hasKeyRaw
+    ? 'has' + hasKeyRaw.toLowerCase().replace(/(?:^|_)(\w)/g, (_m: string, char: string) => char.toUpperCase())
+    : rawKey
+  const normalizedValue = normalizeProjectionUpperText(rawValue)
+
+  if (rawKey.startsWith('has.') && !RECEPTION_HAS_FLAGS.has(hasKey as never)) return
+  if (rawKey.startsWith('has.')) {
+    if (state.hasFilterCount >= MAX_HAS_FILTERS) return
+    state.hasFilterCount++
+  }
+
+  if (workpaperComplementFlagKeySet.has(hasKey)) {
+    filters.push({ complementIndex: { is: { [hasKey]: parseBooleanFilter(rawValue) } } })
+    return
+  }
+
+  if (workpaperComplementVersionKeySet.has(key)) {
+    filters.push({ complementIndex: { is: { [key]: { contains: rawValue, mode: 'insensitive' } } } })
+    return
+  }
+
+  if (!workpaperAttributeKeySet.has(key)) return
+  if (workpaperNumericAttributeKeySet.has(key) && !Number.isNaN(Number(rawValue))) {
+    if (state.numericProjectionCount >= MAX_NUMERIC_PROJECTION_FILTERS) return
+    state.numericProjectionCount++
+    filters.push({
+      complementAttributes: {
+        some: { attributeKey: key, valueNumber: new Prisma.Decimal(Number(rawValue).toFixed(6)) }
+      }
+    })
+    return
+  }
+
+  filters.push({
+    complementAttributes: {
+      some: { attributeKey: key, valueSearch: { contains: normalizedValue, mode: 'insensitive' } }
+    }
+  })
+}
+
+function buildDynamicInvoiceFilters(searchParams: URLSearchParams): Prisma.ProviderUploadedCfdiWhereInput[] {
+  const filters: Prisma.ProviderUploadedCfdiWhereInput[] = []
+  const state: DynamicFilterState = { hasFilterCount: 0, numericProjectionCount: 0 }
+
+  for (const [rawKey, rawValue] of searchParams.entries()) {
+    if (RESERVED_QUERY_PARAMS.has(rawKey) || !rawValue) continue
+    if (appendDirectFilter(filters, rawKey, rawValue)) continue
+    appendProjectedFilter(filters, rawKey, rawValue, state)
+  }
+
+  return filters
+}
+
+function formatInvoiceQueryIssues(
+  issues: ReadonlyArray<{
+    path?: ReadonlyArray<PropertyKey>
+    message: string
+  }>
+) {
+  const fieldErrors: Record<string, string[]> = {}
+  const formErrors: string[] = []
+
+  for (const issue of issues) {
+    const field = (issue.path || [])
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (typeof part === 'number') return part.toString()
+        return part.description || 'symbol'
+      })
+      .join('.')
+    if (!field) {
+      formErrors.push(issue.message)
+      continue
+    }
+    fieldErrors[field] = [...(fieldErrors[field] || []), issue.message]
+  }
+
+  return { fieldErrors, formErrors }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const scoped = await buildDashboardScopedContext(request, { routeKey: 'drilldownInvoices', requireCompanyId: true })
@@ -117,9 +362,18 @@ export async function GET(request: NextRequest) {
     const companyId = ctx.companyId!
 
     const rawQuery = Object.fromEntries(scoped.searchParams.entries())
-    const parsed = InvoiceWorkpaperQuerySchema.safeParse(rawQuery)
+    const schemaQuery = Object.fromEntries(
+      Object.entries(rawQuery).filter(([key]) => RESERVED_QUERY_PARAMS.has(key))
+    )
+    const parsed = InvoiceWorkpaperQuerySchema.safeParse(schemaQuery)
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Parámetros inválidos', issues: parsed.error.flatten().fieldErrors }, { status: 400, headers: { ...SECURITY_HEADERS } })
+      return NextResponse.json(
+        {
+          error: 'Parámetros inválidos',
+          issues: formatInvoiceQueryIssues(parsed.error.issues)
+        },
+        { status: 400, headers: { ...SECURITY_HEADERS } }
+      )
     }
     const q = parsed.data as InvoiceWorkpaperQueryParsed
 
@@ -147,173 +401,17 @@ export async function GET(request: NextRequest) {
     const dateTo = q.dateTo
     const cfdiTypes = getCfdiTypesFilter(q.cfdiType ?? null)
 
-    // DR-004 anti Prototype-Pollution
-    const where: Prisma.ProviderUploadedCfdiWhereInput = Object.create(null)
-    where.organizationId = member.organizationId
-    where.receiverCompanyId = companyId
-    where.validationStatus = 'APPROVED'
-
-    if (cfdiTypes.length > 0) {
-      where.cfdiType = { in: cfdiTypes }
-    }
-    if (satStatus) {
-      where.satEstado = satStatus
-    }
-    if (status) {
-      where.validationStatus = { contains: status, mode: 'insensitive' }
-    }
-    if (dateFrom || dateTo) {
-      where.issuanceDate = Object.create(null) as Prisma.DateTimeFilter
-      if (dateFrom) (where.issuanceDate as Prisma.DateTimeFilter).gte = new Date(dateFrom as unknown as string)
-      if (dateTo) (where.issuanceDate as Prisma.DateTimeFilter).lte = new Date(dateTo as unknown as string)
-    }
-    if (query) {
-      where.OR = [
-        { uuid: { contains: query, mode: 'insensitive' } },
-        { issuerRfc: { contains: query, mode: 'insensitive' } },
-        { issuerName: { contains: query, mode: 'insensitive' } },
-        { receiverRfc: { contains: query, mode: 'insensitive' } },
-        { receiverName: { contains: query, mode: 'insensitive' } },
-        { series: { contains: query, mode: 'insensitive' } },
-        { folio: { contains: query, mode: 'insensitive' } },
-        { fileName: { contains: query, mode: 'insensitive' } }
-      ]
-    }
-
-    const andFilters: Prisma.ProviderUploadedCfdiWhereInput[] = []
-    where.AND = andFilters
-
-    const directTextFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = Object.create(null)
-    Object.assign(directTextFilterMap, {
-      id: 'id',
-      uuid: 'uuid',
-      series: 'series',
-      folio: 'folio',
-      currency: 'currency',
-      issuerRfc: 'issuerRfc',
-      issuerName: 'issuerName',
-      receiverRfc: 'receiverRfc',
-      receiverName: 'receiverName',
-      paymentMethod: 'paymentMethod',
-      paymentForm: 'paymentForm'
+    const where = createBaseInvoiceWhere({
+      organizationId: member.organizationId,
+      companyId,
+      query,
+      cfdiTypes,
+      satStatus,
+      status,
+      dateFrom,
+      dateTo
     })
-
-    const directNumericFilterMap: Record<string, keyof Prisma.ProviderUploadedCfdiWhereInput> = Object.create(null)
-    Object.assign(directNumericFilterMap, {
-      subtotal: 'subtotal',
-      discount: 'discount',
-      total: 'total'
-    })
-
-    const reservedParams = new Set([
-      'companyId',
-      'page',
-      'limit',
-      'query',
-      'cfdiType',
-      'status',
-      'satStatus',
-      'dateFrom',
-      'dateTo',
-      'export',
-      'origin',
-      'orgId'
-    ])
-
-    let hasFilterCount = 0
-    let numericProjectionCount = 0
-
-    for (const [rawKey, rawValue] of scoped.searchParams.entries()) {
-      if (reservedParams.has(rawKey) || !rawValue) {
-        continue
-      }
-
-      if (rawKey in directTextFilterMap) {
-        andFilters.push({
-          [directTextFilterMap[rawKey]]: {
-            contains: rawValue,
-            mode: 'insensitive'
-          }
-        })
-        continue
-      }
-
-      if (rawKey in directNumericFilterMap && !Number.isNaN(Number(rawValue))) {
-        andFilters.push({
-          [directNumericFilterMap[rawKey]]: new Prisma.Decimal(Number(rawValue).toFixed(6))
-        })
-        continue
-      }
-
-      const key = rawKey.startsWith('attr.') ? rawKey.slice(5) : rawKey
-      const hasKeyRaw = rawKey.startsWith('has.') ? rawKey.slice(4) : null
-      const hasKey = hasKeyRaw
-        ? 'has' + hasKeyRaw.toLowerCase().replace(/(?:^|_)(\w)/g, (_m: string, char: string) => char.toUpperCase())
-        : rawKey
-      const normalizedValue = normalizeProjectionUpperText(rawValue)
-
-      // DR-004 whitelist has.* flags
-      if (rawKey.startsWith('has.') && !RECEPTION_HAS_FLAGS.has(hasKey as unknown as typeof RECEPTION_HAS_FLAGS extends Set<infer T> ? T : never)) {
-        continue
-      }
-      if (rawKey.startsWith('has.')) {
-        if (hasFilterCount >= MAX_HAS_FILTERS) continue
-        hasFilterCount++
-      }
-
-      if (workpaperComplementFlagKeySet.has(hasKey)) {
-        andFilters.push({
-          complementIndex: {
-            is: {
-              [hasKey]: parseBooleanFilter(rawValue)
-            }
-          }
-        })
-        continue
-      }
-
-      if (workpaperComplementVersionKeySet.has(key)) {
-        andFilters.push({
-          complementIndex: {
-            is: {
-              [key]: {
-                contains: rawValue,
-                mode: 'insensitive'
-              }
-            }
-          }
-        })
-        continue
-      }
-
-      if (workpaperAttributeKeySet.has(key)) {
-        if (workpaperNumericAttributeKeySet.has(key) && !Number.isNaN(Number(rawValue))) {
-          // DR-004 MAX_NUMERIC_PROJECTION_FILTERS anti-exhaustion
-          if (numericProjectionCount >= MAX_NUMERIC_PROJECTION_FILTERS) continue
-          numericProjectionCount++
-          andFilters.push({
-            complementAttributes: {
-              some: {
-                attributeKey: key,
-                valueNumber: new Prisma.Decimal(Number(rawValue).toFixed(6))
-              }
-            }
-          })
-        } else {
-          andFilters.push({
-            complementAttributes: {
-              some: {
-                attributeKey: key,
-                valueSearch: {
-                  contains: normalizedValue,
-                  mode: 'insensitive'
-                }
-              }
-            }
-          })
-        }
-      }
-    }
+    where.AND = buildDynamicInvoiceFilters(scoped.searchParams)
 
     const skip = (page - 1) * limit
     // DR-006 · NO incluir xmlBlob (nunca descifrar en listado) y NO incluir xmlContent directo

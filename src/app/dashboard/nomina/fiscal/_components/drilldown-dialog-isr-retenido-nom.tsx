@@ -27,7 +27,7 @@ import { FiscalNomEmptyState } from './fiscal-nomina-shared';
 import {
     fmtMxn, fmtNum, fmtDateEs,
 } from '@/lib/fiscal-nomina-formatters';
-import { sanitizeDownloadFilename } from '@/lib/dashboard-fiscal-route-utils';
+import { sanitizeDownloadFilename } from '@/lib/download-filename';
 
 export const ISR_DRILLDOWN_PAGE_SIZE = 200;
 

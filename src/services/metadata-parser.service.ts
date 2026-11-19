@@ -1,9 +1,10 @@
-import fs from 'fs'
-import path from 'path'
-import readline from 'readline'
+import fs from 'node:fs'
+import path from 'node:path'
+import readline from 'node:readline'
 import unzipper from 'unzipper'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { validateMassDownloadZip } from '@/lib/mass-download-secure-storage'
 
 type SatMetadataCreateInput = Prisma.SatMetadataCreateManyInput
 
@@ -25,53 +26,14 @@ export async function processMetadataTxt(filePath: string, chunkSize = 5000) {
 
   for await (const line of rl) {
     if (isFirstLine) {
-      // Ignorar los encabezados y detectar el separador (puede ser | o ~)
-      if (line.includes('~')) separator = '~'
-      else if (line.includes('|')) separator = '|'
-      
+      separator = detectMetadataSeparator(line)
       isFirstLine = false
       continue
     }
 
-    if (!line.trim()) continue
-
-    const cols = line.split(separator)
-    if (cols.length < 11) continue
-
-    const [
-      uuid,
-      rfcEmisor,
-      nombreEmisor,
-      rfcReceptor,
-      nombreReceptor,
-      rfcPac,
-      fechaEmision,
-      fechaCertificacionSat,
-      monto,
-      efectoComprobante,
-      estatus,
-      fechaCancelacion
-    ] = cols
-
-    // Parse dates
-    const parsedFechaEmision = fechaEmision ? new Date(fechaEmision) : null
-    const parsedFechaCert = fechaCertificacionSat ? new Date(fechaCertificacionSat) : null
-    const parsedFechaCanc = fechaCancelacion ? new Date(fechaCancelacion) : null
-
-    batch.push({
-      uuid: uuid.trim().toUpperCase(),
-      rfcEmisor: rfcEmisor?.trim() || '',
-      nombreEmisor: nombreEmisor?.trim() || null,
-      rfcReceptor: rfcReceptor?.trim() || '',
-      nombreReceptor: nombreReceptor?.trim() || null,
-      rfcPac: rfcPac?.trim() || null,
-      fechaEmision: parsedFechaEmision && !isNaN(parsedFechaEmision.getTime()) ? parsedFechaEmision : null,
-      fechaCertificacionSat: parsedFechaCert && !isNaN(parsedFechaCert.getTime()) ? parsedFechaCert : null,
-      monto: monto ? parseFloat(monto) : null,
-      efectoComprobante: efectoComprobante?.trim() || null,
-      estatus: estatus?.trim() || null,
-      fechaCancelacion: parsedFechaCanc && !isNaN(parsedFechaCanc.getTime()) ? parsedFechaCanc : null
-    })
+    const record = parseMetadataLine(line, separator)
+    if (!record) continue
+    batch.push(record)
 
     if (batch.length >= chunkSize) {
       await insertBatch(batch)
@@ -87,6 +49,53 @@ export async function processMetadataTxt(filePath: string, chunkSize = 5000) {
   }
 
   return totalProcessed
+}
+
+function detectMetadataSeparator(line: string): string {
+  if (line.includes('~')) return '~'
+  return '|'
+}
+
+function parseMetadataLine(line: string, separator: string): SatMetadataCreateInput | null {
+  if (!line.trim()) return null
+  const cols = line.split(separator)
+  if (cols.length < 11) return null
+
+  const [
+    uuid,
+    rfcEmisor,
+    nombreEmisor,
+    rfcReceptor,
+    nombreReceptor,
+    rfcPac,
+    fechaEmision,
+    fechaCertificacionSat,
+    monto,
+    efectoComprobante,
+    estatus,
+    fechaCancelacion,
+  ] = cols
+
+  return {
+    uuid: uuid.trim().toUpperCase(),
+    rfcEmisor: rfcEmisor?.trim() || '',
+    nombreEmisor: nombreEmisor?.trim() || null,
+    rfcReceptor: rfcReceptor?.trim() || '',
+    nombreReceptor: nombreReceptor?.trim() || null,
+    rfcPac: rfcPac?.trim() || null,
+    fechaEmision: parseMetadataDate(fechaEmision),
+    fechaCertificacionSat: parseMetadataDate(fechaCertificacionSat),
+    monto: monto ? Number.parseFloat(monto) : null,
+    efectoComprobante: efectoComprobante?.trim() || null,
+    estatus: estatus?.trim() || null,
+    fechaCancelacion: parseMetadataDate(fechaCancelacion),
+  }
+}
+
+function parseMetadataDate(value: string | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 async function insertBatch(batch: SatMetadataCreateInput[]) {
@@ -107,6 +116,7 @@ async function insertBatch(batch: SatMetadataCreateInput[]) {
  * Descomprime un archivo ZIP en un directorio de destino y procesa todos los TXT que encuentre.
  */
 export async function extractAndProcessMetadataZip(zipPath: string, extractToDir: string) {
+  await validateMassDownloadZip(await fs.promises.readFile(zipPath))
   return new Promise<{ totalRecords: number }>((resolve, reject) => {
     let totalRecords = 0
 

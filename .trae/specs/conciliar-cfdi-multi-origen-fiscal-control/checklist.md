@@ -1,0 +1,33 @@
+# Lista de verificación
+
+- [ ] El contrato normalizado distingue `Emitido`, `Recibido` y `Nómina`.
+- [ ] Las filas emitidas se leen desde `Invoice` sin cargar XML innecesariamente.
+- [ ] Las filas recibidas se leen desde `ProviderUploadedCfdi` y detectan `ProviderUploadedCfdiBlob`.
+- [ ] Las filas de nómina se relacionan con `PayrollReceipt` y conservan el UUID del CFDI.
+- [ ] El cruce con `SatMetadata` usa UUID normalizado y clasifica conciliados, faltantes, sobrantes, duplicados y conflictos.
+- [ ] Un registro de origen sin blob XML se marca como XML no disponible y no como XML conciliado.
+- [ ] Los filtros de empresa, organización, RFC, año, mes, tipo y estado se aplican consistentemente a todas las fuentes.
+- [ ] El filtro principal usa `fechaEmision` y la fecha de pago de nómina se conserva como dato específico.
+- [ ] Los conteos y totales se calculan por origen y globalmente con precisión decimal.
+- [ ] La API conserva el contrato actual y agrega origen/conciliación de forma compatible.
+- [ ] La exportación usa exactamente los mismos filtros y reglas que la tabla.
+- [ ] La interfaz muestra etiquetas legibles de origen y estado de conciliación.
+- [ ] La interfaz mantiene paginación, filtros de columnas y estados vacíos.
+- [ ] No se exponen XML, ciphertext, llaves, tokens, rutas físicas ni IDs internos innecesarios.
+- [ ] Las consultas respetan organización, empresa, permisos y aislamiento multi-tenant.
+- [ ] Las pruebas cubren un caso positivo y uno negativo por cada origen.
+- [ ] Las pruebas cubren UUID coincidente, metadato sin XML, XML sin metadato y UUID duplicado.
+- [ ] La consulta de diciembre de 2024 para `DMC750410C41` muestra resultados separados para metadatos, emitidos, recibidos y nómina.
+- [ ] La exportación coincide en filas, conteos y diferencias con la vista paginada.
+- [ ] Los índices adicionales, si son necesarios, están justificados por `EXPLAIN ANALYZE`.
+- [ ] La solución fue probada con 7 millones de registros históricos y 2 millones adicionales de un nuevo año.
+- [ ] La primera página y el resumen cumplen P95 menor a 900 ms en el entorno representativo.
+- [ ] Las páginas profundas usan cursor/keyset y no presentan degradación lineal por `OFFSET`.
+- [ ] Las consultas críticas no hacen secuencial completo sobre tablas históricas cuando existe un filtro indexable.
+- [ ] Las métricas agregadas no recorren todas las filas por cada render y se actualizan mediante proyección/materialización controlada cuando aplica.
+- [ ] El frontend mantiene sólo la página actual y no intenta renderizar millones de filas.
+- [ ] La exportación grande usa procesamiento asíncrono por lotes, con progreso, expiración y límites.
+- [ ] El crecimiento de 2 millones de registros por año conserva los presupuestos de latencia y memoria.
+- [ ] Se monitorean duración, filas examinadas, filas devueltas, memoria, conexiones y errores por fuente.
+- [x] ESLint, TypeScript y pruebas enfocadas terminan correctamente.
+- [x] `CHANGELOG.md` documenta el cambio aprobado.

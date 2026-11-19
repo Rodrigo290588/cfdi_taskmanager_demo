@@ -4,6 +4,15 @@ import { useEffect, useState } from 'react'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -63,8 +72,13 @@ function getProgressFromEstado(code: number) {
   return 0
 }
 
+function hasActiveFilter(filters: PackageDownloadFilters): boolean {
+  return filters.status !== 'Todos' || Boolean(filters.startDate || filters.endDate || filters.satPackageId)
+}
+
 async function loadPackageRequests(
   rfc: string,
+  filters: PackageDownloadFilters,
   setLoading: (value: boolean) => void,
   setRequests: (value: PackageRequest[]) => void
 ) {
@@ -72,6 +86,10 @@ async function loadPackageRequests(
   try {
     const params = new URLSearchParams()
     params.append('rfc', rfc)
+    if (filters.status !== 'Todos') params.append('status', filters.status)
+    if (filters.startDate) params.append('startDate', filters.startDate)
+    if (filters.endDate) params.append('endDate', filters.endDate)
+    if (filters.satPackageId) params.append('satPackageId', filters.satPackageId)
 
     const res = await fetch(`/api/mass-downloads/package-downloads?${params.toString()}`, { cache: 'no-store' })
     if (!res.ok) throw new Error('Error al cargar solicitudes de paquetes')
@@ -99,6 +117,13 @@ async function loadPackageRequests(
   }
 }
 
+interface PackageDownloadFilters {
+  status: string
+  startDate: string
+  endDate: string
+  satPackageId: string
+}
+
 export default function PackageDownloadsPage() {
   const [requests, setRequests] = useState<PackageRequest[]>([])
   const [loading, setLoading] = useState(false)
@@ -106,6 +131,12 @@ export default function PackageDownloadsPage() {
   const [autoRefresh] = useState(true)
   const [selectedRequest, setSelectedRequest] = useState<PackageRequest | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<{ id: string, rfc: string, businessName?: string } | null>(null)
+  const [filters, setFilters] = useState<PackageDownloadFilters>({
+    status: 'Todos',
+    startDate: '',
+    endDate: '',
+    satPackageId: '',
+  })
 
   const [isDownloadingZip, setIsDownloadingZip] = useState<string | null>(null)
 
@@ -139,6 +170,8 @@ export default function PackageDownloadsPage() {
         if (stored) {
           const company = JSON.parse(stored)
           if (company?.id && company?.rfc) {
+              setRequests([])
+              setHasSearched(false)
             setSelectedCompany(company)
           }
         }
@@ -154,31 +187,22 @@ export default function PackageDownloadsPage() {
 
   async function fetchData() {
     if (!selectedCompany?.rfc) return
+    if (!hasActiveFilter(filters)) {
+      toast.warning('Selecciona al menos un filtro para realizar la búsqueda')
+      return
+    }
     setHasSearched(true)
-    await loadPackageRequests(selectedCompany.rfc, setLoading, setRequests)
+    await loadPackageRequests(selectedCompany.rfc, filters, setLoading, setRequests)
   }
 
-  // Auto-fetch when company changes
   useEffect(() => {
-    if (!selectedCompany?.rfc) return
-
-    const rfc = selectedCompany.rfc
-    const timeoutId = setTimeout(() => {
-      setHasSearched(true)
-      void loadPackageRequests(rfc, setLoading, setRequests)
-    }, 0)
-
-    return () => clearTimeout(timeoutId)
-  }, [selectedCompany?.rfc])
-
-  useEffect(() => {
-    if (!autoRefresh || !selectedCompany?.rfc) return
+    if (!autoRefresh || !selectedCompany?.rfc || !hasSearched || !hasActiveFilter(filters)) return
     const rfc = selectedCompany.rfc
     const interval = setInterval(() => {
-      void loadPackageRequests(rfc, setLoading, setRequests)
+      void loadPackageRequests(rfc, filters, () => {}, setRequests)
     }, 5000)
     return () => clearInterval(interval)
-  }, [autoRefresh, selectedCompany?.rfc])
+  }, [autoRefresh, filters, hasSearched, selectedCompany?.rfc])
 
   const cfdiRequests = requests.filter(r => r.requestType !== 'metadata')
   const metadataRequests = requests.filter(r => r.requestType === 'metadata')
@@ -288,7 +312,12 @@ export default function PackageDownloadsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading || !selectedCompany}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchData()}
+              disabled={loading || !selectedCompany || !hasActiveFilter(filters)}
+            >
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
               Actualizar
             </Button>
@@ -303,6 +332,71 @@ export default function PackageDownloadsPage() {
           </Card>
         ) : (
           <>
+            <Card className="mt-4">
+              <CardContent>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void fetchData()
+                  }}
+                  className="grid gap-4 md:grid-cols-4 items-start"
+                >
+                  <div className="space-y-2">
+                    <Label>Estatus</Label>
+                    <Select
+                      value={filters.status}
+                      onValueChange={(value) => setFilters((current) => ({ ...current, status: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Todos">Todos</SelectItem>
+                        <SelectItem value="EN_PROCESO">En Proceso</SelectItem>
+                        <SelectItem value="TERMINADO">Terminado</SelectItem>
+                        <SelectItem value="ERROR">Error</SelectItem>
+                        <SelectItem value="RECHAZADO">Rechazado</SelectItem>
+                        <SelectItem value="VENCIDO">Vencido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Fecha Inicio de solicitud</Label>
+                    <Input
+                      type="date"
+                      value={filters.startDate}
+                      onChange={(event) => setFilters((current) => ({ ...current, startDate: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Fecha Fin de solicitud</Label>
+                    <Input
+                      type="date"
+                      value={filters.endDate}
+                      onChange={(event) => setFilters((current) => ({ ...current, endDate: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>ID Paquete SAT</Label>
+                    <Input
+                      placeholder="Buscar por ID..."
+                      value={filters.satPackageId}
+                      onChange={(event) => setFilters((current) => ({ ...current, satPackageId: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="flex gap-2 md:col-span-4 justify-start self-end">
+                    <Button type="submit" disabled={loading || !hasActiveFilter(filters)}>
+                      Buscar
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* CFDI Cards */}
               <Card>

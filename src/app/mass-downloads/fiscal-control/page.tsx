@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -22,8 +22,24 @@ import {
   TableFooter,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Eye } from "lucide-react"
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Eye, Loader2 } from "lucide-react"
+import { toast } from "sonner"
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts"
 
 type SelectedCompany = {
   id: string
@@ -60,7 +76,29 @@ type FiscalControlRow = {
   paymentForm: string
   usageCfdi: string
   expeditionPlace: string
+  origins: Array<"EMITIDO" | "RECIBIDO" | "NOMINA">
+  reconciliationStatus: string
+  xmlStorage: string
+  payrollPaymentDate: string | null
 }
+
+const SERVER_FILTERABLE_DETAIL_COLUMN_KEYS = new Set([
+  'uuid',
+  'issuerRfc',
+  'issuerName',
+  'receiverRfc',
+  'receiverName',
+  'cfdiType',
+  'total',
+  'issuanceDate',
+  'certificationDate',
+  'cancelationDate',
+  'certificationPac',
+  'origins',
+  'reconciliationStatus',
+  'satStatus',
+  'hasXml',
+])
 
 type FiscalControlResponse = {
   kpis: {
@@ -73,6 +111,24 @@ type FiscalControlResponse = {
     cancelados: number
     totalCanceladoAmount: number
   }
+  statusComparison: {
+    vigentes: { metadata: number; xml: number; difference: number }
+    cancelados: { metadata: number; xml: number; difference: number }
+  }
+  metadataTypeBreakdown: {
+    ingreso: { emitidos: number; recibidos: number }
+    egreso: { emitidos: number; recibidos: number }
+    nomina: { emitidos: number; recibidos: number }
+    pago: { emitidos: number; recibidos: number }
+    traslado: { emitidos: number; recibidos: number }
+  }
+  xmlTypeBreakdown: {
+    ingreso: { emitidos: number; recibidos: number }
+    egreso: { emitidos: number; recibidos: number }
+    nomina: { emitidos: number; recibidos: number }
+    pago: { emitidos: number; recibidos: number }
+    traslado: { emitidos: number; recibidos: number }
+  }
   monthly: Array<{ 
     label: string
     metadataCount: number
@@ -83,8 +139,34 @@ type FiscalControlResponse = {
     nomina: number
     pago: number
   }>
+  monthlyTypeDistribution: Array<{
+    month: string
+    metadata: {
+      ingresos: number
+      egresos: number
+      nomina: number
+      pagos: number
+      traslados: number
+    }
+    xml: {
+      ingresos: number
+      egresos: number
+      nomina: number
+      pagos: number
+      traslados: number
+    }
+  }>
   discrepancyAlert: boolean
   discrepancyPercent: number
+  sourceCounts: { metadata: number; emitidos: number; recibidos: number; nomina: number }
+  reconciliationSummary: {
+    totalRows: number
+    reconciled: number
+    metadataWithoutXml: number
+    xmlWithoutMetadata: number
+    xmlUnavailable: number
+    conflicts: number
+  }
   table: {
     rows: FiscalControlRow[]
     pagination: {
@@ -92,9 +174,33 @@ type FiscalControlResponse = {
       pageSize: number
       total: number
       totalPages: number
+      nextCursor: string | null
+      mode: "CURSOR"
+      reconciliationScope: "RANGE"
     }
   }
 }
+
+type StatusDifference = "VIGENTE" | "CANCELADO"
+type MonthlyDistributionSource = "METADATA" | "XML"
+
+type FiscalControlStatusDifferenceRow = {
+  uuid: string
+  issuanceDate: string | null
+  issuerRfc: string
+  issuerName: string
+  receiverRfc: string
+  receiverName: string
+  cfdiType: string
+  total: string | null
+  metadataStatus: StatusDifference | null
+  xmlStatus: StatusDifference | null
+  origins: Array<"EMITIDO" | "RECIBIDO" | "NOMINA">
+}
+
+type BadgeVariant = ComponentProps<typeof Badge>["variant"]
+type MetadataTypeDirectionCounts = FiscalControlResponse['metadataTypeBreakdown']['ingreso']
+type MetadataTypeLabel = 'Ingreso' | 'Egreso' | 'Nómina' | 'Pago' | 'Traslado'
 
 const cfdiTypes = [
   { value: "ALL", label: "Todos" },
@@ -110,6 +216,63 @@ const satStatuses = [
   { value: "VIGENTE", label: "Vigente" },
   { value: "CANCELADO", label: "Cancelado" },
 ]
+
+const XML_AMOUNT_ATTRIBUTES = {
+  subtotal: 'SubTotal',
+  discount: 'Descuento',
+  total: 'Total',
+} as const
+const METADATA_TYPE_VISUALS: Record<
+  MetadataTypeLabel,
+  { containerClass: string; titleClass: string }
+> = {
+  Ingreso: {
+    containerClass: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-950 dark:bg-emerald-950/25',
+    titleClass: 'text-emerald-700 dark:text-emerald-300',
+  },
+  Egreso: {
+    containerClass: 'border-rose-200 bg-rose-50/70 dark:border-rose-950 dark:bg-rose-950/25',
+    titleClass: 'text-rose-700 dark:text-rose-300',
+  },
+  Nómina: {
+    containerClass: 'border-violet-200 bg-violet-50/70 dark:border-violet-950 dark:bg-violet-950/25',
+    titleClass: 'text-violet-700 dark:text-violet-300',
+  },
+  Pago: {
+    containerClass: 'border-sky-200 bg-sky-50/70 dark:border-sky-950 dark:bg-sky-950/25',
+    titleClass: 'text-sky-700 dark:text-sky-300',
+  },
+  Traslado: {
+    containerClass: 'border-amber-200 bg-amber-50/70 dark:border-amber-950 dark:bg-amber-950/25',
+    titleClass: 'text-amber-700 dark:text-amber-300',
+  },
+}
+
+function MetadataTypeDirection({
+  label,
+  counts,
+}: Readonly<{
+  label: MetadataTypeLabel
+  counts: MetadataTypeDirectionCounts | undefined
+}>) {
+  const visual = METADATA_TYPE_VISUALS[label]
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${visual.containerClass}`}>
+      <p className={`text-center text-sm font-semibold ${visual.titleClass}`}>{label}</p>
+      <div className="mt-2 grid grid-cols-2 divide-x divide-foreground/10 text-center">
+        <div>
+          <span className="block text-[11px] text-muted-foreground">Emitidos</span>
+          <strong className="text-lg">{counts?.emitidos ?? 0}</strong>
+        </div>
+        <div>
+          <span className="block text-[11px] text-muted-foreground">Recibidos</span>
+          <strong className="text-lg">{counts?.recibidos ?? 0}</strong>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-MX", {
@@ -130,13 +293,21 @@ function formatDate(value: string) {
   return `${day}/${month}/${year} ${hours}:${minutes}`
 }
 
+const XML_NAMESPACE_PREFIX = '[A-Za-z_][A-Za-z0-9_.-]*'
+const COMPROBANTE_TAG_REGEX = new RegExp(
+  String.raw`<${XML_NAMESPACE_PREFIX}:Comprobante\b([^>]*)>`,
+)
+const RECEPTOR_TAG_REGEX = new RegExp(
+  String.raw`<${XML_NAMESPACE_PREFIX}:Receptor\b([^>]*)>`,
+)
+
 function getXmlAttribute(xml: string, attr: string): string {
   if (!xml) return ''
-  const comprobanteMatch = xml.match(/<[^:]+:Comprobante([^>]+)>/)
+  const comprobanteMatch = COMPROBANTE_TAG_REGEX.exec(xml)
   if (comprobanteMatch) {
     const attrs = comprobanteMatch[1]
     const regex = new RegExp(`${attr}="([^"]+)"`)
-    const match = attrs.match(regex)
+    const match = regex.exec(attrs)
     if (match) return match[1]
   }
   return ''
@@ -144,11 +315,11 @@ function getXmlAttribute(xml: string, attr: string): string {
 
 function getReceptorAttribute(xml: string, attr: string): string {
   if (!xml) return ''
-  const receptorMatch = xml.match(/<[^:]+:Receptor([^>]+)>/)
+  const receptorMatch = RECEPTOR_TAG_REGEX.exec(xml)
   if (receptorMatch) {
     const attrs = receptorMatch[1]
     const regex = new RegExp(`${attr}="([^"]+)"`)
-    const match = attrs.match(regex)
+    const match = regex.exec(attrs)
     if (match) return match[1]
   }
   return ''
@@ -156,8 +327,10 @@ function getReceptorAttribute(xml: string, attr: string): string {
 
 function getGlobalImpuestosAttribute(xml: string, attr: string): string {
   if (!xml) return ''
-  const regex = new RegExp(`<[^:]+:Impuestos[^>]*?\\b${attr}="([^"]+)"`)
-  const match = xml.match(regex)
+  const regex = new RegExp(
+    String.raw`<${XML_NAMESPACE_PREFIX}:Impuestos\b[^>]*\b${attr}="([^"]+)"`,
+  )
+  const match = regex.exec(xml)
   if (match) return match[1]
   return ''
 }
@@ -165,15 +338,199 @@ function getGlobalImpuestosAttribute(xml: string, attr: string): string {
 function getCfdiRelacionadosAttribute(xml: string, type: 'TipoRelacion' | 'UUID'): string {
   if (!xml) return ''
   if (type === 'TipoRelacion') {
-    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionados[^>]*?\bTipoRelacion="([^"]+)"/g))
+    const matches = Array.from(xml.matchAll(/<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?CfdiRelacionados\b[^>]*\bTipoRelacion="([^"]+)"/g))
     return matches.map(m => m[1]).join(', ')
   } else {
-    const matches = Array.from(xml.matchAll(/<(?:[^:]+:)?CfdiRelacionado[^>]*?\bUUID="([^"]+)"/g))
+    const matches = Array.from(xml.matchAll(/<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?CfdiRelacionado\b[^>]*\bUUID="([^"]+)"/g))
     return matches.map(m => m[1]).join(', ')
   }
 }
 
-export default function MassDownloadsFiscalControlPage() {
+function getOriginLabel(origin: FiscalControlRow['origins'][number]): string {
+  switch (origin) {
+    case 'NOMINA':
+      return 'Nómina'
+    case 'EMITIDO':
+      return 'Emitido'
+    default:
+      return 'Recibido'
+  }
+}
+
+function getDetailColumnSearchValue(row: FiscalControlRow, columnKey: string): string {
+  const comprobanteAttributes: Record<string, string> = {
+    version: 'Version',
+    noCertificado: 'NoCertificado',
+    certificado: 'Certificado',
+    series: 'Serie',
+    folio: 'Folio',
+    currency: 'Moneda',
+    exchangeRate: 'TipoCambio',
+    paymentMethod: 'MetodoPago',
+    paymentForm: 'FormaPago',
+    expeditionPlace: 'LugarExpedicion',
+  }
+  const receptorAttributes: Record<string, string> = {
+    domicilioFiscalReceptor: 'DomicilioFiscalReceptor',
+    residenciaFiscal: 'ResidenciaFiscal',
+    numRegIdTrib: 'NumRegIdTrib',
+    regimenFiscalReceptor: 'RegimenFiscalReceptor',
+    usageCfdi: 'UsoCFDI',
+  }
+  const taxAttributes: Record<string, string> = {
+    totalImpuestosTrasladados: 'TotalImpuestosTrasladados',
+    totalImpuestosRetenidos: 'TotalImpuestosRetenidos',
+  }
+  const comprobanteAttribute = comprobanteAttributes[columnKey]
+  if (comprobanteAttribute) {
+    return getXmlAttribute(row.xmlContent, comprobanteAttribute)
+  }
+  const receptorAttribute = receptorAttributes[columnKey]
+  if (receptorAttribute) {
+    return getReceptorAttribute(row.xmlContent, receptorAttribute)
+  }
+  const taxAttribute = taxAttributes[columnKey]
+  if (taxAttribute) {
+    return getGlobalImpuestosAttribute(row.xmlContent, taxAttribute)
+  }
+
+  const values: Record<string, string> = {
+    uuid: row.uuid,
+    cfdiType: row.cfdiType,
+    satStatus: row.satStatus,
+    origins: row.origins.map(getOriginLabel).join(' '),
+    reconciliationStatus: getReconciliationLabel(row.reconciliationStatus),
+    hasXml: row.hasXml ? 'XML' : 'Meta',
+    issuerRfc: row.issuerRfc,
+    issuerName: row.issuerName,
+    receiverRfc: row.receiverRfc,
+    receiverName: row.receiverName,
+    subtotal: `${row.subtotal} ${formatCurrency(row.subtotal)}`,
+    discount: `${row.discount} ${formatCurrency(row.discount)}`,
+    total: `${row.total} ${formatCurrency(row.total)}`,
+    issuanceDate: `${row.issuanceDate} ${formatDate(row.issuanceDate)}`,
+    certificationDate: `${row.certificationDate} ${formatDate(row.certificationDate)}`,
+    cancelationDate: row.cancelationDate
+      ? `${row.cancelationDate} ${formatDate(row.cancelationDate)}`
+      : '',
+    certificationPac: row.certificationPac,
+  }
+  return values[columnKey] ?? ''
+}
+
+function matchesDetailColumnFilter(value: string, filter: string): boolean {
+  return value.normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('es-MX')
+    .includes(
+      filter.normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-MX'),
+    )
+}
+
+async function getExportErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { error?: unknown }
+    if (typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error
+    }
+  } catch {
+    // A non-JSON error response should use the safe user-facing fallback below.
+  }
+
+  if (response.status === 401) {
+    return 'Tu sesión ha vencido. Inicia sesión nuevamente.'
+  }
+  if (response.status === 403) {
+    return 'No tienes permiso para exportar los datos de esta empresa.'
+  }
+  if (response.status === 404) {
+    return 'La empresa seleccionada no está disponible.'
+  }
+  return 'No se pudo generar el reporte. Intenta nuevamente.'
+}
+
+function getReconciliationLabel(status: string): string {
+  switch (status) {
+    case 'CONCILIADO':
+      return 'Conciliado'
+    case 'METADATO_SIN_XML':
+      return 'Metadato sin XML'
+    case 'XML_SIN_METADATO':
+      return 'XML sin metadato'
+    case 'XML_NO_DISPONIBLE':
+      return 'XML no disponible'
+    default:
+      return 'Conflicto'
+  }
+}
+
+function getReconciliationBadgeVariant(status: string): BadgeVariant {
+  switch (status) {
+    case 'CONCILIADO':
+      return 'default'
+    case 'CONFLICTO':
+      return 'destructive'
+    default:
+      return 'outline'
+  }
+}
+
+function StatusDrilldownContent({
+  isLoading,
+  rows,
+}: Readonly<{
+  isLoading: boolean
+  rows: FiscalControlStatusDifferenceRow[]
+}>) {
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <p className="p-8 text-center text-sm text-muted-foreground">
+        No se encontraron CFDI con diferencia de estatus para esta selección.
+      </p>
+    )
+  }
+
+  return (
+    <Table>
+      <TableHeader className="sticky top-0 z-10 bg-muted">
+        <TableRow>
+          <TableHead>Fecha</TableHead>
+          <TableHead>UUID</TableHead>
+          <TableHead>Tipo</TableHead>
+          <TableHead>Emisor</TableHead>
+          <TableHead>Receptor</TableHead>
+          <TableHead className="text-right">Total</TableHead>
+          <TableHead>Metadatos SAT</TableHead>
+          <TableHead>XML</TableHead>
+          <TableHead>Origen XML</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.uuid}>
+            <TableCell className="whitespace-nowrap">{row.issuanceDate ? formatDate(row.issuanceDate) : "-"}</TableCell>
+            <TableCell className="font-mono text-xs">{row.uuid}</TableCell>
+            <TableCell>{row.cfdiType || "-"}</TableCell>
+            <TableCell><p>{row.issuerRfc || "-"}</p><p className="text-xs text-muted-foreground">{row.issuerName}</p></TableCell>
+            <TableCell><p>{row.receiverRfc || "-"}</p><p className="text-xs text-muted-foreground">{row.receiverName}</p></TableCell>
+            <TableCell className="text-right">{formatCurrency(Number(row.total ?? 0))}</TableCell>
+            <TableCell><Badge variant={row.metadataStatus === "CANCELADO" ? "destructive" : "default"}>{row.metadataStatus ?? "Sin metadato"}</Badge></TableCell>
+            <TableCell><Badge variant={row.xmlStatus === "CANCELADO" ? "destructive" : "default"}>{row.xmlStatus ?? "Sin XML"}</Badge></TableCell>
+            <TableCell>{row.origins.map(getOriginLabel).join(", ") || "-"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+export default function MassDownloadsFiscalControlPage() { // NOSONAR S3776: Composición de secciones visuales y estados locales.
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(() => {
     try {
       const stored = localStorage.getItem("selectedCompany")
@@ -185,14 +542,24 @@ export default function MassDownloadsFiscalControlPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(() => selectedCompany?.id || null)
 
   const [rfcFilter, setRfcFilter] = useState("")
-  const [year, setYear] = useState<string>("")
-  const [month, setMonth] = useState<string>("")
+  const [startDate, setStartDate] = useState<string>("")
+  const [endDate, setEndDate] = useState<string>("")
+  const [origin, setOrigin] = useState<string>("ALL")
   const [cfdiType, setCfdiType] = useState<string>("ALL")
   const [satStatus, setSatStatus] = useState<string>("ALL")
 
   const [loading, setLoading] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [data, setData] = useState<FiscalControlResponse | null>(null)
+  const [monthlyDistributionSource, setMonthlyDistributionSource] =
+    useState<MonthlyDistributionSource>("METADATA")
+  const [statusDrilldown, setStatusDrilldown] = useState<StatusDifference | null>(null)
+  const [statusDrilldownRows, setStatusDrilldownRows] = useState<FiscalControlStatusDifferenceRow[]>([])
+  const [statusDrilldownLoading, setStatusDrilldownLoading] = useState(false)
   const [pageSize] = useState(50)
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([null])
+  const [cursorIndex, setCursorIndex] = useState(0)
+  const hasValidDateRange = Boolean(startDate && endDate && startDate <= endDate)
 
   const columnDefs = useMemo(() => [
     { key: 'uuid', label: 'UUID', group: '<tfd:TimbreFiscalDigital>', render: (r: FiscalControlRow) => <span className="whitespace-nowrap">{r.uuid}</span> },
@@ -212,7 +579,17 @@ export default function MassDownloadsFiscalControlPage() {
         {r.satStatus}
       </Badge>
     ) },
-    { key: 'hasXml', label: 'Origen', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
+    { key: 'origins', label: 'Origen', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
+      <div className="flex flex-wrap gap-1">
+        {r.origins.map(origin => <Badge key={origin} variant="outline">{getOriginLabel(origin)}</Badge>)}
+      </div>
+    ) },
+    { key: 'reconciliationStatus', label: 'Conciliación', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
+      <Badge variant={getReconciliationBadgeVariant(r.reconciliationStatus)}>
+        {getReconciliationLabel(r.reconciliationStatus)}
+      </Badge>
+    ) },
+    { key: 'hasXml', label: 'XML disponible', group: 'Sistema / Metadatos', render: (r: FiscalControlRow) => (
       <Badge className={r.hasXml ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"}>
         {r.hasXml ? "XML" : "Meta"}
       </Badge>
@@ -269,7 +646,7 @@ export default function MassDownloadsFiscalControlPage() {
   }, [columnDefs])
 
   // Default visible columns
-  const basicColumnsKeys = ['uuid', 'issuerRfc', 'receiverRfc', 'receiverName', 'issuanceDate', 'total', 'satStatus', 'hasXml', 'certificationPac', 'certificationDate', 'cfdiType', 'cancelationDate']
+  const basicColumnsKeys = ['uuid', 'origins', 'reconciliationStatus', 'issuerRfc', 'receiverRfc', 'receiverName', 'issuanceDate', 'total', 'satStatus', 'hasXml', 'cfdiType']
   const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(basicColumnsKeys))
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     const known = columnDefs.map(c => c.key)
@@ -361,11 +738,6 @@ export default function MassDownloadsFiscalControlPage() {
     }
   }, [])
 
-  const yearsOptions = useMemo(() => {
-    const currentYear = new Date().getFullYear()
-    return Array.from({ length: 6 }, (_, i) => String(currentYear - i))
-  }, [])
-
   const uniqueRfcs = useMemo(() => {
     const set = new Set<string>()
     if (data?.table?.rows) {
@@ -384,83 +756,162 @@ export default function MassDownloadsFiscalControlPage() {
   }, [rfcFilter, uniqueRfcs])
 
   const fetchData = useCallback(
-    async (targetPage: number) => {
-      if (!selectedCompanyId) return
+    async (cursor: string | null = null) => {
+      if (!selectedCompanyId || !hasValidDateRange) {
+        setData(null)
+        return
+      }
       setLoading(true)
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
-        page: String(targetPage),
         pageSize: String(pageSize),
       })
+      if (cursor) params.set("cursor", cursor)
       if (rfcFilter.trim()) params.set("rfc", rfcFilter.trim())
-      if (year) params.set("year", year)
-      if (month) params.set("month", month)
+      if (startDate) params.set("startDate", startDate)
+      if (endDate) params.set("endDate", endDate)
+      if (origin !== "ALL") params.set("origin", origin)
       if (cfdiType && cfdiType !== "ALL") params.set("cfdiType", cfdiType)
       if (satStatus && satStatus !== "ALL") params.set("satStatus", satStatus)
 
       // Add column filters
       Object.entries(debouncedFilters).forEach(([key, value]) => {
-        if (value.trim()) {
+        if (SERVER_FILTERABLE_DETAIL_COLUMN_KEYS.has(key) && value.trim()) {
           params.set(`filter_${key}`, value.trim())
         }
       })
 
       try {
-        const res = await fetch(`/api/mass-downloads/fiscal-control?${params.toString()}`, { cache: "no-store" })
+        const [res, summaryRes] = await Promise.all([
+          fetch(`/api/mass-downloads/fiscal-control?${params.toString()}`, { cache: "no-store" }),
+          fetch(`/api/mass-downloads/fiscal-control/summary?${params.toString()}`, { cache: "no-store" }),
+        ])
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || "Error al cargar datos")
-        setData(json)
+        const summary = summaryRes.ok ? await summaryRes.json() : null
+        setData(summary ? { ...json, ...summary, table: json.table } : json)
       } catch {
         setData(null)
       } finally {
         setLoading(false)
       }
     },
-    [selectedCompanyId, pageSize, rfcFilter, year, month, cfdiType, satStatus, debouncedFilters]
+    [selectedCompanyId, hasValidDateRange, pageSize, rfcFilter, startDate, endDate, origin, cfdiType, satStatus, debouncedFilters]
   )
 
   useEffect(() => {
-    if (selectedCompanyId) {
-      const timeoutId = setTimeout(() => {
-        void fetchData(1)
-      }, 0)
-
-      return () => clearTimeout(timeoutId)
+    if (!selectedCompanyId || !hasValidDateRange) {
+      return
     }
-  }, [selectedCompanyId, fetchData])
+
+    const timeoutId = setTimeout(() => {
+      setCursorHistory([null])
+      setCursorIndex(0)
+      void fetchData(null)
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [selectedCompanyId, hasValidDateRange, fetchData])
 
   const handleApplyFilters = () => {
-    fetchData(1)
+    if (!hasValidDateRange) {
+      return
+    }
+    setCursorHistory([null])
+    setCursorIndex(0)
+    void fetchData(null)
   }
 
-  const handleExport = () => {
-    if (!selectedCompanyId) return
+  const handleExport = async () => {
+    if (!selectedCompanyId || !hasValidDateRange) return
 
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
     })
 
     if (rfcFilter.trim()) params.set("rfc", rfcFilter.trim())
-    if (year) params.set("year", year)
-    if (month) params.set("month", month)
+    if (startDate) params.set("startDate", startDate)
+    if (endDate) params.set("endDate", endDate)
+    if (origin !== "ALL") params.set("origin", origin)
     if (cfdiType && cfdiType !== "ALL") params.set("cfdiType", cfdiType)
     if (satStatus && satStatus !== "ALL") params.set("satStatus", satStatus)
 
     // Add column filters
     Object.entries(debouncedFilters).forEach(([key, value]) => {
-      if (value.trim()) {
+      if (SERVER_FILTERABLE_DETAIL_COLUMN_KEYS.has(key) && value.trim()) {
         params.set(`filter_${key}`, value.trim())
       }
     })
 
-    const url = `/api/mass-downloads/fiscal-control/export?${params.toString()}`
-    const link = document.createElement("a")
-    link.href = url
-    link.setAttribute("download", "panel_control_fiscal_cfdi.csv")
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    setIsExporting(true)
+    try {
+      const response = await fetch(
+        `/api/mass-downloads/fiscal-control/export?${params.toString()}`,
+        { cache: 'no-store' },
+      )
+      if (response.status === 202) {
+        const payload = await response.json() as { message?: unknown }
+        const message = typeof payload.message === 'string'
+          ? payload.message
+          : 'El reporte se está preparando. Podrás descargarlo cuando finalice.'
+        toast.info(message)
+        return
+      }
+      if (!response.ok) {
+        toast.error(await getExportErrorMessage(response))
+        return
+      }
+
+      const csv = await response.blob()
+      const downloadUrl = URL.createObjectURL(csv)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = 'panel_control_fiscal_cfdi.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(downloadUrl)
+      toast.success('El reporte se descargó correctamente.')
+    } catch {
+      toast.error('No se pudo generar el reporte. Verifica tu conexión e intenta nuevamente.')
+    } finally {
+      setIsExporting(false)
+    }
   }
+
+  const openStatusDrilldown = useCallback(async (status: StatusDifference) => {
+    if (!selectedCompanyId || !hasValidDateRange) {
+      return
+    }
+
+    setStatusDrilldown(status)
+    setStatusDrilldownRows([])
+    setStatusDrilldownLoading(true)
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      startDate,
+      endDate,
+      statusDifference: status,
+    })
+    if (rfcFilter.trim()) params.set("rfc", rfcFilter.trim())
+    if (origin !== "ALL") params.set("origin", origin)
+    if (cfdiType !== "ALL") params.set("cfdiType", cfdiType)
+
+    try {
+      const response = await fetch(`/api/mass-downloads/fiscal-control?${params.toString()}`, {
+        cache: "no-store",
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || "Error al cargar el detalle de estatus")
+      }
+      setStatusDrilldownRows(payload.rows ?? [])
+    } catch {
+      setStatusDrilldownRows([])
+    } finally {
+      setStatusDrilldownLoading(false)
+    }
+  }, [selectedCompanyId, hasValidDateRange, startDate, endDate, rfcFilter, origin, cfdiType])
 
   if (!selectedCompanyId) {
     return (
@@ -485,25 +936,42 @@ export default function MassDownloadsFiscalControlPage() {
     ? `${data.kpis.completenessPercent.toFixed(2)}% de los XML descargados`
     : "Sin datos"
 
-  const filteredRows = data?.table?.rows || []
+  const filteredRows = data?.table?.rows.filter((row) => (
+    Object.entries(columnFilters).every(([key, rawFilter]) => {
+      const filter = rawFilter.trim()
+      return !filter || matchesDetailColumnFilter(getDetailColumnSearchValue(row, key), filter)
+    })
+  )) ?? []
 
-  const totalPages = data?.table?.pagination?.totalPages || 0
-  
-  const page = data?.table?.pagination?.page || 1
-  const pageSizeLocal = data?.table?.pagination?.pageSize || 50
-  const totalRecords = data?.table?.pagination?.total || 0
-  
-  const startRecord = totalRecords === 0 ? 0 : (page - 1) * pageSizeLocal + 1
-  const endRecord = Math.min(page * pageSizeLocal, totalRecords)
-  
-  const recordCounter = `Mostrando ${startRecord} al ${endRecord} de ${totalRecords} registros`
+  const currentRowsCount = data?.table?.rows?.length || 0
+  const recordCounter = `Mostrando ${currentRowsCount} registros de la página actual`
 
-  const pieData = [
-    { name: 'Vigentes', value: data?.cancelationStats?.vigentes || 0 },
-    { name: 'Cancelados', value: data?.cancelationStats?.cancelados || 0 },
+  const statusComparisonData = [
+    {
+      status: 'Vigentes',
+      metadatos: data?.statusComparison?.vigentes.metadata ?? 0,
+      xml: data?.statusComparison?.vigentes.xml ?? 0,
+      diferencia: data?.statusComparison?.vigentes.difference ?? 0,
+    },
+    {
+      status: 'Cancelados',
+      metadatos: data?.statusComparison?.cancelados.metadata ?? 0,
+      xml: data?.statusComparison?.cancelados.xml ?? 0,
+      diferencia: data?.statusComparison?.cancelados.difference ?? 0,
+    },
   ]
 
-  const COLORS = ['#48bb78', '#f56565'] // Green for Vigente, Red for Cancelled
+  const monthlyTypeDistributionData = data?.monthlyTypeDistribution.map((month) => {
+    const values = monthlyDistributionSource === "METADATA" ? month.metadata : month.xml
+    return {
+      label: month.month,
+      ingreso: values.ingresos,
+      egreso: values.egresos,
+      traslado: values.traslados,
+      nomina: values.nomina,
+      pago: values.pagos,
+    }
+  }) ?? []
 
   return (
     <ProtectedRoute>
@@ -549,44 +1017,13 @@ export default function MassDownloadsFiscalControlPage() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
-                <div className="space-y-2 w-full">
-                  <Label>Año</Label>
-                  <Select value={year} onValueChange={setYear}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Año" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {yearsOptions.map((y) => (
-                        <SelectItem key={y} value={y}>
-                          {y}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2 w-full">
-                  <Label>Mes</Label>
-                  <Select value={month} onValueChange={setMonth}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Mes" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="01">Enero</SelectItem>
-                      <SelectItem value="02">Febrero</SelectItem>
-                      <SelectItem value="03">Marzo</SelectItem>
-                      <SelectItem value="04">Abril</SelectItem>
-                      <SelectItem value="05">Mayo</SelectItem>
-                      <SelectItem value="06">Junio</SelectItem>
-                      <SelectItem value="07">Julio</SelectItem>
-                      <SelectItem value="08">Agosto</SelectItem>
-                      <SelectItem value="09">Septiembre</SelectItem>
-                      <SelectItem value="10">Octubre</SelectItem>
-                      <SelectItem value="11">Noviembre</SelectItem>
-                      <SelectItem value="12">Diciembre</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-2">
+                <Label>Fecha inicial *</Label>
+                <Input type="date" required value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha final *</Label>
+                <Input type="date" required min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Tipo de Comprobante</Label>
@@ -618,16 +1055,35 @@ export default function MassDownloadsFiscalControlPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Origen</Label>
+                <Select value={origin} onValueChange={setOrigin}>
+                  <SelectTrigger><SelectValue placeholder="Todos los orígenes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Todos los orígenes</SelectItem>
+                    <SelectItem value="EMITIDO">Emitido</SelectItem>
+                    <SelectItem value="RECIBIDO">Recibido</SelectItem>
+                    <SelectItem value="NOMINA">Nómina</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-end gap-2 justify-end md:col-span-4 lg:col-span-2">
-                <Button onClick={handleApplyFilters} disabled={loading}>
+                <Button onClick={handleApplyFilters} disabled={loading || !hasValidDateRange}>
                   {loading ? "Aplicando..." : "Aplicar filtros"}
                 </Button>
               </div>
             </div>
+            {!hasValidDateRange && (
+              <p className="text-sm text-muted-foreground">
+                Selecciona una fecha inicial y una fecha final para consultar el control fiscal.
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        {hasValidDateRange ? (
+          <>
+        <div className="grid gap-4 md:grid-cols-6 xl:grid-cols-8">
           <Card className="md:col-span-1">
             <CardHeader>
               <CardTitle>Registros en Metadatos</CardTitle>
@@ -636,6 +1092,18 @@ export default function MassDownloadsFiscalControlPage() {
               <p className="text-3xl font-bold">
                 {data?.kpis?.metadataTotal?.toLocaleString("es-MX") || "0"}
               </p>
+            </CardContent>
+          </Card>
+          <Card className="md:col-span-5 xl:col-span-7">
+            <CardHeader>
+              <CardTitle>Metadatos SAT por tipo</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+              <MetadataTypeDirection label="Ingreso" counts={data?.metadataTypeBreakdown?.ingreso} />
+              <MetadataTypeDirection label="Egreso" counts={data?.metadataTypeBreakdown?.egreso} />
+              <MetadataTypeDirection label="Nómina" counts={data?.metadataTypeBreakdown?.nomina} />
+              <MetadataTypeDirection label="Pago" counts={data?.metadataTypeBreakdown?.pago} />
+              <MetadataTypeDirection label="Traslado" counts={data?.metadataTypeBreakdown?.traslado} />
             </CardContent>
           </Card>
           <Card className="md:col-span-1">
@@ -648,7 +1116,22 @@ export default function MassDownloadsFiscalControlPage() {
               </p>
             </CardContent>
           </Card>
-          <Card className="md:col-span-2">
+          <Card className="md:col-span-5 xl:col-span-7">
+            <CardHeader>
+              <CardTitle>CFDI Descargados por tipo</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+              <MetadataTypeDirection label="Ingreso" counts={data?.xmlTypeBreakdown?.ingreso} />
+              <MetadataTypeDirection label="Egreso" counts={data?.xmlTypeBreakdown?.egreso} />
+              <MetadataTypeDirection label="Nómina" counts={data?.xmlTypeBreakdown?.nomina} />
+              <MetadataTypeDirection label="Pago" counts={data?.xmlTypeBreakdown?.pago} />
+              <MetadataTypeDirection label="Traslado" counts={data?.xmlTypeBreakdown?.traslado} />
+            </CardContent>
+          </Card>
+        </div>
+
+<div className="grid gap-4 md:grid-cols-6 xl:grid-cols-8">
+          <Card className="md:col-span-2 xl:col-span-2">
             <CardHeader>
               <CardTitle>Indicador de brecha</CardTitle>
             </CardHeader>
@@ -664,35 +1147,41 @@ export default function MassDownloadsFiscalControlPage() {
               )}
             </CardContent>
           </Card>
+          <Card className="md:col-span-4 xl:col-span-6">
+            <CardHeader>
+              <CardTitle>Resumen de conciliación del rango</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div><p className="text-sm text-muted-foreground">Emitidos</p><p className="text-2xl font-semibold">{data?.sourceCounts?.emitidos ?? 0}</p></div>
+              <div><p className="text-sm text-muted-foreground">Recibidos</p><p className="text-2xl font-semibold">{data?.sourceCounts?.recibidos ?? 0}</p></div>
+              <div><p className="text-sm text-muted-foreground">Nómina</p><p className="text-2xl font-semibold">{data?.sourceCounts?.nomina ?? 0}</p></div>
+              <div><p className="text-sm text-muted-foreground">Pendientes o conflictos</p><p className="text-2xl font-semibold">{(data?.reconciliationSummary?.metadataWithoutXml ?? 0) + (data?.reconciliationSummary?.xmlWithoutMetadata ?? 0) + (data?.reconciliationSummary?.xmlUnavailable ?? 0) + (data?.reconciliationSummary?.conflicts ?? 0)}</p></div>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Monitor de Estatus de Cancelación</CardTitle>
+              <CardTitle>Comparativa de estatus: Metadatos SAT vs XML</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col md:flex-row items-center justify-around h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      paddingAngle={5}
-                      dataKey="value"
-                      label
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => Number(value).toLocaleString()} />
+                  <BarChart data={statusComparisonData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="status" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip
+                      formatter={(value, name) => [
+                        Number(value).toLocaleString('es-MX'),
+                        name === 'Metadatos SAT' ? 'Metadatos descargados' : 'XML descargados',
+                      ]}
+                    />
                     <Legend />
-                  </PieChart>
+                    <Bar dataKey="metadatos" name="Metadatos SAT" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="xml" name="XML descargados" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col items-center justify-center space-y-2 p-4 border rounded-lg shadow-sm bg-muted/50">
                   <span className="text-sm font-medium text-muted-foreground">Monto Cancelado</span>
@@ -702,20 +1191,54 @@ export default function MassDownloadsFiscalControlPage() {
                   <span className="text-xs text-muted-foreground">
                     {data?.cancelationStats?.cancelados?.toLocaleString() || "0"} facturas canceladas
                   </span>
+                  <div className="w-full border-t pt-2 text-center text-xs text-muted-foreground">
+                    <p>Brecha vigentes: {statusComparisonData[0].diferencia.toLocaleString('es-MX')}</p>
+                    <p>Brecha cancelados: {statusComparisonData[1].diferencia.toLocaleString('es-MX')}</p>
+                  </div>
                 </div>
+              </div>
+              <div className="mt-4 flex flex-wrap justify-center gap-2 border-t pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => void openStatusDrilldown("VIGENTE")}
+                  disabled={loading}
+                >
+                  Ver diferencia de vigentes
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void openStatusDrilldown("CANCELADO")}
+                  disabled={loading}
+                >
+                  Ver diferencia de cancelados
+                </Button>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Distribución por Efecto (Flujo Operativo)</CardTitle>
+            <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>
+                Distribución mensual por tipo de CFDI ({monthlyDistributionSource === "METADATA" ? "Metadatos SAT" : "XML descargados"})
+              </CardTitle>
+              <Select
+                value={monthlyDistributionSource}
+                onValueChange={(value: MonthlyDistributionSource) => setMonthlyDistributionSource(value)}
+              >
+                <SelectTrigger className="w-full sm:w-[220px]">
+                  <SelectValue placeholder="Selecciona la fuente" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="METADATA">Metadatos SAT</SelectItem>
+                  <SelectItem value="XML">XML descargados</SelectItem>
+                </SelectContent>
+              </Select>
             </CardHeader>
             <CardContent>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={data?.monthly || []}
+                    data={monthlyTypeDistributionData}
                     margin={{
                       top: 20,
                       right: 30,
@@ -726,7 +1249,10 @@ export default function MassDownloadsFiscalControlPage() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="label" />
                     <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Tooltip
+                      formatter={(value) => formatCurrency(Number(value))}
+                      labelFormatter={(label) => `Mes: ${label}`}
+                    />
                     <Legend />
                     <Bar dataKey="ingreso" name="Ingresos" stackId="a" fill="#2b6cb0" />
                     <Bar dataKey="egreso" name="Egresos" stackId="a" fill="#e53e3e" />
@@ -740,27 +1266,6 @@ export default function MassDownloadsFiscalControlPage() {
           </Card>
         </div>
 
-        <Card className={data?.discrepancyAlert ? "border-red-500" : ""}>
-          <CardHeader>
-            <CardTitle>Conciliación Metadatos vs XML por mes</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto scrollbar-visible">
-            <div className="min-w-[800px]">
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={data?.monthly || []} margin={{ left: 40, right: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="metadataCount" name="Metadatos" fill="#2b6cb0" />
-                  <Bar dataKey="xmlCount" name="XML descargados" fill="#68d391" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle>Detalle de registros</CardTitle>
@@ -768,8 +1273,14 @@ export default function MassDownloadsFiscalControlPage() {
               <div className="text-sm text-muted-foreground mr-4">
                 {recordCounter}
               </div>
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={loading || !data?.table?.rows?.length}>
-                Exportar reporte
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleExport()}
+                disabled={loading || isExporting || !data?.table?.rows?.length}
+              >
+                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isExporting ? 'Generando reporte...' : 'Exportar reporte'}
               </Button>
               <Button variant="secondary" size="sm" onClick={() => setShowColumnPanel(v => !v)}>
                 <Eye className="h-4 w-4 mr-2" />
@@ -881,7 +1392,7 @@ export default function MassDownloadsFiscalControlPage() {
                         <TableHead key={col.key} className="whitespace-nowrap">
                           <div className="mb-2 font-semibold">{col.label}</div>
                           <Input
-                            placeholder="Buscar..."
+                            placeholder={SERVER_FILTERABLE_DETAIL_COLUMN_KEYS.has(col.key) ? "Buscar..." : "Buscar en esta página..."}
                             className="h-7 text-xs font-normal"
                             value={columnFilters[col.key] || ''}
                             onChange={(e) => setColumnFilters(prev => ({ ...prev, [col.key]: e.target.value }))}
@@ -931,7 +1442,10 @@ export default function MassDownloadsFiscalControlPage() {
                           let sum = 0;
                           if (col.key === 'subtotal' || col.key === 'discount' || col.key === 'total') {
                             sum = filteredRows.reduce((acc, row) => {
-                              const xmlVal = getXmlAttribute(row.xmlContent, col.key === 'subtotal' ? 'SubTotal' : col.key === 'discount' ? 'Descuento' : 'Total')
+                              const attribute = XML_AMOUNT_ATTRIBUTES[
+                                col.key as keyof typeof XML_AMOUNT_ATTRIBUTES
+                              ]
+                              const xmlVal = getXmlAttribute(row.xmlContent, attribute)
                               const val = xmlVal ? Number(xmlVal) : (row[col.key as keyof FiscalControlRow] as number || 0)
                               return acc + val
                             }, 0)
@@ -967,25 +1481,36 @@ export default function MassDownloadsFiscalControlPage() {
                 )}
               </Table>
             </div>
-            {totalPages > 1 && (
+            {(cursorIndex > 0 || data?.table?.pagination?.nextCursor) && (
               <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
                 <div>
-                  {recordCounter} • Página {page} de {totalPages}
+                  {recordCounter} • Página {cursorIndex + 1}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={loading || page <= 1}
-                    onClick={() => fetchData(page - 1)}
+                    disabled={loading || cursorIndex <= 0}
+                    onClick={() => {
+                      const nextIndex = cursorIndex - 1
+                      setCursorIndex(nextIndex)
+                      void fetchData(cursorHistory[nextIndex])
+                    }}
                   >
                     Anterior
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={loading || page >= totalPages}
-                    onClick={() => fetchData(page + 1)}
+                    disabled={loading || !data?.table?.pagination?.nextCursor}
+                    onClick={() => {
+                      const nextCursor = data?.table?.pagination?.nextCursor
+                      if (!nextCursor) return
+                      const nextIndex = cursorIndex + 1
+                      setCursorHistory(previous => [...previous.slice(0, nextIndex), nextCursor])
+                      setCursorIndex(nextIndex)
+                      void fetchData(nextCursor)
+                    }}
                   >
                     Siguiente
                   </Button>
@@ -994,6 +1519,52 @@ export default function MassDownloadsFiscalControlPage() {
             )}
           </CardContent>
         </Card>
+          </>
+        ) : (
+          <Card>
+            <CardContent className="py-12 text-center text-sm text-muted-foreground">
+              Selecciona un rango de fechas para visualizar los indicadores, gráficas y registros de conciliación.
+            </CardContent>
+          </Card>
+        )}
+        <Dialog open={statusDrilldown !== null} onOpenChange={(open) => {
+          if (!open) {
+            setStatusDrilldown(null)
+          }
+        }}>
+          <DialogContent className="flex h-screen w-screen max-w-[100vw] flex-col rounded-none p-6 sm:max-w-[100vw]">
+            <DialogHeader className="shrink-0 pr-8">
+              <DialogTitle>
+                CFDI con diferencia de estatus: {statusDrilldown === "VIGENTE" ? "Vigentes" : "Cancelados"}
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                Cada fila compara el estatus del mismo UUID en metadatos SAT y en el XML descargado.
+              </p>
+            </DialogHeader>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={statusDrilldown === "VIGENTE" ? "default" : "outline"}
+                onClick={() => void openStatusDrilldown("VIGENTE")}
+                disabled={statusDrilldownLoading}
+              >
+                Vigentes
+              </Button>
+              <Button
+                variant={statusDrilldown === "CANCELADO" ? "default" : "outline"}
+                onClick={() => void openStatusDrilldown("CANCELADO")}
+                disabled={statusDrilldownLoading}
+              >
+                Cancelados
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+              <StatusDrilldownContent
+                isLoading={statusDrilldownLoading}
+                rows={statusDrilldownRows}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </ProtectedRoute>
   )

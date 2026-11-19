@@ -589,9 +589,14 @@ export function MassDownloadRequestForm() {
                       <SelectContent>
                         <SelectItem value="Todos">Todos</SelectItem>
                         <SelectItem value="Vigente">Vigente</SelectItem>
-                        <SelectItem value="Cancelado">Cancelado</SelectItem>
+                        <SelectItem value="Cancelado" disabled={requestType === 'cfdi'}>Cancelado</SelectItem>
                       </SelectContent>
                     </Select>
+                    {requestType === 'cfdi' && (
+                      <FormDescription>
+                        El SAT solo permite descargar XML CFDI vigentes.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

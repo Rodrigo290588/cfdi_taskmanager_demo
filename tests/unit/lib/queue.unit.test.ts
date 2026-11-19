@@ -13,14 +13,12 @@
  * y carga la dependencia real, lo que rompe la CI sin Redis).
  */
 
-const MOCK_QUEUE_CTOR = jest.fn().mockImplementation(function QueueMock(this: any, name: string, opts: any) {
-  this.name = name
-  this.opts = opts
-  this._bullMocked = true
-})
-
 jest.mock('bullmq', () => ({
-  Queue: MOCK_QUEUE_CTOR
+  Queue: jest.fn().mockImplementation(function QueueMock(this: any, name: string, opts: any) {
+    this.name = name
+    this.opts = opts
+    this._bullMocked = true
+  }),
 }))
 
 import {
@@ -42,8 +40,10 @@ import {
   __test_only_clearRedisCache
 } from '@/lib/queue'
 
+const mockQueueCtor = require('bullmq').Queue as jest.Mock
+
 beforeEach(() => {
-  MOCK_QUEUE_CTOR.mockClear()
+  mockQueueCtor.mockClear()
   __test_only_clearRedisCache()
 })
 
@@ -53,7 +53,7 @@ function envClearRedis() {
   delete process.env.REDIS_PORT
   delete process.env.REDIS_USERNAME
   delete process.env.REDIS_PASSWORD
-  delete process.env.NODE_ENV
+  delete (process.env as Record<string, string | undefined>).NODE_ENV
   delete process.env.MASS_DOWNLOADS_REDIS_REQUIRE_AUTH
 }
 afterEach(envClearRedis)
@@ -142,15 +142,15 @@ describe('queue :: fail-closed hard constraint', () => {
   })
 
   it('NODE_ENV=production + REDIS_URL sin credenciales → throw (REQUIRE_AUTH)', () => {
-    process.env.NODE_ENV = 'production'
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
     process.env.REDIS_URL = 'redis://prod-host:6379'
     expect(() => resolveRedisConnection()).toThrow(/requires.*credentials/i)
   })
 
   it('NODE_ENV=production + REDIS_HOST/PORT sin password → throw (Fail-closed)', () => {
-    process.env.NODE_ENV = 'production'
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
     envClearRedis()
-    process.env.NODE_ENV = 'production'
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
     process.env.REDIS_HOST = 'prod-host'
     process.env.REDIS_PORT = '6379'
     expect(() => resolveRedisConnection()).toThrow(/Fail-closed/i)
@@ -174,7 +174,7 @@ describe('queue :: Singleton Queues + constructor llamadas correctas', () => {
     const a = getMassDownloadQueue()
     const b = getMassDownloadQueue()
     expect(a).toBe(b)
-    expect(MOCK_QUEUE_CTOR).toHaveBeenCalledTimes(1)
+    expect(mockQueueCtor).toHaveBeenCalledTimes(1)
   })
 
   it('cada Queue se construye con name correcto + connection (7 constructores distintos)', () => {
@@ -186,8 +186,8 @@ describe('queue :: Singleton Queues + constructor llamadas correctas', () => {
     getProviderPostLoadCancellationAlertsQueue()
     getCfdiImportDispatchQueue()
     getCfdiImportItemQueue()
-    expect(MOCK_QUEUE_CTOR).toHaveBeenCalledTimes(7)
-    const names = MOCK_QUEUE_CTOR.mock.calls.map((c) => c[0])
+    expect(mockQueueCtor).toHaveBeenCalledTimes(7)
+    const names = mockQueueCtor.mock.calls.map((c) => c[0])
     expect(names).toEqual([
       MASS_DOWNLOAD_QUEUE_NAME,
       MASS_VERIFICATION_QUEUE_NAME,
@@ -202,10 +202,10 @@ describe('queue :: Singleton Queues + constructor llamadas correctas', () => {
   it('__test_only_clearRedisCache limpia singleton: nueva instancia', () => {
     setRedisDefault()
     const a = getMassDownloadQueue()
-    expect(MOCK_QUEUE_CTOR).toHaveBeenCalledTimes(1)
+    expect(mockQueueCtor).toHaveBeenCalledTimes(1)
     __test_only_clearRedisCache()
     const b = getMassDownloadQueue()
     expect(a).not.toBe(b)
-    expect(MOCK_QUEUE_CTOR).toHaveBeenCalledTimes(2)
+    expect(mockQueueCtor).toHaveBeenCalledTimes(2)
   })
 })

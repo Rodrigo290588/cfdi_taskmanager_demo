@@ -41,30 +41,6 @@ async function getDummyBcryptHash(rounds = PASSWORD_BCRYPT_ROUNDS): Promise<stri
   return h
 }
 
-// Las direcciones IPv6 se dividen en partes para evitar la detección de IP hardcoded de SonarQube
-const IPV6_LOCALHOST = [":", "1"].join(":")
-
-const ALLOWED_LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", IPV6_LOCALHOST])
-const ALLOWED_LOCAL_PORTS = new Set(["localhost:3000", "127.0.0.1:3000", `${IPV6_LOCALHOST}:3000`, "localhost:3001", "127.0.0.1:3001"])
-
-function isHostTrustedStrict(hostHeader: string | null | undefined): boolean {
-  try {
-    if (process.env.FEATURE_STRICT_AUTH_TRUST === "1") return false
-    if (process.env.AUTH_TRUST_HOST === "true" || process.env.NEXTAUTH_TRUST_HOST === "true") {
-      return true
-    }
-    const normalized = (hostHeader ?? "").trim().toLowerCase()
-    if (!normalized) return false
-    const publicHosts = getPublicHostsAllowlist()
-    if (publicHosts.has(normalized)) return true
-    const hostnameOnly = normalized.split(":")[0]
-    if (ALLOWED_LOCAL_HOSTNAMES.has(hostnameOnly) || ALLOWED_LOCAL_PORTS.has(normalized)) return true
-    return false
-  } catch {
-    return false
-  }
-}
-
 async function applySignInRateLimit(normalizedEmail: string) {
   try {
     const { success } = await rateLimit(
@@ -100,6 +76,10 @@ async function verifyAndRehashPassword(password: string, userPasswordHash: strin
   }
   return isPasswordValid
 }
+
+// #region debug-point A:auth-secret-config
+fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "A", location: "src/lib/auth.ts:authOptionsBase", msg: "[DEBUG] Auth configuration initialized", data: { authSecretPresent: Boolean(process.env.AUTH_SECRET), authSecretLength: process.env.AUTH_SECRET?.length ?? 0, nextAuthSecretPresent: Boolean(process.env.NEXTAUTH_SECRET), nextAuthSecretLength: process.env.NEXTAUTH_SECRET?.length ?? 0, secretsMatch: Boolean(process.env.AUTH_SECRET && process.env.NEXTAUTH_SECRET && process.env.AUTH_SECRET === process.env.NEXTAUTH_SECRET), nodeEnv: process.env.NODE_ENV }, ts: Date.now() }) }).catch(() => {})
+// #endregion
 
 const authOptionsBase: NextAuthConfig = {
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
@@ -142,7 +122,13 @@ const authOptionsBase: NextAuthConfig = {
         const { email, password } = parsedCredentials.data
         const normalizedEmail = email.toLowerCase().trim()
 
+        // #region debug-point B:authorize-reached
+        fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "B", location: "src/lib/auth.ts:authorize", msg: "[DEBUG] Credentials authorization reached", data: { credentialsValid: true, databaseUrlPresent: Boolean(process.env.DATABASE_URL) }, ts: Date.now() }) }).catch(() => {})
+        // #endregion
         await applySignInRateLimit(normalizedEmail)
+        // #region debug-point B:rate-limit-passed
+        fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "B", location: "src/lib/auth.ts:authorize", msg: "[DEBUG] Sign-in rate limit completed", data: { passed: true }, ts: Date.now() }) }).catch(() => {})
+        // #endregion
 
         const user = await prisma.user.findUnique({
           where: { email: normalizedEmail },
@@ -150,10 +136,18 @@ const authOptionsBase: NextAuthConfig = {
             id: true, email: true, name: true, image: true, systemRole: true,
             password: true, onboardingStep: true, onboardingData: true, emailVerified: true
           }
+        }).catch((lookupError: unknown) => {
+          // #region debug-point B:database-lookup-error
+          fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "B", location: "src/lib/auth.ts:authorize", msg: "[DEBUG] Credentials user lookup failed", data: { errorName: lookupError instanceof Error ? lookupError.name : "unknown", errorCode: typeof lookupError === "object" && lookupError !== null && "code" in lookupError ? String(lookupError.code) : null }, ts: Date.now() }) }).catch(() => {})
+          // #endregion
+          throw lookupError
         })
+        // #region debug-point B:database-lookup-result
+        fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "B", location: "src/lib/auth.ts:authorize", msg: "[DEBUG] Credentials user lookup completed", data: { userFound: Boolean(user), passwordConfigured: Boolean(user?.password) }, ts: Date.now() }) }).catch(() => {})
+        // #endregion
 
         const uniformStart = Date.now()
-        if (!user || !user.password) {
+        if (!user?.password) {
           const dummyHash = await getDummyBcryptHash()
           try { await bcrypt.compare(password, dummyHash) } catch (bcryptErr) {
             const s2 = safeErrSummarySat(bcryptErr)

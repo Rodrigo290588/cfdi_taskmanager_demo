@@ -62,7 +62,8 @@ beforeEach(() => {
 });
 
 // ---------- CUID helper compatible z.string().cuid() validation ----------
-const fakeCuid = (): string => 'c' + Math.random().toString(36).slice(2, 9) + '0'.repeat(4); // ~24 chars cuid format
+let cuidCounter = 0;
+const fakeCuid = (): string => `c${(++cuidCounter).toString(36).padStart(24, '0')}`;
 
 // ---------- default filters helper ----------
 const defaultFilters = (): any => ({
@@ -133,7 +134,7 @@ describe('[RH-009·B] buildScopeClauses fragments Prisma.sql', () => {
       startDate: new Date('2026-01-01'), endDate: new Date('2026-06-30') };
     const a = buildScopeClauses({ ...base });
     const b = buildScopeClauses({ ...base, departamento: 'Ventas' });
-    expect(b.fragments.length).toBe(a.fragments.length + 1);
+    expect(b.fragments).toHaveLength(a.fragments.length + 1);
   });
 });
 
@@ -144,7 +145,7 @@ describe('[RH-009·C] 6 funciones fetch* retornan arrays shape OK', () => {
     ]);
     const out = await fetchTurnover(defaultFilters());
     expect(Array.isArray(out)).toBe(true);
-    expect(out.length).toBe(1);
+    expect(out).toHaveLength(1);
     expect(typeof out[0].altas).toBe('number');
   });
 
@@ -180,16 +181,18 @@ describe('[RH-009·C] 6 funciones fetch* retornan arrays shape OK', () => {
     expect(out[0].importe_total).toBe(50000);
   });
 
-  it('fetchHeadcountKpis returns array con objeto percepciones_totales etc.', async () => {
+  it('fetchHeadcountKpis returns array con objeto total_percepciones etc.', async () => {
     mockQueryRaw.mockResolvedValueOnce([{
-      empleados_pagados: 200, percepciones_totales: 1000000.00,
-      deducciones_totales: 200000.00, total_neto: 800000.00,
-      numero_nominas: 200, total_recibos: 200, costo_por_empleado: 4000.00,
+      departamento: 'General', mes_pago: new Date('2026-06-01'),
+      empleados_pagados: 200, total_percepciones: 1000000.00,
+      total_deducciones: 200000.00, total_otros_pagos: 0,
+      recibos_procesados: 200, total_dias_pagados: 6000,
+      ticket_promedio_percepciones: 5000.00,
     }]);
     const out = await fetchHeadcountKpis(defaultFilters());
     expect(Array.isArray(out)).toBe(true);
     expect(typeof out[0].empleados_pagados).toBe('number');
-    expect(Number(out[0].percepciones_totales)).toBeGreaterThan(0);
+    expect(Number(out[0].total_percepciones)).toBeGreaterThan(0);
   });
 });
 

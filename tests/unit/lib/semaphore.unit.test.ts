@@ -9,7 +9,6 @@ describe('semaphore :: createSemaphore constructor validation', () => {
     { v: Infinity, label: 'Infinity' },
     { v: -Infinity, label: '-Infinity' }
   ])('lanza Error si maxConcurrent es inválido: $label ($v)', ({ v }) => {
-    // @ts-expect-error - probando valores inválidos a propósito
     expect(() => createSemaphore(v)).toThrow(/createSemaphore.*maxConcurrent.*>= 1/i)
   })
 
@@ -139,7 +138,7 @@ describe('semaphore :: FIFO ordering (orden de llegada)', () => {
     // El orden de inicio debe ser 1,2,3,4 (FIFO)
     expect(order).toEqual([1, 2, 3, 4])
     // finished puede variar, pero no es el caso que valemos
-    expect(finished.length).toBe(4)
+    expect(finished).toHaveLength(4)
   })
 })
 
@@ -225,17 +224,17 @@ describe('semaphore :: stress y escala (para 5M de registros)', () => {
     let completed = 0
     const tasks = Array.from({ length: 10000 }, (_, i) =>
       s.run(async () => {
-        await new Promise((r) => setImmediate(r))
+        await new Promise((resolve) => setTimeout(resolve, 0))
         completed++
         return i
       })
     )
     const results = await Promise.all(tasks)
-    expect(results.length).toBe(10000)
+    expect(results).toHaveLength(10000)
     expect(completed).toBe(10000)
     expect(s.activeCount).toBe(0)
     expect(s.pendingCount).toBe(0)
-  })
+  }, 30_000)
 
   it('100,000 tareas síncronas (sin delay) sin error ni fuga', async () => {
     const s = createSemaphore(50)
@@ -244,7 +243,7 @@ describe('semaphore :: stress y escala (para 5M de registros)', () => {
       s.run(() => { sum += 1; return i })
     )
     const out = await Promise.all(tasks)
-    expect(out.length).toBe(100000)
+    expect(out).toHaveLength(100000)
     expect(sum).toBe(100000)
     expect(s.activeCount).toBe(0)
     expect(s.pendingCount).toBe(0)

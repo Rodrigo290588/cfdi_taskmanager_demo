@@ -54,9 +54,33 @@ type ProviderReceivedCfdiDailySummaryRow = {
   withheld_taxes_total: unknown
 }
 
+function toFiniteNumber(value: number) {
+  return Number.isFinite(value) ? value : 0
+}
+
 function toNumber(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
-  return Number.isFinite(parsed) ? parsed : 0
+  if (typeof value === 'number') {
+    return toFiniteNumber(value)
+  }
+
+  if (typeof value === 'bigint') {
+    return toFiniteNumber(Number(value))
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, '').trim())
+    return toFiniteNumber(parsed)
+  }
+
+  if (value && typeof value === 'object') {
+    const decimalLike = value as { toNumber?: () => unknown }
+    if (typeof decimalLike.toNumber === 'function') {
+      const parsed = decimalLike.toNumber()
+      return typeof parsed === 'number' ? toFiniteNumber(parsed) : 0
+    }
+  }
+
+  return 0
 }
 
 function canAccessReceptionFiscalAudit(access: {
@@ -167,6 +191,295 @@ function canAccessReceptionBusinessRuleObjetoImpVsIva(access: {
   return granularPermissions.receptionBusinessRuleObjetoImpVsIva !== false
 }
 
+type DashboardAccess = Parameters<typeof canAccessReceptionFiscalAudit>[0]
+
+function shouldSampleDashboardAudit(params: {
+  includeHeavyMetrics: boolean
+  request: NextRequest
+  companyId: string
+  userId: string
+  startDate?: string
+  endDate?: string
+}) {
+  if (params.includeHeavyMetrics) {
+    return true
+  }
+
+  const sampleKey = [
+    params.request.url,
+    params.companyId,
+    params.userId,
+    params.startDate || '',
+    params.endDate || ''
+  ].join('|')
+  let hash = 2166136261
+  for (let index = 0; index < sampleKey.length; index += 1) {
+    hash ^= sampleKey.codePointAt(index) ?? 0
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return (hash >>> 0) % 100 < 5
+}
+
+async function writeDashboardAudit(params: {
+  includeHeavyMetrics: boolean
+  request: NextRequest
+  companyId: string
+  userId: string
+  userEmail: string | null | undefined
+  startDate?: string
+  endDate?: string
+}) {
+  if (!shouldSampleDashboardAudit(params)) return
+
+  try {
+    await createAuditEntry({
+      tableName: 'provider_received_cfdi_daily_summary',
+      companyId: params.companyId,
+      userId: params.userId,
+      userEmail: params.userEmail,
+      action: 'DASHBOARD_RECIBIDOS.view_kpis',
+      description: `KPIs recibidos ${params.startDate} a ${params.endDate}. Heavy=${params.includeHeavyMetrics}`,
+      recordId: params.companyId,
+      ipAddress: getRealClientIp(params.request.headers),
+      userAgent: params.request.headers.get('user-agent') || undefined,
+      oldValues: undefined,
+      newValues: { includeHeavyMetrics: params.includeHeavyMetrics, dateRange: [params.startDate, params.endDate] }
+    })
+  } catch {}
+}
+
+function emptyEfosRiskSummary() {
+  return { riskAmount: 0, supplierCount: 0, cfdiCount: 0, lastBlacklistSyncAt: null }
+}
+
+function emptyRuleSummary() {
+  return { cfdiCount: 0, amount: 0, supplierCount: 0 }
+}
+
+async function loadHeavyDashboardSummaries(params: {
+  includeHeavyMetrics: boolean
+  access: DashboardAccess
+  organizationId: string
+  companyId: string
+  startDate: Date | null
+  endDate: Date | null
+}) {
+  const efosRiskSummary = params.includeHeavyMetrics && canAccessReceptionFiscalAudit(params.access)
+    ? await getEfosRiskSummary(params)
+    : emptyEfosRiskSummary()
+  const postLoadCancellationSummary = params.includeHeavyMetrics && canAccessReceptionCancellationAlerts(params.access)
+    ? await getPostLoadCancellationSummary(params)
+    : { cancellationCount: 0, cancellationAmount: 0, supplierCount: 0 }
+  const paymentMethodVsPaymentFormSummary = params.includeHeavyMetrics && canAccessReceptionBusinessRulePueForma99(params.access)
+    ? await getPaymentMethodVsPaymentFormRuleSummary(params)
+    : emptyRuleSummary()
+  const resicoRetentionSummary = params.includeHeavyMetrics && canAccessReceptionBusinessRuleResicoRetention(params.access)
+    ? await getResicoRetentionRuleSummary(params)
+    : emptyRuleSummary()
+  const objetoImpTaxSummary = params.includeHeavyMetrics && canAccessReceptionBusinessRuleObjetoImpVsIva(params.access)
+    ? await getObjetoImpTaxRuleSummary(params)
+    : emptyRuleSummary()
+  const taxPeriodSummary = params.includeHeavyMetrics
+    ? await getTaxPeriodSummary(params)
+    : {
+      ivaAccreditableTotal: 0,
+      ivaAccreditableBreakdown: [],
+      retainedTaxesTotal: 0,
+      retainedIsrTotal: 0,
+      retainedIvaTotal: 0
+    }
+  const paymentBalancePeriodSummary = params.includeHeavyMetrics
+    ? await getPaymentBalancePeriodSummary(params)
+    : {
+      totalPaidInPeriod: 0,
+      outstandingBalanceTotal: 0,
+      agingOutstandingTotal: 0,
+      agingBreakdown: []
+    }
+
+  return {
+    efosRiskSummary,
+    postLoadCancellationSummary,
+    paymentMethodVsPaymentFormSummary,
+    resicoRetentionSummary,
+    objetoImpTaxSummary,
+    taxPeriodSummary,
+    paymentBalancePeriodSummary
+  }
+}
+
+type SummaryAggregationState = {
+  monthKeys: Array<{ key: string; label: string; count: number; total: number }>
+  monthlyMap: Map<string, { key: string; label: string; count: number; total: number }>
+  byTypeMap: Map<string, { type: string; count: number; total: number }>
+  bySatStatusMap: Map<string, { status: string; count: number }>
+  topSuppliersMap: Map<string, { rfc: string | null; name: string | null; total: number }>
+  paymentMethodsMap: Map<string, { method: string | null; count: number; total: number }>
+  totals: {
+    totalMonto: number
+    totalGastos: number
+    totalNotasCredito: number
+    pagado: number
+    pendiente: number
+    cancelaciones: number
+    ivaTrasladado: number
+    impuestosRetenidos: number
+  }
+}
+
+function createSummaryAggregationState(): SummaryAggregationState {
+  const now = new Date()
+  const monthKeys = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1)
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      label: formatMonthlyLabel(date),
+      count: 0,
+      total: 0
+    }
+  })
+  return {
+    monthKeys,
+    monthlyMap: new Map(monthKeys.map(entry => [entry.key, entry])),
+    byTypeMap: new Map(),
+    bySatStatusMap: new Map(),
+    topSuppliersMap: new Map(),
+    paymentMethodsMap: new Map(),
+    totals: {
+      totalMonto: 0,
+      totalGastos: 0,
+      totalNotasCredito: 0,
+      pagado: 0,
+      pendiente: 0,
+      cancelaciones: 0,
+      ivaTrasladado: 0,
+      impuestosRetenidos: 0
+    }
+  }
+}
+
+function updateSummaryTotals(
+  state: SummaryAggregationState,
+  row: ProviderReceivedCfdiDailySummaryRow,
+  total: number,
+  satStatus: string,
+) {
+  state.totals.totalMonto += total
+  if (row.cfdi_type === 'I') {
+    state.totals.totalGastos += total
+    if (row.payment_status_bucket === 'PAGADO') state.totals.pagado += total
+    else state.totals.pendiente += total
+  }
+  if (row.cfdi_type === 'E') state.totals.totalNotasCredito += total
+  if (satStatus === 'CANCELADO') state.totals.cancelaciones += total
+  if (row.cfdi_type !== 'P') {
+    state.totals.ivaTrasladado += toNumber(row.transferred_taxes_total)
+    state.totals.impuestosRetenidos += toNumber(row.withheld_taxes_total)
+  }
+}
+
+function updateSummaryMaps(
+  state: SummaryAggregationState,
+  row: ProviderReceivedCfdiDailySummaryRow,
+  count: number,
+  total: number,
+  satStatus: string,
+) {
+  const cfdiTypeLabel = mapProviderCfdiTypeLabel(row.cfdi_type)
+  const byType = state.byTypeMap.get(cfdiTypeLabel) || { type: cfdiTypeLabel, count: 0, total: 0 }
+  byType.count += count
+  byType.total += total
+  state.byTypeMap.set(cfdiTypeLabel, byType)
+
+  const byStatus = state.bySatStatusMap.get(satStatus) || { status: satStatus, count: 0 }
+  byStatus.count += count
+  state.bySatStatusMap.set(satStatus, byStatus)
+
+  const supplierKey = row.issuer_rfc || row.issuer_name || `${row.summary_date}-${row.cfdi_type}`
+  const supplier = state.topSuppliersMap.get(supplierKey) || {
+    rfc: row.issuer_rfc,
+    name: row.issuer_name || row.issuer_rfc,
+    total: 0
+  }
+  supplier.total += total
+  state.topSuppliersMap.set(supplierKey, supplier)
+
+  const paymentMethodKey = row.payment_method || 'SIN_METODO'
+  const paymentMethod = state.paymentMethodsMap.get(paymentMethodKey) || {
+    method: row.payment_method,
+    count: 0,
+    total: 0
+  }
+  paymentMethod.count += count
+  paymentMethod.total += total
+  state.paymentMethodsMap.set(paymentMethodKey, paymentMethod)
+}
+
+function updateSummaryMonth(
+  state: SummaryAggregationState,
+  row: ProviderReceivedCfdiDailySummaryRow,
+  count: number,
+  total: number,
+) {
+  if (!row.summary_date) return
+  const summaryDate = row.summary_date instanceof Date ? row.summary_date : new Date(row.summary_date)
+  const key = `${summaryDate.getUTCFullYear()}-${String(summaryDate.getUTCMonth() + 1).padStart(2, '0')}`
+  const month = state.monthlyMap.get(key)
+  if (!month) return
+  month.count += count
+  month.total += total
+}
+
+function aggregateSummaryRow(state: SummaryAggregationState, row: ProviderReceivedCfdiDailySummaryRow) {
+  const count = Number(row.cfdi_count || 0)
+  const total = toNumber(row.total_amount)
+  const satStatus = row.sat_estado || 'SIN_ESTATUS'
+  updateSummaryMaps(state, row, count, total, satStatus)
+  updateSummaryMonth(state, row, count, total)
+  updateSummaryTotals(state, row, total, satStatus)
+}
+
+function aggregateSummaryRows(rows: ProviderReceivedCfdiDailySummaryRow[]) {
+  const state = createSummaryAggregationState()
+  rows.forEach((row) => aggregateSummaryRow(state, row))
+  return {
+    monthKeys: state.monthKeys,
+    byType: Array.from(state.byTypeMap.values()).sort((left, right) => right.total - left.total),
+    bySatStatus: Array.from(state.bySatStatusMap.values()).sort((left, right) => right.count - left.count),
+    topSuppliers: Array.from(state.topSuppliersMap.values()).sort((left, right) => right.total - left.total).slice(0, 10),
+    paymentMethods: Array.from(state.paymentMethodsMap.values()).sort((left, right) => right.count - left.count),
+    totals: state.totals
+  }
+}
+
+function formatDashboardQueryIssues(
+  issues: ReadonlyArray<{
+    path?: ReadonlyArray<PropertyKey>
+    message: string
+  }>
+) {
+  const fieldErrors: Record<string, string[]> = {}
+  const formErrors: string[] = []
+
+  for (const issue of issues) {
+    const field = (issue.path || [])
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (typeof part === 'number') return part.toString()
+        return part.description || 'symbol'
+      })
+      .join('.')
+    if (!field) {
+      formErrors.push(issue.message)
+      continue
+    }
+    fieldErrors[field] = [...(fieldErrors[field] || []), issue.message]
+  }
+
+  return { fieldErrors, formErrors }
+}
+
 export async function GET(request: NextRequest) {
   try {
     // RECIBIDOS-003 rate limit · RECIBIDOS-002 multi-org deterministic resolver · RECIBIDOS-010 permission check:
@@ -179,7 +492,10 @@ export async function GET(request: NextRequest) {
     const parsed = DashboardRecibidosCommonQuerySchema.safeParse(rawQuery)
     if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Parámetros de consulta inválidos', issues: parsed.error.flatten().fieldErrors },
+        {
+          error: 'Parámetros de consulta inválidos',
+          issues: formatDashboardQueryIssues(parsed.error.issues)
+        },
         { status: 400 }
       )
     }
@@ -213,24 +529,15 @@ export async function GET(request: NextRequest) {
     })
     if (!company?.rfc) return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
 
-    // RECIBIDOS-015 Audit trail sampling 5% + todo heavy request:
-    if (includeHeavyMetrics || Math.random() < 0.05) {
-      try {
-        await createAuditEntry({
-          tableName: 'provider_received_cfdi_daily_summary',
-          companyId,
-          userId: sessionUserId,
-          userEmail: enrichedUser.email,
-          action: 'DASHBOARD_RECIBIDOS.view_kpis',
-          description: `KPIs recibidos ${q.startDate} a ${q.endDate}. Heavy=${includeHeavyMetrics}`,
-          recordId: companyId,
-          ipAddress: getRealClientIp(request.headers),
-          userAgent: request.headers.get('user-agent') || undefined,
-          oldValues: undefined,
-          newValues: { includeHeavyMetrics, dateRange: [q.startDate, q.endDate] }
-        })
-      } catch {}
-    }
+    await writeDashboardAudit({
+      includeHeavyMetrics,
+      request,
+      companyId,
+      userId: sessionUserId,
+      userEmail: enrichedUser.email,
+      startDate: q.startDate,
+      endDate: q.endDate
+    })
 
     const rows = await prisma.$queryRaw<ProviderReceivedCfdiDailySummaryRow[]>(
       Prisma.sql`
@@ -249,8 +556,8 @@ export async function GET(request: NextRequest) {
         FROM provider_received_cfdi_daily_summary
         WHERE organization_id = ${member.organizationId}
           AND receiver_company_id = ${companyId}
-          ${startDate ? Prisma.sql`AND summary_date >= ${startDate}` : Prisma.empty}
-          ${endDate ? Prisma.sql`AND summary_date <= ${endDate}` : Prisma.empty}
+          ${q.startDate ? Prisma.sql`AND summary_date >= CAST(${q.startDate} AS DATE)` : Prisma.empty}
+          ${q.endDate ? Prisma.sql`AND summary_date <= CAST(${q.endDate} AS DATE)` : Prisma.empty}
         GROUP BY
           summary_date,
           cfdi_type,
@@ -263,69 +570,22 @@ export async function GET(request: NextRequest) {
       `
     )
 
-    const efosRiskSummary = includeHeavyMetrics && canAccessReceptionFiscalAudit(access)
-      ? await getEfosRiskSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        riskAmount: 0,
-        supplierCount: 0,
-        cfdiCount: 0,
-        lastBlacklistSyncAt: null
-      }
-
-    const postLoadCancellationSummary = includeHeavyMetrics && canAccessReceptionCancellationAlerts(access)
-      ? await getPostLoadCancellationSummary({
-        organizationId: member.organizationId,
-        companyId
-      })
-      : {
-        cancellationCount: 0,
-        cancellationAmount: 0,
-        supplierCount: 0
-      }
-
-    const paymentMethodVsPaymentFormSummary = includeHeavyMetrics && canAccessReceptionBusinessRulePueForma99(access)
-      ? await getPaymentMethodVsPaymentFormRuleSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        cfdiCount: 0,
-        amount: 0,
-        supplierCount: 0
-      }
-
-    const resicoRetentionSummary = includeHeavyMetrics && canAccessReceptionBusinessRuleResicoRetention(access)
-      ? await getResicoRetentionRuleSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        cfdiCount: 0,
-        amount: 0,
-        supplierCount: 0
-      }
-
-    const objetoImpTaxSummary = includeHeavyMetrics && canAccessReceptionBusinessRuleObjetoImpVsIva(access)
-      ? await getObjetoImpTaxRuleSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        cfdiCount: 0,
-        amount: 0,
-        supplierCount: 0
-      }
+    const {
+      efosRiskSummary,
+      postLoadCancellationSummary,
+      paymentMethodVsPaymentFormSummary,
+      resicoRetentionSummary,
+      objetoImpTaxSummary,
+      taxPeriodSummary,
+      paymentBalancePeriodSummary
+    } = await loadHeavyDashboardSummaries({
+      includeHeavyMetrics,
+      access,
+      organizationId: member.organizationId,
+      companyId,
+      startDate,
+      endDate
+    })
 
     const issuanceDateFilter = startDate || endDate
       ? {
@@ -373,34 +633,6 @@ export async function GET(request: NextRequest) {
     const grossCommercialExpense = Number(grossCommercialExpenseResult._sum.subtotal || 0)
     const creditNotesSubtotal = Number(creditNotesSubtotalResult._sum.subtotal || 0)
     const netExpensesTotal = grossCommercialExpense - creditNotesSubtotal
-    const taxPeriodSummary = includeHeavyMetrics
-      ? await getTaxPeriodSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        ivaAccreditableTotal: 0,
-        ivaAccreditableBreakdown: [],
-        retainedTaxesTotal: 0,
-        retainedIsrTotal: 0,
-        retainedIvaTotal: 0
-      }
-    const paymentBalancePeriodSummary = includeHeavyMetrics
-      ? await getPaymentBalancePeriodSummary({
-        organizationId: member.organizationId,
-        companyId,
-        startDate,
-        endDate
-      })
-      : {
-        totalPaidInPeriod: 0,
-        outstandingBalanceTotal: 0,
-        agingOutstandingTotal: 0,
-        agingBreakdown: []
-      }
-
     if (rows.length === 0) {
       return NextResponse.json({
         company: { id: companyId, rfc: company.rfc, name: company.businessName },
@@ -464,125 +696,35 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const now = new Date()
-    const monthKeys = Array.from({ length: 12 }, (_, index) => {
-      const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1)
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-
-      return {
-        key,
-        label: formatMonthlyLabel(date),
-        count: 0,
-        total: 0
-      }
-    })
-
-    const monthlyMap = new Map(monthKeys.map(entry => [entry.key, entry]))
-    const byTypeMap = new Map<string, { type: string; count: number; total: number }>()
-    const bySatStatusMap = new Map<string, { status: string; count: number }>()
-    const topSuppliersMap = new Map<string, { rfc: string | null; name: string | null; total: number }>()
-    const paymentMethodsMap = new Map<string, { method: string | null; count: number; total: number }>()
-
-    let totalMonto = 0
-    let totalGastos = 0
-    let totalNotasCredito = 0
-    let pagado = 0
-    let pendiente = 0
-    let cancelaciones = 0
-    let ivaTrasladado = 0
-    let impuestosRetenidos = 0
-
-    for (const row of rows) {
-      const count = Number(row.cfdi_count || 0)
-      const total = toNumber(row.total_amount)
-      const cfdiTypeLabel = mapProviderCfdiTypeLabel(row.cfdi_type)
-      const satStatus = row.sat_estado || 'SIN_ESTATUS'
-      const supplierKey = row.issuer_rfc || row.issuer_name || `${row.summary_date}-${row.cfdi_type}`
-      const paymentMethodKey = row.payment_method || 'SIN_METODO'
-
-      totalMonto += total
-
-      const currentByType = byTypeMap.get(cfdiTypeLabel) || { type: cfdiTypeLabel, count: 0, total: 0 }
-      currentByType.count += count
-      currentByType.total += total
-      byTypeMap.set(cfdiTypeLabel, currentByType)
-
-      const currentBySatStatus = bySatStatusMap.get(satStatus) || { status: satStatus, count: 0 }
-      currentBySatStatus.count += count
-      bySatStatusMap.set(satStatus, currentBySatStatus)
-
-      const currentSupplier = topSuppliersMap.get(supplierKey) || {
-        rfc: row.issuer_rfc,
-        name: row.issuer_name || row.issuer_rfc,
-        total: 0
-      }
-      currentSupplier.total += total
-      topSuppliersMap.set(supplierKey, currentSupplier)
-
-      const currentPaymentMethod = paymentMethodsMap.get(paymentMethodKey) || {
-        method: row.payment_method,
-        count: 0,
-        total: 0
-      }
-      currentPaymentMethod.count += count
-      currentPaymentMethod.total += total
-      paymentMethodsMap.set(paymentMethodKey, currentPaymentMethod)
-
-      if (row.summary_date) {
-        const summaryDate = row.summary_date instanceof Date ? row.summary_date : new Date(row.summary_date)
-        const monthKey = `${summaryDate.getUTCFullYear()}-${String(summaryDate.getUTCMonth() + 1).padStart(2, '0')}`
-        const currentMonth = monthlyMap.get(monthKey)
-
-        if (currentMonth) {
-          currentMonth.count += count
-          currentMonth.total += total
-        }
-      }
-
-      if (row.cfdi_type === 'I') {
-        totalGastos += total
-
-        if (row.payment_status_bucket === 'PAGADO') {
-          pagado += total
-        } else {
-          pendiente += total
-        }
-      }
-
-      if (row.cfdi_type === 'E') {
-        totalNotasCredito += total
-      }
-
-      if (satStatus === 'CANCELADO') {
-        cancelaciones += total
-      }
-
-      if (row.cfdi_type !== 'P') {
-        ivaTrasladado += toNumber(row.transferred_taxes_total)
-        impuestosRetenidos += toNumber(row.withheld_taxes_total)
-      }
-    }
-
-    const totalCfdis = Array.from(byTypeMap.values()).reduce((acc, entry) => acc + entry.count, 0)
-    const totalEgresos = totalGastos - totalNotasCredito
-    const totalCancelados = bySatStatusMap.get('CANCELADO')?.count || 0
+    const aggregation = aggregateSummaryRows(rows)
+    const {
+      monthKeys,
+      byType,
+      bySatStatus,
+      topSuppliers,
+      paymentMethods,
+      totals
+    } = aggregation
+    const totalCfdis = byType.reduce((acc, entry) => acc + entry.count, 0)
+    const totalEgresos = totals.totalGastos - totals.totalNotasCredito
+    const totalCancelados = bySatStatus.find((entry) => entry.status === 'CANCELADO')?.count || 0
 
     return NextResponse.json({
       company: { id: companyId, rfc: company.rfc, name: company.businessName },
       kpis: {
         totalCfdis,
-        totalMonto,
+        totalMonto: totals.totalMonto,
         tasaCancelacion: totalCfdis ? Math.round((totalCancelados / totalCfdis) * 100) : 0,
         totalGastos: grossCommercialExpense,
-        totalNotasCredito,
+        totalNotasCredito: totals.totalNotasCredito,
         totalEgresos,
-        pagado,
-        pendiente,
-        cancelaciones,
+        pagado: totals.pagado,
+        pendiente: totals.pendiente,
+        cancelaciones: totals.cancelaciones,
         taxes: {
-          ivaTrasladado,
+          ivaTrasladado: totals.ivaTrasladado,
           // En provider_uploaded_cfdis hoy solo se persiste el total retenido agregado.
-          ivaRetenido: impuestosRetenidos,
+          ivaRetenido: totals.impuestosRetenidos,
           isrRetenido: 0,
           iepsRetenido: 0
         }
@@ -618,14 +760,12 @@ export async function GET(request: NextRequest) {
         objetoImpVsIvaAmount: objetoImpTaxSummary.amount,
         objetoImpVsIvaSupplierCount: objetoImpTaxSummary.supplierCount
       },
-      byType: Array.from(byTypeMap.values()).sort((left, right) => right.total - left.total),
-      bySatStatus: Array.from(bySatStatusMap.values()).sort((left, right) => right.count - left.count),
+      byType,
+      bySatStatus,
       monthly: monthKeys,
-      topSuppliers: Array.from(topSuppliersMap.values())
-        .sort((left, right) => right.total - left.total)
-        .slice(0, 10),
+      topSuppliers,
       topClients: [],
-      paymentMethods: Array.from(paymentMethodsMap.values()).sort((left, right) => right.count - left.count),
+      paymentMethods,
       meta: {
         heavyMetricsIncluded: includeHeavyMetrics
       }

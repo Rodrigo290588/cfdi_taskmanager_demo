@@ -2,17 +2,73 @@
 
 Este archivo documenta los cambios versionados relevantes de la aplicacion.
 
+## v1.21.8 - 2026-11-19
+
+### Resumen
+- **Control Fiscal**: Se incorporaron mejoras al detalle conciliado, drilldowns de diferencias de estatus, filtros por columna, distribución mensual por tipo de CFDI y exportación CSV con mensajes de error comprensibles.
+- **Exportación confiable**: La descarga valida la respuesta antes de iniciar el archivo y genera el CSV síncrono por completo antes de enviar encabezados, evitando descargas parciales.
+- **Calidad de código**: Se refactorizaron las consultas consolidadas de Control Fiscal en ayudantes por fuente y se atendieron advertencias de SonarQube en la página, el servicio y la ruta de exportación.
+
+### Archivos Afectados Relevantes
+- `src/app/mass-downloads/fiscal-control/page.tsx`
+- `src/app/api/mass-downloads/fiscal-control/export/route.ts`
+- `src/lib/fiscal-control-conciliation-service.ts`
+- `tests/mass_downloads/fiscal-control-conciliation-service.test.ts`
+
+## v1.21.7 - 2026-11-15
+
+### Resumen
+- **Fiscal Control multi-origen**: Se incorporó la conciliación por UUID normalizado entre metadatos SAT, CFDI emitidos, CFDI recibidos y nómina, con estados de conciliación y disponibilidad de XML sin exponer su contenido.
+- **Consultas escalables**: Se añadieron filtros por rango de fechas y origen, paginación por cursor, índice para CFDI recibidos y una ruta de resumen separada para operar con millones de registros.
+- **Exportaciones seguras**: Las exportaciones grandes se procesan de forma asíncrona, se cifran con AES-256-GCM en un directorio protegido y restringen la descarga al usuario solicitante.
+- **Validación y rendimiento**: Se añadió una base sintética aislada de 9 millones de registros, pruebas de conciliación y almacenamiento cifrado, y una prueba k6 de 100 usuarios concurrentes que cumplió P95 de 561.59 ms, P99 de 685.44 ms y 0% de errores.
+
+### Archivos Afectados Relevantes
+- `src/lib/fiscal-control-conciliation-service.ts`
+- `src/lib/fiscal-control-export.ts`
+- `src/lib/fiscal-control-export-storage.ts`
+- `src/app/api/mass-downloads/fiscal-control/`
+- `src/app/mass-downloads/fiscal-control/page.tsx`
+- `tests/mass_downloads/fiscal-control-*.test.ts`
+
+## v1.21.6 - 2026-11-09
+
+### Resumen
+- **Rutinas automatizadas de descargas SAT**: Se agregó un módulo tenant para crear, editar, pausar, reanudar y eliminar lógicamente rutinas de descarga masiva de XML CFDI o Metadata. La empresa y RFC se resuelven desde la selección activa y el servidor mantiene la validación de organización, permisos y FIEL.
+- **Calendarización y trazabilidad**: Se incorporó la programación diaria, semanal y mensual con periodos dinámicos, idempotencia por ocurrencia y reutilización del flujo existente de solicitud, verificación, descarga y reintentos del SAT.
+- **Monitor de ejecuciones**: Se agregó el historial aislado por organización y empresa con solicitud SAT, periodo efectivo, paquetes, reintentos, estado, errores saneados y eventos operativos correlacionables.
+- **Almacenamiento opcional seguro**: Se habilitaron destinos lógicos configurables para extracción y respaldo ZIP sin modificar la persistencia actual, con cifrado en reposo, validación de rutas y protección contra ZIP Slip y bombas ZIP.
+
+### Archivos Afectados Relevantes
+- `prisma/schema.prisma`
+- `src/app/api/mass-downloads/routines/`
+- `src/app/api/mass-downloads/storage-destinations/route.ts`
+- `src/app/mass-downloads/routines/page.tsx`
+- `src/components/mass-downloads/routine-manager.tsx`
+- `src/services/mass-download-routine.service.ts`
+- `src/workers/mass-download-routine.worker.ts`
+- `src/lib/mass-download-secure-storage.ts`
+- `src/lib/logger.ts`
+
 ## v1.21.5 - 2026-11-05
 
 ### Resumen
 - **Corrección de Registro de Usuario (Error 500)**: Se corrigió un error en el endpoint de finalización de registro (`/api/auth/complete-registration`) causado por un nombre de columna incorrecto (`organizationId` en lugar de `organization_id`) en una consulta SQL directa (`$queryRaw`) con Prisma. Esto impedía que se guardara la contraseña en la base de datos y generaba un error interno del servidor.
 - **Configuración Estática de NextAuth**: Se modificó la exportación de configuración en `src/lib/auth.ts` para evitar usar funciones "factory" que rompían la compatibilidad con el App Router de Next.js, eliminando los errores `NextResponse.next() was used in a app route handler`.
 - **Limpieza de variables de entorno de PM2**: Se añadió saneamiento en `src/lib/security.ts` para eliminar comillas residuales que PM2 en Windows inyecta en la variable `NEXTAUTH_SECRET`, lo que resolvía el fallo criptográfico de descifrado `JWTSessionError`.
+- **Configuración de cifrado CFDI**: Se amplió el configurador para conservar la llave de XML de ingresos y crear/configurar la llave independiente de proveedores en `.env`, Windows y ambos procesos PM2. También se corrigen comas faltantes en los bloques de entorno PM2.
+- **Saneamiento de plantillas de entorno**: Se reemplazaron valores activos o ambiguos por marcadores en `.env.production.example` y `.env.example`, y se añadieron las variables de cifrado XML; las plantillas ya no deben contener credenciales reales.
+- **Instalación limpia de variables**: Se añadió un instalador PowerShell que crea `.env` desde la plantilla de producción, genera secretos criptográficamente aleatorios y se detiene si el archivo ya existe para evitar reemplazar llaves de una instalación previa.
 
 ### Archivos Afectados Relevantes
 - `src/app/api/auth/complete-registration/route.ts`
 - `src/lib/auth.ts`
 - `src/lib/security.ts`
+- `scripts/initialize-clean-env.ps1`
+- `scripts/configure-invoice-xml-encryption-key.ps1`
+- `ecosystem.config.js`
+- `.env.production.example`
+- `.env.example`
 
 ## v1.21.4 - 2026-11-05
 

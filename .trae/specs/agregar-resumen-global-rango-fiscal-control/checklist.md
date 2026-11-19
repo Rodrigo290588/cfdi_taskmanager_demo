@@ -1,0 +1,8 @@
+- [x] El resumen se calcula para todo el rango y no cambia al navegar entre páginas del detalle.
+- [x] Cada UUID normalizado se consolida entre metadatos SAT, emitidos, recibidos y nómina antes de contar orígenes o estados.
+- [x] Los conteos de conciliado, metadato sin XML, XML sin metadato, XML no disponible y conflicto son exactos en escenarios controlados.
+- [x] El resumen respeta fecha, RFC, tipo, estado, origen, organización, empresa y permisos igual que la tabla detallada.
+- [x] La implementación no materializa todas las filas, no lee contenido XML y no expone blobs, ciphertext ni rutas internas.
+- [x] La interfaz muestra `Resumen de conciliación del rango` y conserva los valores al paginar.
+- [x] Sin un rango de fechas válido, la tarjeta y el resto de resultados permanecen vacíos.
+- [x] Las pruebas focalizadas, TypeScript y ESLint pasan; se documenta la evidencia de consulta y carga cuando el entorno de rendimiento esté disponible.

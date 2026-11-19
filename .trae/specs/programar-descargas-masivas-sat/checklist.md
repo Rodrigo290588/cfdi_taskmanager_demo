@@ -1,0 +1,25 @@
+# Lista de verificación
+
+- [x] La administración de rutinas aparece como hija de **Descargas masivas de CFDI** y respeta los permisos actuales.
+- [x] La empresa y RFC iniciales corresponden a la selección activa del tenant y el servidor valida organización, empresa, acceso y credencial FIEL.
+- [x] El formulario permite crear, editar, pausar, reanudar y eliminar rutinas, conservando el historial al eliminarlas.
+- [ ] Las validaciones Zod cubren XML/Metadata, emitidos/recibidos, RFC condicionales, comprobantes, estado, terceros, complementos y rangos de fecha.
+- [ ] El usuario puede elegir periodos dinámicos diarios (día en curso/anterior) y semanales (semana en curso/anterior/últimos siete días), además de mensual, personalizado y sus límites inclusivos quedan calculados en la zona horaria configurada.
+- [ ] Las frecuencias diaria, semanal y mensual generan ocurrencias correctas y reconciliables sin duplicados.
+- [ ] BullMQ ejecuta rutinas activas sin sesión de usuario y la pausa impide nuevas solicitudes.
+- [ ] Cada ejecución reutiliza `MassDownloadRequest` y los workers SAT existentes para solicitar, verificar, descargar y aplicar reintentos.
+- [ ] La ejecución registra `IdSolicitud`, estado, inicio/fin, cantidad de paquetes y errores saneados sin duplicar la fuente de verdad SAT.
+- [ ] Un logger estructurado común escribe eventos JSON correlacionables en los logs del sistema para solicitudes manuales y calendarizadas: creación/configuración, solicitud, verificación, reintento, descarga, procesamiento y resultado terminal.
+- [ ] Los eventos incluyen nivel, etapa, fecha UTC y los identificadores de correlación disponibles (`routineId`, `runId`, solicitud SAT y job), y pueden relacionarse con el historial del monitor.
+- [ ] El logger sanea mensajes externos y excluye credenciales, tokens, firmas, payloads SOAP/XML, contenido CFDI, rutas físicas sensibles y datos fiscales/personales en claro.
+- [ ] Una falla del logger no duplica solicitudes ni cambia o detiene el procesamiento SAT; existen pruebas de formato JSON, correlación, redacción y manejo de fallas.
+- [ ] Un fallo definitivo marca la solicitud existente como `ERROR` y conserva el mensaje de negocio y log asociado.
+- [ ] La persistencia actual permanece como predeterminada y las ubicaciones opcionales solo exponen destinos lógicos dentro de raíces autorizadas, sin revelar rutas físicas ni aceptar rutas absolutas del cliente.
+- [ ] La contención canónica de rutas bloquea traversal, enlaces simbólicos/junctions y todo acceso fuera de la raíz; los archivos quedan fuera del directorio público y con permisos de mínimo privilegio.
+- [ ] Los archivos tienen cifrado en reposo, escritura atómica, nombres generados por el servidor, cuotas y retención; una configuración sin protección falla de forma cerrada.
+- [ ] La extracción ZIP bloquea ZIP Slip, enlaces y bombas ZIP usando límites de tamaño, ratio de expansión y cantidad de entradas.
+- [ ] Los eventos de almacenamiento se auditan sin guardar secretos, contenido XML ni rutas sensibles.
+- [x] El monitor muestra ejecuciones recientes y sus detalles, aislados por organización y empresa activa.
+- [x] Las pruebas automatizadas cubren validación, permisos, aislamiento multi-tenant, periodos diarios/semanales, scheduler, idempotencia, reintentos, logger estructurado/redacción y ataques de ruta/ZIP.
+- [ ] `npm run lint` y `npm run build` terminan con código 0 y sin advertencias.
+- [x] `CHANGELOG.md` documenta el nuevo módulo y no hay regresiones en las solicitudes manuales actuales.

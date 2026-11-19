@@ -41,7 +41,7 @@ import {
   Tooltip as RechartsTooltip,
   PieChart,
   Pie,
-  Cell,
+  Sector,
   CartesianGrid,
   Legend
 } from 'recharts'
@@ -295,6 +295,67 @@ const formatMXN = (value: number) => new Intl.NumberFormat('es-MX', {
   minimumFractionDigits: 2
 }).format(Number(value || 0))
 
+type ChartAxisTitleProps = Readonly<{
+  title: string
+  viewBox?: Readonly<{
+    x?: number
+    y?: number
+    width?: number
+  }>
+}>
+
+function ChartAxisTitle({ title, viewBox }: ChartAxisTitleProps) {
+  const x = (viewBox?.x || 0) + (viewBox?.width || 0) / 2
+  const y = (viewBox?.y || 0) - 20
+
+  return (
+    <text x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={600} fill="#4b5563">
+      {title}
+    </text>
+  )
+}
+
+function PaymentMethodSector(props: any) {
+  return <Sector {...props} fill={props.payload?.fill || PAYMENT_METHOD_COLORS[0]} />
+}
+
+type PaymentMethodTooltipProps = Readonly<{
+  payload?: ReadonlyArray<Readonly<{
+    name?: string
+    value?: number | string
+    payload?: Readonly<{ total?: number | string }>
+  }>>
+  paymentMethods: ReadonlyArray<Readonly<{ method: string | null; count: number; total?: number }>>
+}>
+
+function PaymentMethodTooltip({ payload, paymentMethods }: PaymentMethodTooltipProps) {
+  const entry = payload?.[0]
+  if (!entry) return null
+
+  const name = entry.name || 'Sin método'
+  const count = Number(entry.value || 0)
+  const total = Number(entry.payload?.total || 0)
+  const denominator = paymentMethods.reduce((acc, item) => acc + Number(item.count || 0), 0)
+  const percentage = denominator > 0 ? (count / denominator) * 100 : 0
+
+  return (
+    <div className="recharts-default-tooltip whitespace-nowrap border bg-white p-2">
+      <div className="font-semibold">{name}</div>
+      <div>Cantidad: {count}</div>
+      <div>Porcentaje: {percentage.toFixed(1)}%</div>
+      <div>Importe: {formatMXN(total)}</div>
+    </div>
+  )
+}
+
+function formatMonthlyTooltip(value: any, name: any) {
+  return name === 'Monto' || name === 'total' ? formatMXN(Number(value)) : value
+}
+
+function formatPlural(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : plural
+}
+
 const formatObjetoImpReason = (value: string) => {
   switch ((value || '').trim()) {
     case 'OBJETOIMP_02_SIN_IVA_TRASLADADO':
@@ -327,14 +388,13 @@ const createDrilldownOpenChange = (
 const KpiTooltip = ({ description }: { description: string }) => (
   <Tooltip delayDuration={100}>
     <TooltipTrigger asChild>
-      <span
-        role="img"
+      <button
+        type="button"
         aria-label="Descripción del cálculo"
         className="ml-1.5 inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-muted-foreground/30 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-        tabIndex={0}
       >
-        <HelpCircle className="h-3 w-3" />
-      </span>
+        <HelpCircle aria-hidden="true" className="h-3 w-3" />
+      </button>
     </TooltipTrigger>
     <TooltipContent side="top" sideOffset={6} className="max-w-sm text-left leading-relaxed">
       {description}
@@ -348,13 +408,73 @@ const KpiTooltip = ({ description }: { description: string }) => (
 // ============================================================
 const CSV_DANGEROUS_PREFIX_DR = /^[=+\-@|\t\r]/;
 function escapeCsvSafe(value: unknown): string {
-  if (value === null || typeof value === 'undefined') return '""';
-  let str = String(value);
+  if (value === null || value === undefined) return '""';
+  const str = formatCsvValue(value);
+  return quoteCsvValue(str);
+}
+
+function formatCsvValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return value.toString();
+  if (typeof value === 'symbol') return value.description || '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value) || '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+function quoteCsvValue(value: string): string {
+  let str = value;
   if (CSV_DANGEROUS_PREFIX_DR.test(str)) str = "'" + str;
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes('\t')) {
     str = `"${str.replace(/"/g, '""')}"`;
   }
   return str;
+}
+
+async function requestDashboardMetrics(url: string): Promise<MetricsResponse> {
+  const response = await fetch(url, { cache: 'no-store' });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Error al cargar métricas');
+  return data as MetricsResponse;
+}
+
+type DashboardMetricHydrationParams = {
+  url: string
+  isCancelled: () => boolean
+  normalizeMetrics: (data: MetricsResponse) => MetricsResponse
+  setMetrics: (data: MetricsResponse) => void
+  setLoading: (loading: boolean) => void
+  setHydratingMetrics: (loading: boolean) => void
+}
+
+async function hydrateDashboardMetrics(params: DashboardMetricHydrationParams): Promise<void> {
+  params.setLoading(true)
+  params.setHydratingMetrics(false)
+
+  const lightData = await requestDashboardMetrics(`${params.url}&includeHeavyMetrics=false`)
+  if (params.isCancelled()) return
+
+  params.setMetrics(params.normalizeMetrics(lightData))
+  params.setLoading(false)
+  params.setHydratingMetrics(true)
+
+  try {
+    const fullData = await requestDashboardMetrics(`${params.url}&includeHeavyMetrics=true`)
+    if (params.isCancelled()) return
+    params.setMetrics(params.normalizeMetrics(fullData))
+  } catch (error) {
+    if (!params.isCancelled()) {
+      console.error('No fue posible hidratar métricas detalladas del dashboard de recibidos', error)
+    }
+  } finally {
+    if (!params.isCancelled()) params.setHydratingMetrics(false)
+  }
 }
 
 // ============================================================
@@ -371,7 +491,7 @@ function buildDashboardUrl(base: string, params: Record<string, string | number 
   return qs ? `${base}?${qs}` : base;
 }
 
-export default function DashboardRecibidosPage() {
+export default function DashboardRecibidosPage() { // NOSONAR S3776: Composición de secciones visuales y estados locales.
   const [loading, setLoading] = useState(true)
   const [hydratingMetrics, setHydratingMetrics] = useState(false)
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
@@ -616,36 +736,14 @@ export default function DashboardRecibidosPage() {
       })
 
       try {
-        setLoading(true)
-        setHydratingMetrics(false)
-
-        const lightResponse = await fetch(`${url}&includeHeavyMetrics=false`, { cache: 'no-store' })
-        const lightData = await lightResponse.json()
-        if (!lightResponse.ok) throw new Error(lightData.error || 'Error al cargar métricas')
-
-        if (cancelled) return
-
-        setMetrics(normalizeMetrics(lightData as MetricsResponse))
-        setLoading(false)
-        setHydratingMetrics(true)
-
-        try {
-          const fullResponse = await fetch(url, { cache: 'no-store' })
-          const fullData = await fullResponse.json()
-          if (!fullResponse.ok) throw new Error(fullData.error || 'Error al actualizar métricas detalladas')
-
-          if (cancelled) return
-
-          setMetrics(normalizeMetrics(fullData as MetricsResponse))
-        } catch (error) {
-          if (!cancelled) {
-            console.error('No fue posible hidratar métricas detalladas del dashboard de recibidos', error)
-          }
-        } finally {
-          if (!cancelled) {
-            setHydratingMetrics(false)
-          }
-        }
+        await hydrateDashboardMetrics({
+          url,
+          isCancelled: () => cancelled,
+          normalizeMetrics,
+          setMetrics,
+          setLoading,
+          setHydratingMetrics
+        })
       } catch (error) {
         if (!cancelled) {
           showError('Error', error instanceof Error ? error.message : 'Error desconocido')
@@ -1144,10 +1242,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Auditoria_Fiscal_EFOS_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Auditoria_Fiscal_EFOS_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1205,10 +1303,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Alertas_Cancelacion_Post_Carga_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Alertas_Cancelacion_Post_Carga_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1269,10 +1367,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Regla_MetodoPago_vs_FormaPago_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Regla_MetodoPago_vs_FormaPago_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1334,10 +1432,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Regla_RESICO_Retencion_ISR_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Regla_RESICO_Retencion_ISR_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1398,10 +1496,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Regla_ObjetoImp_vs_IVA_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Regla_ObjetoImp_vs_IVA_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1463,10 +1561,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `IVA_Acreditable_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `IVA_Acreditable_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1529,10 +1627,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Retenciones_Periodo_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Retenciones_Periodo_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1597,10 +1695,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Pagos_Del_Periodo_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Pagos_Del_Periodo_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1661,10 +1759,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Saldos_Pendientes_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Saldos_Pendientes_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1727,10 +1825,10 @@ export default function DashboardRecibidosPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `Antiguedad_Saldos_${new Date().getTime()}.csv`)
+    link.setAttribute('download', `Antiguedad_Saldos_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   }
 
@@ -1763,11 +1861,15 @@ export default function DashboardRecibidosPage() {
   const paymentBalancePeriodSummary = currentMetrics.paymentBalancePeriodSummary
   const efosRisk = currentMetrics.fiscalAudit
   const businessRules = currentMetrics.businessRules
+  const paymentCfdiCount = currentMetrics.byType
+    .filter((entry) => entry.type.toLowerCase().includes('pago'))
+    .reduce((total, entry) => total + entry.count, 0)
+  const totalCfdis = Number(currentMetrics.kpis.totalCfdis || 0)
   const efosRiskTitle = efosRisk.efosRiskAmount > 0 && efosRisk.efosSupplierCount > 0
-    ? `${formatMXN(efosRisk.efosRiskAmount)} MXN en riesgo por ${efosRisk.efosSupplierCount} proveedor${efosRisk.efosSupplierCount === 1 ? '' : 'es'} en Lista Negra`
+    ? `${formatMXN(efosRisk.efosRiskAmount)} MXN en riesgo por ${efosRisk.efosSupplierCount} proveedor${formatPlural(efosRisk.efosSupplierCount, '', 'es')} en Lista Negra`
     : '$0.00 pesos en riesgo por EFOS'
   const postLoadCancellationTitle = efosRisk.postLoadCancellationCount > 0
-    ? `${efosRisk.postLoadCancellationCount} factura${efosRisk.postLoadCancellationCount === 1 ? '' : 's'} cambiaron a Cancelado en los últimos 30 días`
+    ? `${efosRisk.postLoadCancellationCount} factura${formatPlural(efosRisk.postLoadCancellationCount, '', 's')} cambiaron a Cancelado en los últimos 30 días`
     : '0 facturas cambiaron a Cancelado en los últimos 30 días'
   const last69BSyncLabel = efosRisk.last69BSyncAt
     ? new Date(efosRisk.last69BSyncAt).toLocaleString('es-MX')
@@ -1883,7 +1985,7 @@ export default function DashboardRecibidosPage() {
               <h3 className="text-xl font-semibold tracking-tight">Resumen de Egresos del Periodo</h3>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <Card className="overflow-hidden border border-sky-300 bg-card h-full">
                 <div className="flex min-h-[64px] items-center justify-center border-b border-sky-300/50 bg-sky-500/10 p-2 text-center">
                   <h3 className="text-sm font-bold text-sky-600 md:text-base">Gasto Bruto Comercial<KpiTooltip description="Suma del atributo `SubTotal` de CFDI de proveedores (compras/gastos) VIGENTES en el rango de fecha de emisión. Es el total bruto de compras antes de notas de crédito y descuentos posteriores." /></h3>
@@ -1925,6 +2027,21 @@ export default function DashboardRecibidosPage() {
                   </div>
                   <p className="text-sm text-muted-foreground">
                     Resultado de `Gasto Bruto Comercial - Devoluciones y Descuentos` dentro del rango actual.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="overflow-hidden border border-violet-300 bg-card h-full">
+                <div className="flex min-h-[64px] items-center justify-center border-b border-violet-300/50 bg-violet-500/10 p-2 text-center">
+                  <h3 className="text-sm font-bold text-violet-600 md:text-base">CFDI recibidos</h3>
+                </div>
+                <CardContent className="flex h-full flex-col items-center justify-center space-y-3 p-6 text-center">
+                  <FileText className="h-12 w-12 text-violet-600" />
+                  <div className="text-2xl font-bold text-violet-600">
+                    {totalCfdis.toLocaleString('es-MX')}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    CFDI aprobados en el periodo, incluidos {paymentCfdiCount.toLocaleString('es-MX')} complementos de pago.
                   </p>
                 </CardContent>
               </Card>
@@ -2250,17 +2367,7 @@ export default function DashboardRecibidosPage() {
                       width={80}
                       label={{
                         position: 'top',
-                        content: (props: any) => {
-                          const viewBox = props?.viewBox || {}
-                          const x = (viewBox.x || 0) + (viewBox.width || 0) / 2
-                          const y = (viewBox.y || 0) - 20
-
-                          return (
-                            <text x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={600} fill="#4b5563">
-                              Cantidad de CFDIs
-                            </text>
-                          )
-                        }
+                        content: <ChartAxisTitle title="Cantidad de CFDIs" />
                       }}
                     />
                     <YAxis
@@ -2270,20 +2377,10 @@ export default function DashboardRecibidosPage() {
                       tickFormatter={(value: any) => formatMXN(Number(value))}
                       label={{
                         position: 'top',
-                        content: (props: any) => {
-                          const viewBox = props?.viewBox || {}
-                          const x = (viewBox.x || 0) + (viewBox.width || 0) / 2
-                          const y = (viewBox.y || 0) - 20
-
-                          return (
-                            <text x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={600} fill="#4b5563">
-                              Importe
-                            </text>
-                          )
-                        }
+                        content: <ChartAxisTitle title="Importe" />
                       }}
                     />
-                    <RechartsTooltip formatter={(value: any, name: any) => (name === 'Monto' || name === 'total') ? formatMXN(Number(value)) : value} />
+                    <RechartsTooltip formatter={formatMonthlyTooltip} />
                     <Legend />
                     <Bar yAxisId="left" dataKey="count" name="CFDIs" fill="#2b6cb0" />
                     <Bar yAxisId="right" dataKey="total" name="Monto" fill="#68d391" />
@@ -2304,37 +2401,19 @@ export default function DashboardRecibidosPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie
-                      data={currentMetrics.paymentMethods}
+                      data={currentMetrics.paymentMethods.map((entry, index) => ({
+                        ...entry,
+                        fill: PAYMENT_METHOD_COLORS[index % PAYMENT_METHOD_COLORS.length]
+                      }))}
                       dataKey="count"
                       nameKey="method"
                       outerRadius={110}
                       labelLine={false}
                       label={(entry: any) => `${entry.name}: ${(entry.percent * 100).toFixed(1)}%`}
-                    >
-                      {currentMetrics.paymentMethods.map((_, index) => (
-                        <Cell key={`payment-method-${index}`} fill={PAYMENT_METHOD_COLORS[index % PAYMENT_METHOD_COLORS.length]} />
-                      ))}
-                    </Pie>
+                      shape={PaymentMethodSector}
+                    />
                     <RechartsTooltip
-                      content={(props: any) => {
-                        const payload = props?.payload?.[0]
-                        if (!payload) return null
-
-                        const name = payload.name || 'Sin método'
-                        const count = Number(payload.value || 0)
-                        const total = Number(payload.payload?.total || 0)
-                        const denominator = currentMetrics.paymentMethods.reduce((acc, entry) => acc + Number(entry.count || 0), 0)
-                        const percentage = denominator > 0 ? (count / denominator) * 100 : 0
-
-                        return (
-                          <div className="recharts-default-tooltip whitespace-nowrap border bg-white p-2">
-                            <div className="font-semibold">{name}</div>
-                            <div>Cantidad: {count}</div>
-                            <div>Porcentaje: {percentage.toFixed(1)}%</div>
-                            <div>Importe: {formatMXN(total)}</div>
-                          </div>
-                        )
-                      }}
+                      content={<PaymentMethodTooltip paymentMethods={currentMetrics.paymentMethods} />}
                     />
                     <Legend />
                   </PieChart>

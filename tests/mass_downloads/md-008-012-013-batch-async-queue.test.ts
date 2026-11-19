@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach } from '@jest/globals'
 
 const QUEUE_MODULE_PATH = '@/lib/queue'
 
+jest.mock('bullmq', () => ({
+  Queue: jest.fn(),
+  Worker: jest.fn(),
+}))
+
 function setEnv(env: Record<string, string | undefined>) {
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) {

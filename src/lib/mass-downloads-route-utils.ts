@@ -6,7 +6,8 @@ import { SECURITY_HEADERS as BASE_SECURITY_HEADERS } from '@/lib/org-dashboard-h
 
 export { fingerprint as fp32, safeErrSummary } from '@/lib/security'
 
-export const MAX_DYNAMIC_FILTERS = 3
+// The detail table exposes 16 explicitly allow-listed filterable columns.
+export const MAX_DYNAMIC_FILTERS = 16
 
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   ...BASE_SECURITY_HEADERS,
@@ -109,6 +110,10 @@ export const ALLOWED_FC_FILTER_COLUMNS: ReadonlySet<string> = new Set([
   'certificationDate',
   'cancelationDate',
   'folio',
+  'origins',
+  'reconciliationStatus',
+  'satStatus',
+  'hasXml',
 ])
 
 export const ALLOWED_FC_DB_FIELDS: Readonly<Record<string, string>> = {
@@ -298,7 +303,7 @@ export const DateStringSchema = z
 
 export const NonEmptyStringSchema = z.string().trim().min(1).max(1024)
 
-export const PostCreateMassRequestSchema = z.strictObject({
+const PostCreateMassRequestBaseSchema = z.strictObject({
   companyId: UuidStringSchema,
   startDate: DateStringSchema.optional().or(z.literal('')),
   endDate: DateStringSchema.optional().or(z.literal('')),
@@ -314,6 +319,18 @@ export const PostCreateMassRequestSchema = z.strictObject({
   folio: z.string().trim().max(64).optional().or(z.literal('')),
 })
 
+export const PostCreateMassRequestSchema = PostCreateMassRequestBaseSchema.superRefine(
+  (data, ctx) => {
+    if (data.requestType === 'cfdi' && data.status === 'Cancelado') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['status'],
+        message: 'El SAT no permite descargar XML CFDI cancelados. Selecciona Vigente.',
+      })
+    }
+  },
+)
+
 export const FiscalControlQuerySchema = z.strictObject({
   companyId: UuidStringSchema,
   rfc: RfcStringSchema.optional(),
@@ -321,8 +338,14 @@ export const FiscalControlQuerySchema = z.strictObject({
   satStatus: z.enum(['ALL', 'VIGENTE', 'CANCELADO']).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
+  payrollStartDate: DateStringSchema.optional(),
+  payrollEndDate: DateStringSchema.optional(),
+  startDate: DateStringSchema.optional(),
+  endDate: DateStringSchema.optional(),
+  origin: z.enum(['ALL', 'EMITIDO', 'RECIBIDO', 'NOMINA']).optional(),
+  cursor: z.string().trim().min(1).max(512).optional(),
   page: z.coerce.number().int().min(1).max(10000).default(1),
-  pageSize: z.coerce.number().int().min(10).max(200).default(50),
+  pageSize: z.coerce.number().int().min(10).max(100).default(50),
 })
 
 export const PackageDownloadsQuerySchema = z.strictObject({

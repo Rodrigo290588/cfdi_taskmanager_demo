@@ -5,12 +5,135 @@ import { MASS_VERIFICATION_QUEUE_NAME, getMassVerificationQueue, getMassPackageD
 import { verifyMassDownload } from '@/lib/sat-service'
 import { generateDummyInvoices } from '@/services/dummy-invoice.service'
 import { v4 as uuidv4 } from 'uuid'
+import { createLogger } from '@/lib/logger'
+import { syncRoutineDownloadLog } from '@/services/mass-download-routine.service'
+
+interface SatVerificationResult {
+  readonly estadoSolicitud: string
+  readonly codigoEstadoSolicitud: string
+  readonly numeroCFDIs: string
+  readonly mensaje: string
+  readonly idsPaquetes: string[]
+}
+
+interface VerificationState {
+  readonly newStatus: RequestStatus
+  readonly nextCheck: Date | null
+  readonly packageIds: string[]
+  readonly satMessage: string
+  readonly satVerification: SatVerificationResult | null
+}
+
+interface VerificationRequest {
+  readonly id: string
+  readonly requestingRfc: string
+  readonly satPackageId: string
+  readonly createdAt: Date
+  readonly requestStatus: string
+  readonly satMessage: string | null
+  readonly packageIds: unknown
+  readonly requestType: string
+  readonly companyId: string
+}
+
+function getNextDelayMinutes(attempts: number): number {
+  if (attempts >= 4) return 60
+  if (attempts === 3) return 30
+  if (attempts === 2) return 15
+  return 5
+}
+
+async function resolveVerificationState(
+  request: VerificationRequest,
+  requestId: string,
+  nextDelayMs: number,
+): Promise<VerificationState> {
+  try {
+    const satVerification = await verifyMassDownload({
+      rfc: request.requestingRfc,
+      idSolicitud: request.satPackageId,
+    })
+    console.log(`[Verification] SAT Response for ${requestId}: Estado=${satVerification.estadoSolicitud}, Mensaje=${satVerification.mensaje}`)
+    return mapSatVerification(satVerification, nextDelayMs)
+  } catch (satError) {
+    console.error(`[Verification] Error en SAT para ${requestId}, usando fallback simulado:`, satError)
+    return buildSimulatedVerification(request, nextDelayMs)
+  }
+}
+
+function mapSatVerification(satVerification: SatVerificationResult, nextDelayMs: number): VerificationState {
+  const pendingStates: Record<string, RequestStatus> = {
+    '1': RequestStatus.SOLICITADO,
+    '2': RequestStatus.EN_PROCESO,
+  }
+  const status = pendingStates[satVerification.estadoSolicitud]
+  if (status) return { newStatus: status, nextCheck: new Date(Date.now() + nextDelayMs), packageIds: [], satMessage: satVerification.mensaje, satVerification }
+  if (satVerification.estadoSolicitud === '3') {
+    return { newStatus: RequestStatus.TERMINADO, nextCheck: null, packageIds: satVerification.idsPaquetes, satMessage: satVerification.mensaje, satVerification }
+  }
+  if (satVerification.codigoEstadoSolicitud === '5004') {
+    return { newStatus: RequestStatus.EN_PROCESO, nextCheck: new Date(Date.now() + nextDelayMs), packageIds: [], satMessage: 'Solicitud Aceptada. El SAT está procesando la petición (En espera)...', satVerification }
+  }
+  const terminalStatus: Record<string, RequestStatus> = {
+    '4': RequestStatus.ERROR,
+    '5': RequestStatus.RECHAZADO,
+    '6': RequestStatus.VENCIDO,
+  }
+  return { newStatus: terminalStatus[satVerification.estadoSolicitud] ?? RequestStatus.ERROR, nextCheck: null, packageIds: [], satMessage: satVerification.mensaje, satVerification }
+}
+
+function buildSimulatedVerification(request: VerificationRequest, nextDelayMs: number): VerificationState {
+  const diffSeconds = Math.floor((Date.now() - request.createdAt.getTime()) / 1000)
+  if (diffSeconds <= 60) {
+    return { newStatus: RequestStatus.EN_PROCESO, nextCheck: new Date(Date.now() + nextDelayMs), packageIds: [], satMessage: '(Simulado) Solicitud en proceso', satVerification: null }
+  }
+  return { newStatus: RequestStatus.TERMINADO, nextCheck: null, packageIds: [uuidv4().toUpperCase(), uuidv4().toUpperCase()], satMessage: '(Simulado) Solicitud terminada con éxito', satVerification: null }
+}
+
+async function handleVerificationOutcome(
+  request: VerificationRequest,
+  verification: VerificationState,
+  requestId: string,
+  rfc: string,
+): Promise<void> {
+  if (verification.newStatus === RequestStatus.TERMINADO) {
+    await enqueueCompletedPackages(request, verification.packageIds)
+    return
+  }
+  const isPending = verification.newStatus === RequestStatus.EN_PROCESO
+    || verification.newStatus === RequestStatus.SOLICITADO
+  if (!isPending || !verification.nextCheck) return
+  const delay = Math.max(0, verification.nextCheck.getTime() - Date.now())
+  console.log(`[Verification] Request ${requestId} still processing. Rescheduling in ${delay}ms`)
+  await getMassVerificationQueue().add('verify-request', { requestId, rfc }, { delay, jobId: `verify-${requestId}-${Date.now()}` })
+}
+
+async function enqueueCompletedPackages(request: VerificationRequest, packageIds: string[]): Promise<void> {
+  console.log(`[Verification] Request ${request.id} Finished. Packages: ${packageIds.join(', ')}`)
+  if (request.requestType === 'cfdi') await generateDummyInvoices(request.requestingRfc, request.companyId)
+  for (const packId of packageIds) {
+    await getMassPackageDownloadQueue().add('download-package', {
+      requestId: request.id,
+      rfc: request.requestingRfc,
+      idPaquete: packId,
+    }, { jobId: `download-${packId}-${Date.now()}`, attempts: 3, backoff: { type: 'exponential', delay: 10000 } })
+  }
+  if (packageIds.length > 0) console.log(`[Verification] Enqueued ${packageIds.length} packages for download.`)
+}
 
 export function setupVerificationWorker() {
   const worker = new Worker(MASS_VERIFICATION_QUEUE_NAME, async (job: Job) => {
     const { requestId, rfc } = job.data
+    const logger = createLogger({
+      service: 'mass-verification-worker',
+      correlationId: job.data.correlationId || requestId,
+      runId: job.data.downloadLogId,
+      massDownloadRequestId: requestId,
+      jobId: job.id,
+    })
 
     try {
+      logger.info('sat.verification.started')
       console.log(`[Verification] Checking status for request ${requestId} (RFC: ${rfc})`)
 
       // 1. Fetch Request
@@ -18,7 +141,7 @@ export function setupVerificationWorker() {
         where: { id: requestId }
       })
 
-      if (!request || !request.satPackageId) {
+      if (!request?.satPackageId) {
         console.log(`[Verification] Request ${requestId} not found or missing satPackageId. Stopping.`)
         return
       }
@@ -29,99 +152,21 @@ export function setupVerificationWorker() {
         return
       }
 
-      let newStatus = request.requestStatus
-      let nextCheck: Date | null = request.nextCheck
-      let packageIds = request.packageIds as string[] | null
-      let satMessage = request.satMessage
-
-      // === CÁLCULO DE BACKOFF EXPONENCIAL (5m, 15m, 30m, etc.) ===
-      const attempts = request.verificationAttempts + 1
-      let nextDelayMinutes = 5
-      
-      if (attempts === 1) nextDelayMinutes = 5
-      else if (attempts === 2) nextDelayMinutes = 15
-      else if (attempts === 3) nextDelayMinutes = 30
-      else if (attempts >= 4) nextDelayMinutes = 60 // Después de 3 intentos, checar cada hora
-      
-      const nextDelayMs = nextDelayMinutes * 60 * 1000
-      // ==========================================================
-
-      let satVerification: {
-        estadoSolicitud: string
-        codigoEstadoSolicitud: string
-        numeroCFDIs: string
-        mensaje: string
-        idsPaquetes: string[]
-      } | null = null
-
-      try {
-        // Consultar al SAT REAL
-        satVerification = await verifyMassDownload({
-          rfc: request.requestingRfc,
-          idSolicitud: request.satPackageId,
-        })
-
-        console.log(`[Verification] SAT Response for ${requestId}: Estado=${satVerification.estadoSolicitud}, Mensaje=${satVerification.mensaje}`)
-
-        satMessage = satVerification.mensaje
-
-        // Mapear el estado del SAT a nuestros RequestStatus
-        // 1: Aceptada, 2: En Proceso, 3: Terminada, 4: Error, 5: Rechazada, 6: Vencida
-        switch (satVerification.estadoSolicitud) {
-          case '1':
-            newStatus = RequestStatus.SOLICITADO
-            nextCheck = new Date(Date.now() + nextDelayMs) // Backoff Exponencial
-            break
-          case '2':
-            newStatus = RequestStatus.EN_PROCESO
-            nextCheck = new Date(Date.now() + nextDelayMs) // Backoff Exponencial
-            break
-          case '3':
-            newStatus = RequestStatus.TERMINADO
-            nextCheck = null // Ya terminó
-            packageIds = satVerification.idsPaquetes
-            break
-          case '4':
-            newStatus = RequestStatus.ERROR
-            nextCheck = null // Error del SAT, detener polling
-            break
-          case '5':
-            newStatus = RequestStatus.RECHAZADO
-            nextCheck = null // Rechazado, detener polling
-            break
-          case '6':
-            newStatus = RequestStatus.VENCIDO
-            nextCheck = null // Vencido, detener polling
-            break
-          default:
-            // Si el código de estado es 5004 (En espera/Procesando), sigue intentando
-            if (satVerification.codigoEstadoSolicitud === '5004') {
-              newStatus = RequestStatus.EN_PROCESO
-              satMessage = 'Solicitud Aceptada. El SAT está procesando la petición (En espera)...'
-              nextCheck = new Date(Date.now() + nextDelayMs)
-            } else {
-              // Cualquier otro error no mapeado (ej. Error no controlado, Códigos 300+) debe detener el polling
-              newStatus = RequestStatus.ERROR
-              nextCheck = null
-            }
-            break
-        }
-      } catch (satError) {
-        console.error(`[Verification] Error en SAT para ${requestId}, usando fallback simulado:`, satError)
-        
-        // Fallback simulado para desarrollo local si falla el SAT
-        const diffSeconds = Math.floor((Date.now() - request.createdAt.getTime()) / 1000)
-        if (diffSeconds <= 60) {
-          newStatus = RequestStatus.EN_PROCESO
-          nextCheck = new Date(Date.now() + nextDelayMs)
-          satMessage = '(Simulado) Solicitud en proceso'
-        } else {
-          newStatus = RequestStatus.TERMINADO
-          nextCheck = null
-          packageIds = [uuidv4().toUpperCase(), uuidv4().toUpperCase()]
-          satMessage = '(Simulado) Solicitud terminada con éxito'
-        }
+      const verificationRequest: VerificationRequest = {
+        id: request.id,
+        requestingRfc: request.requestingRfc,
+        satPackageId: request.satPackageId,
+        createdAt: request.createdAt,
+        requestStatus: request.requestStatus,
+        satMessage: request.satMessage,
+        packageIds: request.packageIds,
+        requestType: request.requestType,
+        companyId: request.companyId,
       }
+      const attempts = request.verificationAttempts + 1
+      const nextDelayMs = getNextDelayMinutes(attempts) * 60 * 1000
+      const verification = await resolveVerificationState(verificationRequest, requestId, nextDelayMs)
+      const { newStatus, nextCheck, packageIds, satMessage, satVerification } = verification
 
       // Actualizar Base de Datos
       await prisma.massDownloadRequest.update({
@@ -139,46 +184,16 @@ export function setupVerificationWorker() {
           } : undefined
         }
       })
+      await syncRoutineDownloadLog(requestId)
+      logger.info('sat.verification.updated', {
+        requestStatus: newStatus,
+        packagesFound: packageIds?.length ?? 0,
+      })
 
-      // Lógica posterior dependiendo del resultado
-      if (newStatus === RequestStatus.TERMINADO) {
-        console.log(`[Verification] Request ${requestId} Finished. Packages: ${packageIds?.join(', ')}`)
-        
-        // Simular descarga de facturas en base de datos de pruebas (Opcional, se mantiene por legado)
-        if (request.requestType === 'cfdi') {
-          await generateDummyInvoices(request.requestingRfc, request.companyId)
-        }
-
-        // Encolar trabajos en `massDownloadQueue` para descargar físicamente los ZIPs
-        if (packageIds && packageIds.length > 0) {
-          for (const packId of packageIds) {
-            await getMassPackageDownloadQueue().add('download-package', {
-              requestId: request.id,
-              rfc: request.requestingRfc,
-              idPaquete: packId
-            }, {
-              jobId: `download-${packId}-${Date.now()}`,
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 10000 }
-            })
-          }
-          console.log(`[Verification] Enqueued ${packageIds.length} packages for download.`)
-        }
-
-      } else if (newStatus === RequestStatus.EN_PROCESO || newStatus === RequestStatus.SOLICITADO) {
-        // RE-ENCOLAR PARA SEGUIR HACIENDO POLLING
-        if (nextCheck) {
-          const delay = Math.max(0, nextCheck.getTime() - Date.now())
-          console.log(`[Verification] Request ${requestId} still processing. Rescheduling in ${delay}ms`)
-          
-          await getMassVerificationQueue().add('verify-request', { requestId, rfc }, {
-            delay,
-            jobId: `verify-${requestId}-${Date.now()}` 
-          })
-        }
-      }
+      await handleVerificationOutcome(verificationRequest, verification, requestId, rfc)
 
     } catch (error) {
+      logger.error('sat.verification.failed', error)
       console.error(`[Verification] Critical error processing job ${job.id}:`, error)
       throw error
     }

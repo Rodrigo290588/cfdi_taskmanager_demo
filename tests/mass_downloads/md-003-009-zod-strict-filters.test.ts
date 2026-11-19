@@ -62,6 +62,47 @@ describe('MD-003 · Zod strictObject: Overposting / Prototype Pollution Preventi
     }
   })
 
+  it('FiscalControlQuerySchema admite cursor acotado y rango opcional de pago de nómina', () => {
+    const result = FiscalControlQuerySchema.safeParse({
+      companyId: VALID_UUID_A,
+      page: 1,
+      pageSize: 100,
+      cursor: 'eyJ2IjoxfQ',
+      payrollStartDate: '2024-12-01',
+      payrollEndDate: '2024-12-31',
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.pageSize).toBe(100)
+      expect(result.data.payrollStartDate).toBe('2024-12-01')
+    }
+  })
+
+  it('FiscalControlQuerySchema rechaza páginas mayores al límite de lectura multi-origen', () => {
+    const result = FiscalControlQuerySchema.safeParse({
+      companyId: VALID_UUID_A,
+      page: 1,
+      pageSize: 101,
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  it('FiscalControlQuerySchema acepta exportación por fechas sin año ni mes', () => {
+    const result = FiscalControlQuerySchema.safeParse({
+      companyId: VALID_UUID_A,
+      page: 1,
+      pageSize: 50,
+      startDate: '2024-09-01',
+      endDate: '2024-09-30',
+      year: undefined,
+      month: undefined,
+    })
+
+    expect(result.success).toBe(true)
+  })
+
   it('PostCreateMassRequestSchema payload limpio válido pasa OK (solo campos requeridos) con UUID RFC4122 real', () => {
     const ok = {
       companyId: VALID_UUID_A,
@@ -81,9 +122,9 @@ describe('MD-003 · Zod strictObject: Overposting / Prototype Pollution Preventi
 })
 
 describe('MD-009 · Dynamic Filters whitelist ONLY. Columnas invalidas filter_xxxUnknownColumn → REDACT/ignorado FAIL CLOSED', () => {
-  it('ALLOWED_FC_FILTER_COLUMNS: 12 keys exactas, no mas', () => {
-    expect(ALLOWED_FC_FILTER_COLUMNS.size).toBe(12)
-    for (const k of ['uuid', 'issuerRfc', 'receiverRfc', 'issuerName', 'receiverName', 'cfdiType', 'total', 'issuanceDate', 'folio']) {
+  it('ALLOWED_FC_FILTER_COLUMNS: 16 keys exactas, no mas', () => {
+    expect(ALLOWED_FC_FILTER_COLUMNS.size).toBe(16)
+    for (const k of ['uuid', 'issuerRfc', 'receiverRfc', 'issuerName', 'receiverName', 'cfdiType', 'total', 'issuanceDate', 'folio', 'origins', 'reconciliationStatus', 'satStatus', 'hasXml']) {
       expect(ALLOWED_FC_FILTER_COLUMNS.has(k)).toBe(true)
     }
   })
@@ -105,6 +146,22 @@ describe('MD-009 · Dynamic Filters whitelist ONLY. Columnas invalidas filter_xx
     expect(filtered['xxxUnknownColumnContainsPassword']).toBeUndefined()
     expect(filtered['issuerName']).toBe('SAT')
     expect(Object.keys(filtered).every(k => ALLOWED_FC_FILTER_COLUMNS.has(k))).toBe(true)
+  })
+
+  it('validateFcDynamicFilters acepta los campos consolidados visibles del detalle', () => {
+    const filtered = validateFcDynamicFilters({
+      origins: 'Recibido',
+      reconciliationStatus: 'Conciliado',
+      satStatus: 'Vigente',
+      hasXml: 'XML',
+    })
+
+    expect(filtered).toEqual({
+      origins: 'Recibido',
+      reconciliationStatus: 'Conciliado',
+      satStatus: 'Vigente',
+      hasXml: 'XML',
+    })
   })
 })
 

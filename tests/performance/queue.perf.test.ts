@@ -59,7 +59,7 @@ beforeEach(() => {
   delete process.env.REDIS_USERNAME
   delete process.env.REDIS_PASSWORD
   delete process.env.MASS_DOWNLOADS_REDIS_REQUIRE_AUTH
-  delete process.env.NODE_ENV
+  delete (process.env as Record<string, string | undefined>).NODE_ENV
 })
 
 afterEach(() => {
@@ -69,7 +69,7 @@ afterEach(() => {
   delete process.env.REDIS_USERNAME
   delete process.env.REDIS_PASSWORD
   delete process.env.MASS_DOWNLOADS_REDIS_REQUIRE_AUTH
-  delete process.env.NODE_ENV
+  delete (process.env as Record<string, string | undefined>).NODE_ENV
 })
 
 describe('[FASE3 · Performance] Queue BullMQ · 10,000 jobs batch + DAG 500 flows', () => {
@@ -144,7 +144,7 @@ describe('[FASE3 · Performance] Queue BullMQ · 10,000 jobs batch + DAG 500 flo
   })
 
   test('REQUIRE_AUTH=true production env sin credenciales: throw, no default skip', () => {
-    process.env.NODE_ENV = 'production'
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
     process.env.REDIS_HOST = 'redis.local'
     process.env.REDIS_PORT = '6379'
     expect(() => resolveRedisConnection()).toThrow(/FAIL-CLOSED|Fail-closed/)

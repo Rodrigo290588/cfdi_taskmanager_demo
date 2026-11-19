@@ -4,6 +4,7 @@ import { getMassVerificationQueue, getMassDownloadQueue } from '@/lib/queue'
 import { auth } from '@/lib/auth'
 import { hasPermission, Permission } from '@/lib/permissions'
 import { rateLimitByUserId, RateLimitError } from '@/lib/rate-limit'
+import { createLogger } from '@/lib/logger'
 import {
   PostCreateMassRequestSchema,
   RequestsListQuerySchema,
@@ -219,6 +220,10 @@ async function verifyAuthorization(user: UserWithMemberships, targetOrgId: strin
 
 export async function POST(req: Request) {
   const reqId = crypto.randomUUID()
+  const logger = createLogger({
+    service: 'mass-download-requests-route',
+    correlationId: reqId,
+  })
   try {
     const session = await auth()
     if (!session?.user?.id) {
@@ -287,6 +292,10 @@ export async function POST(req: Request) {
         nextCheck: new Date(Date.now() + 5 * 60 * 1000),
       },
     })
+    logger.info('sat.request.created', {
+      massDownloadRequestId: request.id,
+      companyId: request.companyId,
+    })
 
     await enqueueMassDownloadJobs(
       request.id,
@@ -295,6 +304,7 @@ export async function POST(req: Request) {
       getRealClientIp(req.headers),
       reqId
     )
+    logger.info('sat.request.queued', { massDownloadRequestId: request.id })
 
     return massDownloadJsonResponse(
       [
@@ -310,6 +320,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const summary = safeErrSummary(err)
     const errId = fp32(JSON.stringify(summary))
+    logger.error('sat.request.create_failed', err)
     console.error('[mass-requests POST 500]', { reqId, errId, summary })
     return massDownloadJsonResponse(
       { error: 'Error interno al crear solicitud masiva', reqId, errId },

@@ -80,7 +80,7 @@ describe('[RH-012 · MV vs XML Raw · equivalencia sin redondeos silenciosos]', 
     expect(res.summary.altas).toBe(tAltas);
     expect(res.summary.bajas).toBe(tBajas);
     expect(res.summary.reingresos).toBe(tReing);
-    expect(res.chart.length).toBe(meses.length);
+    expect(res.chart).toHaveLength(meses.length);
     meses.forEach((mStr, idx) => {
       const p = res.chart[idx];
       expect(p.altas).toBe(rawByMes[mStr].altas);
@@ -131,7 +131,7 @@ describe('[RH-012 · MV vs XML Raw · equivalencia sin redondeos silenciosos]', 
     expect(res.summary.dias).toBe(dias);
     expect(Math.abs(res.summary.importe - imp)).toBeLessThan(0.01);
     expect(res.summary.empleados).toBe(afec);
-    expect(res.pie.length).toBe(3);
+    expect(res.pie).toHaveLength(3);
     // pie usa total_dias (no eventos) por tipo → valor >= 1
     for (const p of res.pie) { expect(p.value).toBeGreaterThan(0); }
   });
@@ -209,7 +209,7 @@ describe('[RH-012 · MV vs XML Raw · equivalencia sin redondeos silenciosos]', 
             departamento: dep,
             mes_pago: d(mes),
             tipo_percepcion: c.codigo,
-            concepto: c.nombre,
+            concepto: c.descripcion,
             numero_aplicaciones: nApl,
             empleados_beneficiados: nEmp,
             total_gravado: grav,

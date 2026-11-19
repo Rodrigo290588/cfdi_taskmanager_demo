@@ -8,11 +8,20 @@ function validateRedisPort(raw: unknown, context: string): number {
   }
   const n = Number(raw)
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 65535) {
-    const msg = `[Queue ${context}] REDIS_PORT invalid (${String(raw)}). Must be integer 1-65535.`
+    const msg = `[Queue ${context}] REDIS_PORT invalid (${formatPortValue(raw)}). Must be integer 1-65535.`
     console.error(msg)
     throw new Error(msg)
   }
   return n
+}
+
+function formatPortValue(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return value.toString()
+  }
+  return '[non-primitive value]'
 }
 
 export type RedisConnectionConfig = {
@@ -25,73 +34,63 @@ export type RedisConnectionConfig = {
 let _cachedRedisConnection: RedisConnectionConfig | null = null
 
 export function resolveRedisConnection(): RedisConnectionConfig {
-  if (_cachedRedisConnection) {
-    return _cachedRedisConnection
-  }
+  if (_cachedRedisConnection) return _cachedRedisConnection
 
-  const REDIS_URL_RAW = process.env.REDIS_URL
-  const REDIS_HOST_RAW = process.env.REDIS_HOST
-  const REDIS_PORT_RAW = process.env.REDIS_PORT
-
-  const REQUIRE_AUTH = process.env.MASS_DOWNLOADS_REDIS_REQUIRE_AUTH === 'true'
-    || process.env.NODE_ENV === 'production'
-
-  let connection: RedisConnectionConfig
-
-  if (REDIS_URL_RAW && REDIS_URL_RAW.trim().length > 0) {
-    try {
-      const url = new URL(REDIS_URL_RAW.trim())
-      if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
-        throw new Error(`Invalid REDIS_URL protocol: ${url.protocol}`)
-      }
-      const host = url.hostname
-      if (!host) {
-        throw new Error('REDIS_URL missing hostname')
-      }
-      const portStr = url.port || (url.protocol === 'rediss:' ? '6380' : '6379')
-      const port = validateRedisPort(portStr, 'REDIS_URL')
-
-      if (REQUIRE_AUTH && !(url.password || url.username)) {
-        throw new Error('MASS_DOWNLOADS_REDIS_REQUIRE_AUTH=true requires REDIS_URL username:password credentials (or REDIS_URL with auth)')
-      }
-
-      connection = {
-        host,
-        port,
-        password: url.password || undefined,
-        username: url.username || undefined,
-      }
-    } catch (e) {
-      const msg = `[Queue] Invalid REDIS_URL: ${e instanceof Error ? e.message : String(e)}. Fail-closed: no default fallback connection.`
-      console.error(msg)
-      throw new Error(msg)
-    }
-  } else {
-    const host = (REDIS_HOST_RAW || '').trim()
-    if (!host) {
-      const msg = '[Queue] Neither REDIS_URL nor REDIS_HOST+REDIS_PORT provided. Fail-closed: no default localhost fallback.'
-      console.error(msg)
-      throw new Error(msg)
-    }
-    const port = validateRedisPort(REDIS_PORT_RAW, 'REDIS_PORT')
-
-    const REDIS_PASS_RAW = process.env.REDIS_PASSWORD
-    const REDIS_USER_RAW = process.env.REDIS_USERNAME
-
-    if (REQUIRE_AUTH && !REDIS_PASS_RAW) {
-      throw new Error('MASS_DOWNLOADS_REDIS_REQUIRE_AUTH=true requires REDIS_PASSWORD or REDIS_URL with credentials. Fail-closed.')
-    }
-
-    connection = {
-      host,
-      port,
-      password: REDIS_PASS_RAW && REDIS_PASS_RAW.trim().length > 0 ? REDIS_PASS_RAW.trim() : undefined,
-      username: REDIS_USER_RAW && REDIS_USER_RAW.trim().length > 0 ? REDIS_USER_RAW.trim() : undefined,
-    }
-  }
+  const requireAuth = isRedisAuthenticationRequired()
+  const rawUrl = process.env.REDIS_URL?.trim()
+  const connection = rawUrl
+    ? resolveRedisUrlConnection(rawUrl, requireAuth)
+    : resolveRedisHostConnection(requireAuth)
 
   _cachedRedisConnection = connection
   return connection
+}
+
+function isRedisAuthenticationRequired(): boolean {
+  return process.env.MASS_DOWNLOADS_REDIS_REQUIRE_AUTH === 'true'
+    || process.env.NODE_ENV === 'production'
+}
+
+function resolveRedisUrlConnection(rawUrl: string, requireAuth: boolean): RedisConnectionConfig {
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+      throw new Error(`Invalid REDIS_URL protocol: ${url.protocol}`)
+    }
+    if (!url.hostname) throw new Error('REDIS_URL missing hostname')
+    if (requireAuth && !(url.password || url.username)) {
+      throw new Error('MASS_DOWNLOADS_REDIS_REQUIRE_AUTH=true requires REDIS_URL username:password credentials (or REDIS_URL with auth)')
+    }
+    return {
+      host: url.hostname,
+      port: validateRedisPort(url.port || (url.protocol === 'rediss:' ? '6380' : '6379'), 'REDIS_URL'),
+      password: url.password || undefined,
+      username: url.username || undefined,
+    }
+  } catch (error) {
+    const msg = `[Queue] Invalid REDIS_URL: ${error instanceof Error ? error.message : String(error)}. Fail-closed: no default fallback connection.`
+    console.error(msg)
+    throw new Error(msg)
+  }
+}
+
+function resolveRedisHostConnection(requireAuth: boolean): RedisConnectionConfig {
+  const host = process.env.REDIS_HOST?.trim()
+  if (!host) {
+    const msg = '[Queue] Neither REDIS_URL nor REDIS_HOST+REDIS_PORT provided. Fail-closed: no default localhost fallback.'
+    console.error(msg)
+    throw new Error(msg)
+  }
+  const password = process.env.REDIS_PASSWORD?.trim()
+  if (requireAuth && !password) {
+    throw new Error('MASS_DOWNLOADS_REDIS_REQUIRE_AUTH=true requires REDIS_PASSWORD or REDIS_URL with credentials. Fail-closed.')
+  }
+  return {
+    host,
+    port: validateRedisPort(process.env.REDIS_PORT, 'REDIS_PORT'),
+    password: password || undefined,
+    username: process.env.REDIS_USERNAME?.trim() || undefined,
+  }
 }
 
 export function __test_only_clearRedisCache(): void {
@@ -103,6 +102,8 @@ export function __test_only_clearRedisCache(): void {
   _providerPostLoadCancellationAlertsQueue = null
   _cfdiImportDispatchQueue = null
   _cfdiImportItemQueue = null
+  _massDownloadRoutineQueue = null
+  _fiscalControlExportQueue = null
 }
 
 export const MASS_DOWNLOAD_QUEUE_NAME = 'mass-download-queue'
@@ -114,6 +115,8 @@ export const PROVIDER_POST_LOAD_CANCELLATION_ALERTS_QUEUE_NAME = 'provider-post-
 export const CFDI_IMPORT_DISPATCH_QUEUE_NAME = 'cfdi-import-dispatch-queue'
 export const CFDI_IMPORT_ITEM_QUEUE_NAME = 'cfdi-import-item-queue'
 export const CFDI_IMPORT_QUEUE_NAME = 'cfdi-import-queue'
+export const MASS_DOWNLOAD_ROUTINE_QUEUE_NAME = 'mass-download-routine-queue'
+export const FISCAL_CONTROL_EXPORT_QUEUE_NAME = 'fiscal-control-export-queue'
 
 let _massDownloadQueue: Queue | null = null
 let _massVerificationQueue: Queue | null = null
@@ -124,6 +127,8 @@ let _providerPostLoadCancellationAlertsQueue: Queue | null = null
 let _cfdiImportDispatchQueue: Queue | null = null
 let _cfdiImportItemQueue: Queue | null = null
 let _cfdiImportQueue: Queue | null = null
+let _massDownloadRoutineQueue: Queue | null = null
+let _fiscalControlExportQueue: Queue | null = null
 
 export function getMassDownloadQueue(): Queue {
   if (!_massDownloadQueue) {
@@ -195,4 +200,19 @@ export function getCfdiImportQueue(): Queue {
     _cfdiImportQueue = new Queue(CFDI_IMPORT_QUEUE_NAME, { connection })
   }
   return _cfdiImportQueue
+}
+
+export function getMassDownloadRoutineQueue(): Queue {
+  if (!_massDownloadRoutineQueue) {
+    const connection = resolveRedisConnection()
+    _massDownloadRoutineQueue = new Queue(MASS_DOWNLOAD_ROUTINE_QUEUE_NAME, { connection })
+  }
+  return _massDownloadRoutineQueue
+}
+
+export function getFiscalControlExportQueue(): Queue {
+  _fiscalControlExportQueue ??= new Queue(FISCAL_CONTROL_EXPORT_QUEUE_NAME, {
+    connection: resolveRedisConnection(),
+  })
+  return _fiscalControlExportQueue
 }

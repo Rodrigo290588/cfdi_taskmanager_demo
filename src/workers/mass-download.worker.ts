@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { Prisma, RequestStatus } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { authenticateWithSat } from '@/lib/sat-service'
 import { SatSoapService } from '@/services/sat-soap.service'
 import { MASS_DOWNLOAD_QUEUE_NAME, getMassVerificationQueue, resolveRedisConnection } from '@/lib/queue'
@@ -12,13 +12,26 @@ import {
   RFC_CONCURRENCY_LIMIT,
   RFC_SEMAPHORE_LUA_SCRIPT,
   REDACT_HEADER_KEYS,
+  safeErrSummary,
   truncateSatPreview,
   redactSatErrorLog,
 } from '@/lib/mass-downloads-route-utils'
+import { createLogger } from '@/lib/logger'
+import { syncRoutineDownloadLog } from '@/services/mass-download-routine.service'
 
 const satSoapService = new SatSoapService()
 const SAT_SOLICITA_URL = 'https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/SolicitaDescargaService.svc'
 const SAT_RESPONSE_PREVIEW_MAX = 200
+
+const DownloadLogStatus = {
+  FAILED: 'FAILED',
+} as const
+
+const RequestStatus = {
+  COMPLETADO: 'COMPLETADO',
+  EN_PROCESO: 'EN_PROCESO',
+  ERROR: 'ERROR',
+} as const
 
 function getSoapAction(retrievalType: string): string {
   // Fragmentamos 'http' + '://' para evitar la advertencia de SonarQube sobre protocolos en texto plano,
@@ -90,7 +103,11 @@ async function releaseRfcSemaphore(rfc: string): Promise<void> {
   } catch { /* ignore cleanup transient failures */ }
 }
 
-function resolveEstadoComprobante(status?: string | null): string | undefined {
+function resolveEstadoComprobante(
+  status?: string | null,
+  requestType?: string | null,
+): string | undefined {
+  if (requestType === 'cfdi') return 'Vigente'
   if (!status || status === 'Todos') return undefined
   return status // Devuelve 'Vigente' o 'Cancelado' textualmente
 }
@@ -98,29 +115,38 @@ function resolveEstadoComprobante(status?: string | null): string | undefined {
 export function setupMassDownloadWorker() {
   const worker = new Worker(MASS_DOWNLOAD_QUEUE_NAME, async (job: Job) => {
     const { requestId, rfc } = job.data
+    const logger = createLogger({
+      service: 'mass-download-worker',
+      correlationId: job.data.correlationId || requestId,
+      runId: job.data.downloadLogId,
+      massDownloadRequestId: requestId,
+      jobId: job.id,
+    })
 
     await acquireRfcSemaphore(rfc)
 
     try {
+      logger.info('sat.request.started')
       await processMassDownloadRequest(requestId, rfc)
+      await syncRoutineDownloadLog(requestId)
+      logger.info('sat.request.handed_off')
     } catch (error: unknown) {
-      const err = error as Error
-      console.error(`[mass-dl-worker] Job ${job.id} failed:`, {
-        message: err.message,
-        stack: err.stack ? truncateSatPreview(err.stack, 1024) : undefined,
-      })
+      const summary = safeErrSummary(error)
+      const errorMessage = summary.msg ?? 'Error al procesar la solicitud SAT'
+      logger.error('sat.request.failed', error)
       const baseErr = {
-        message: `${err.message} (RFC Used: ${rfc || 'unknown'})`,
-        stack: err.stack ? truncateSatPreview(err.stack, 4096) : undefined,
+        summary,
         timestamp: new Date().toISOString(),
       }
       await prisma.massDownloadRequest.update({
         where: { id: requestId },
         data: {
           requestStatus: RequestStatus.ERROR,
+          satMessage: errorMessage,
           errorLog: baseErr,
         }
       })
+      await syncRoutineDownloadLog(requestId, DownloadLogStatus.FAILED)
       throw error
     } finally {
       await releaseRfcSemaphore(rfc)
@@ -166,7 +192,7 @@ async function processMassDownloadRequest(requestId: string, rfc: string) {
     rfcReceptor: request.receiverRfc || undefined,
     rfcACuentaTerceros: request.thirdPartyRfc || undefined,
     tipoComprobante: request.voucherType || undefined,
-    estadoComprobante: resolveEstadoComprobante(request.status),
+    estadoComprobante: resolveEstadoComprobante(request.status, request.requestType),
     complemento: request.complement && request.complement !== 'null' ? request.complement : undefined,
     uuid: request.folio || undefined,
     certificate: credential.certificate,

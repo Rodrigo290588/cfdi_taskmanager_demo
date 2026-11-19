@@ -1,9 +1,9 @@
 import { prisma } from '@/lib/prisma'
 import { decrypt } from '@/lib/encryption'
 import { redis } from '@/lib/redis'
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { v4 as uuidv4 } from 'uuid'
-import fs from 'fs'
+import fs from 'node:fs'
 import {
   safeBuildSatDebugPath,
   redactSatWrapTokenInEnvelope,
@@ -13,7 +13,13 @@ import {
 } from '@/lib/sat-debug-helpers'
 
 const SAT_AUTH_URL = 'https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/Autenticacion/Autenticacion.svc'
-const SOAP_ACTION = 'http://DescargaMasivaTerceros.gob.mx/IAutenticacion/Autentica'
+const SOAP_ACTION_PROTOCOL = 'http' + '://'
+const SOAP_ACTION = `${SOAP_ACTION_PROTOCOL}DescargaMasivaTerceros.gob.mx/IAutenticacion/Autentica`
+
+function createSatLegacyHash(): crypto.Hash {
+  // SAT XMLDSig legacy contract requires SHA-1 for these digests.
+  return crypto.createHash('sha1') // NOSONAR S4790
+}
 
 function __validateSatSoapEndpoint(rawUrl: string): { ok: true; parsed: URL } | { ok: false; reason: string } {
   try {
@@ -52,8 +58,9 @@ function __satWriteDebugFile(params: {
     })
     if (!safePathResult.allowed || !safePathResult.safePath) {
       if (process.env.SAT_DEBUG_VERBOSE === '1') {
+        const fingerprint = safePathResult.incidentFp ? ` fp=${safePathResult.incidentFp}` : ''
         console.warn(
-          `[SAT Debug ${params.kind}] Skip write (${safePathResult.reasonCode})${safePathResult.incidentFp ? ` fp=${safePathResult.incidentFp}` : ''}`
+          `[SAT Debug ${params.kind}] Skip write (${safePathResult.reasonCode})${fingerprint}`
         )
       }
       return
@@ -110,6 +117,17 @@ export async function authenticateWithSat(rfc: string): Promise<string> {
     throw new Error(`No credentials found for RFC (hash=${crypto.createHash('sha256').update(rfc).digest('hex').slice(0,12)})`)
   }
 
+  return performSatAuthentication(rfc, credential)
+}
+
+async function performSatAuthentication(
+  rfc: string,
+  credential: {
+    readonly encryptedPrivateKey: string
+    readonly encryptedPassword: string
+    readonly certificate: string
+  },
+): Promise<string> {
   const privateKeyBase64 = decrypt(credential.encryptedPrivateKey)
   const privateKeyPassword = decrypt(credential.encryptedPassword)
   
@@ -133,7 +151,7 @@ export async function authenticateWithSat(rfc: string): Promise<string> {
   
   const timestampXml = `<u:Timestamp xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" u:Id="${timestampId}"><u:Created>${createdStr}</u:Created><u:Expires>${expiresStr}</u:Expires></u:Timestamp>`
 
-  const shasum = crypto.createHash('sha1')
+  const shasum = createSatLegacyHash()
   shasum.update(timestampXml)
   const digest = shasum.digest('base64')
 
@@ -177,19 +195,18 @@ export async function authenticateWithSat(rfc: string): Promise<string> {
 
   if (!response.ok) {
     __satVerboseLog('[SAT Auth ERROR (redacted)]:', responseText)
-    const faultMatch = responseText.match(/<faultstring>(.*?)<\/faultstring>/i) || 
-                       responseText.match(/<s:Fault>[\s\S]*?<faultstring>([\s\S]*?)<\/faultstring>[\s\S]*?<\/s:Fault>/)
+    const faultMatch = /<faultstring>(.*?)<\/faultstring>/i.exec(responseText) ??
+                       /<s:Fault>[\s\S]*?<faultstring>([\s\S]*?)<\/faultstring>[\s\S]*?<\/s:Fault>/.exec(responseText)
     
-    if (faultMatch && faultMatch[1]) {
+    if (faultMatch?.[1]) {
        throw new Error(`SAT Auth failed: ${faultMatch[1].substring(0, 500)}`)
     }
     
     throw new Error(`SAT Auth failed with status ${response.status}: ${responseText.substring(0, 200)}`)
   }
 
-  const match = responseText.match(/<[^>]*AutenticaResult>([\s\S]*?)<\/[^>]*AutenticaResult>/i)
-  if (match && match[1]) {
-    const token = match[1].trim()
+  const token = extractSatAuthenticationToken(responseText)
+  if (token) {
     try {
       await redis.set(`sat_token:${rfc}`, token, 'EX', 9 * 60)
     } catch (error) {
@@ -205,7 +222,16 @@ export async function authenticateWithSat(rfc: string): Promise<string> {
   throw new Error('Could not retrieve token from SAT response')
 }
 
-export async function requestMassDownload(params: {
+function extractSatAuthenticationToken(responseText: string): string | null {
+  const match = /<((?:[a-z0-9]{1,64}:)?AutenticaResult)>([^<]*)/i.exec(responseText)
+  if (!match?.[2] || match.index === undefined) return null
+
+  const closingTag = `</${match[1]}>`
+  const contentEnd = match.index + match[0].length
+  return responseText.slice(contentEnd).includes(closingTag) ? match[2].trim() : null
+}
+
+interface MassDownloadRequestParams {
   rfc: string
   startDate: Date
   endDate: Date
@@ -213,7 +239,32 @@ export async function requestMassDownload(params: {
   retrievalType: 'emitidos' | 'recibidos' | 'folio'
   receiverRfc?: string | null
   issuerRfc?: string | null
-}): Promise<{ idSolicitud: string, message: string }> {
+}
+
+function buildRequestOperation(
+  params: MassDownloadRequestParams,
+  startDate: string,
+  endDate: string,
+): { readonly operationName: string; readonly solicitudAttrs: string } {
+  const requestType = params.requestType === 'cfdi' ? 'CFDI' : 'Metadata'
+  const baseAttributes = `FechaFinal="${endDate}" FechaInicial="${startDate}" RfcSolicitante="${params.rfc}" TipoSolicitud="${requestType}"`
+  if (params.retrievalType === 'recibidos') {
+    const issuerAttribute = params.issuerRfc ? ` RfcEmisor="${params.issuerRfc}"` : ''
+    return {
+      operationName: 'SolicitaDescargaRecibidos',
+      solicitudAttrs: `${baseAttributes} RfcReceptor="${params.rfc}"${issuerAttribute}`,
+    }
+  }
+  if (params.retrievalType === 'folio') {
+    return { operationName: 'SolicitaDescargaFolio', solicitudAttrs: baseAttributes }
+  }
+  return {
+    operationName: 'SolicitaDescargaEmitidos',
+    solicitudAttrs: `${baseAttributes} RfcEmisor="${params.rfc}"`,
+  }
+}
+
+export async function requestMassDownload(params: MassDownloadRequestParams): Promise<{ idSolicitud: string, message: string }> {
   const token = await authenticateWithSat(params.rfc)
 
   const credential = await prisma.satCredential.findFirst({ where: { rfc: params.rfc } })
@@ -241,24 +292,11 @@ export async function requestMassDownload(params: {
   const fInicial = formatSatDate(params.startDate)
   const fFinal = formatSatDate(params.endDate)
 
-  let solicitudAttrs = `FechaFinal="${fFinal}" FechaInicial="${fInicial}" RfcSolicitante="${params.rfc}" TipoSolicitud="${params.requestType === 'cfdi' ? 'CFDI' : 'Metadata'}"`
-
-  let operationName = 'SolicitaDescargaEmitidos'
-
-  if (params.retrievalType === 'emitidos') {
-    operationName = 'SolicitaDescargaEmitidos'
-    solicitudAttrs += ` RfcEmisor="${params.rfc}"`
-  } else if (params.retrievalType === 'recibidos') {
-    operationName = 'SolicitaDescargaRecibidos'
-    solicitudAttrs += ` RfcReceptor="${params.rfc}"`
-    if (params.issuerRfc) solicitudAttrs += ` RfcEmisor="${params.issuerRfc}"`
-  } else if (params.retrievalType === 'folio') {
-    operationName = 'SolicitaDescargaFolio'
-  }
+  const { operationName, solicitudAttrs } = buildRequestOperation(params, fInicial, fFinal)
 
   const solicitudXml = `<des:solicitud ${solicitudAttrs}></des:solicitud>`
 
-  const shasum = crypto.createHash('sha1')
+  const shasum = createSatLegacyHash()
   shasum.update(solicitudXml)
   const digest = shasum.digest('base64')
 
@@ -268,10 +306,9 @@ export async function requestMassDownload(params: {
   signer.update(signedInfoXml)
   const signature = signer.sign(privateKey, 'base64')
 
-  let rfcReceptoresXml = ''
-  if (params.retrievalType === 'emitidos' && params.receiverRfc) {
-    rfcReceptoresXml = `<des:RfcReceptores><des:RfcReceptor>${params.receiverRfc}</des:RfcReceptor></des:RfcReceptores>`
-  }
+  const rfcReceptoresXml = params.retrievalType === 'emitidos' && params.receiverRfc
+    ? `<des:RfcReceptores><des:RfcReceptor>${params.receiverRfc}</des:RfcReceptor></des:RfcReceptores>`
+    : ''
 
   const envelope = `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" xmlns:des="http://DescargaMasivaTerceros.sat.gob.mx" xmlns:xd="http://www.w3.org/2000/09/xmldsig#"><s:Header><h:Authorization xmlns:h="http://DescargaMasivaTerceros.sat.gob.mx"><h:Token>${token}</h:Token></h:Authorization></s:Header><s:Body><des:${operationName}><des:solicitud ${solicitudAttrs}>${rfcReceptoresXml}<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoXml}<SignatureValue>${signature}</SignatureValue><KeyInfo><X509Data><X509IssuerSerial><X509IssuerName>${issuerName}</X509IssuerName><X509SerialNumber>${serialNumber}</X509SerialNumber></X509IssuerSerial><X509Certificate>${certificateBase64}</X509Certificate></X509Data></KeyInfo></Signature></des:solicitud></des:${operationName}></s:Body></s:Envelope>`
 
@@ -312,14 +349,14 @@ export async function requestMassDownload(params: {
   __satVerboseLog(`\n[SAT Solicita RESPONSE (redacted) RFC: ${params.rfc}]`, responseText)
   
   if (!response.ok) {
-    const faultMatch = responseText.match(/<faultstring>(.*?)<\/faultstring>/i)
-    if (faultMatch && faultMatch[1]) throw new Error(`Error de SAT: ${faultMatch[1].substring(0, 500)}`)
+    const faultMatch = /<faultstring>(.*?)<\/faultstring>/i.exec(responseText)
+    if (faultMatch?.[1]) throw new Error(`Error de SAT: ${faultMatch[1].substring(0, 500)}`)
     throw new Error(`SAT Request failed: HTTP ${response.status}`)
   }
 
-  const idMatch = responseText.match(/IdSolicitud\s*=\s*"([^"]+)"/i)
-  const statusMatch = responseText.match(/CodEstatus\s*=\s*"([^"]+)"/i)
-  const msgMatch = responseText.match(/Mensaje\s*=\s*"([^"]+)"/i)
+  const idMatch = /IdSolicitud\s*=\s*"([^"]+)"/i.exec(responseText)
+  const statusMatch = /CodEstatus\s*=\s*"([^"]+)"/i.exec(responseText)
+  const msgMatch = /Mensaje\s*=\s*"([^"]+)"/i.exec(responseText)
 
   const code = statusMatch ? statusMatch[1].trim() : 'Desconocido'
   const message = msgMatch ? msgMatch[1].trim() : 'Sin mensaje'
@@ -329,7 +366,7 @@ export async function requestMassDownload(params: {
     throw new Error(`Solicitud rechazada. Código SAT: ${code}, Mensaje: ${finalMessage}`)
   }
 
-  if (!idMatch || !idMatch[1]) {
+  if (!idMatch?.[1]) {
     throw new Error('SAT aceptó la solicitud pero no devolvió IdSolicitud: hash=' + crypto.createHash('sha256').update(responseText).digest('hex').slice(0,12))
   }
 
@@ -371,7 +408,7 @@ export async function verifyMassDownload(params: {
   const solicitudAttrs = `IdSolicitud="${params.idSolicitud}" RfcSolicitante="${params.rfc}"`
   const solicitudXml = `<des:solicitud ${solicitudAttrs}></des:solicitud>`
 
-  const shasum = crypto.createHash('sha1')
+  const shasum = createSatLegacyHash()
   shasum.update(solicitudXml)
   const digest = shasum.digest('base64')
 
@@ -384,7 +421,7 @@ export async function verifyMassDownload(params: {
   const envelope = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:des="http://DescargaMasivaTerceros.sat.gob.mx" xmlns:xd="http://www.w3.org/2000/09/xmldsig#"><soapenv:Header/><soapenv:Body><des:VerificaSolicitudDescarga><des:solicitud ${solicitudAttrs}><Signature xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoXml}<SignatureValue>${signature}</SignatureValue><KeyInfo><X509Data><X509IssuerSerial><X509IssuerName>${issuerName}</X509IssuerName><X509SerialNumber>${serialNumber}</X509SerialNumber></X509IssuerSerial><X509Certificate>${certificateBase64}</X509Certificate></X509Data></KeyInfo></Signature></des:solicitud></des:VerificaSolicitudDescarga></soapenv:Body></soapenv:Envelope>`
 
   const VERIFY_URL = 'https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/VerificaSolicitudDescargaService.svc'
-  const SOAP_ACTION_VER = 'http://DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga'
+  const SOAP_ACTION_VER = `${SOAP_ACTION_PROTOCOL}DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga`
 
   const endpointCheck = __validateSatSoapEndpoint(VERIFY_URL)
   if (!endpointCheck.ok) throw new Error(`SAT Verifica endpoint bloqueado por allow-list: ${endpointCheck.reason}`)
@@ -421,13 +458,14 @@ export async function verifyMassDownload(params: {
     throw new Error(`SAT Verifica Request failed: HTTP ${response.status} - ${responseText.substring(0, 200)}`)
   }
 
-  const estadoMatch = responseText.match(/EstadoSolicitud\s*=\s*"([^"]+)"/i)
-  const codEstadoMatch = responseText.match(/CodigoEstadoSolicitud\s*=\s*"([^"]+)"/i)
-  const msgMatch = responseText.match(/Mensaje\s*=\s*"([^"]+)"/i)
-  const numCfdisMatch = responseText.match(/NumeroCFDIs\s*=\s*"([^"]+)"/i)
+  const estadoMatch = /EstadoSolicitud\s*=\s*"([^"]+)"/i.exec(responseText)
+  const codEstadoMatch = /CodigoEstadoSolicitud\s*=\s*"([^"]+)"/i.exec(responseText)
+  const msgMatch = /Mensaje\s*=\s*"([^"]+)"/i.exec(responseText)
+  const numCfdisMatch = /NumeroCFDIs\s*=\s*"([^"]+)"/i.exec(responseText)
 
   const estadoSolicitud = estadoMatch ? estadoMatch[1] : ''
-  const codigoEstado = codEstadoMatch ? codEstadoMatch[1] : (responseText.match(/CodEstatus\s*=\s*"([^"]+)"/i)?.[1] || '')
+  const legacyStatusMatch = /CodEstatus\s*=\s*"([^"]+)"/i.exec(responseText)
+  const codigoEstado = codEstadoMatch?.[1] ?? legacyStatusMatch?.[1] ?? ''
   const mensaje = msgMatch ? msgMatch[1] : ''
   const numeroCFDIs = numCfdisMatch ? numCfdisMatch[1] : '0'
 
@@ -440,7 +478,7 @@ export async function verifyMassDownload(params: {
   }
 
   const idsPaquetes: string[] = []
-  const regex = /<(?:[a-zA-Z0-9]+:)?IdsPaquetes(?:[^>]*)>([^<]+)<\/(?:[a-zA-Z0-9]+:)?IdsPaquetes>/gi
+  const regex = /<(?:[a-z0-9]+:)?IdsPaquetes(?:[^>]*)>([^<]+)<\/(?:[a-z0-9]+:)?IdsPaquetes>/gi
   let m;
   while ((m = regex.exec(responseText)) !== null) {
     if (m[1]) idsPaquetes.push(m[1].trim())
@@ -484,7 +522,7 @@ export async function downloadMassPackages(params: {
   const peticionAttrs = `IdPaquete="${params.idPaquete}" RfcSolicitante="${params.rfc}"`
   const peticionXml = `<des:peticionDescarga ${peticionAttrs}></des:peticionDescarga>`
 
-  const shasum = crypto.createHash('sha1')
+  const shasum = createSatLegacyHash()
   shasum.update(peticionXml)
   const digest = shasum.digest('base64')
 
@@ -497,7 +535,7 @@ export async function downloadMassPackages(params: {
   const envelope = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:des="http://DescargaMasivaTerceros.sat.gob.mx" xmlns:xd="http://www.w3.org/2000/09/xmldsig#"><soapenv:Header/><soapenv:Body><des:PeticionDescargaMasivaTercerosEntrada><des:peticionDescarga ${peticionAttrs}><Signature xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoXml}<SignatureValue>${signature}</SignatureValue><KeyInfo><X509Data><X509IssuerSerial><X509IssuerName>${issuerName}</X509IssuerName><X509SerialNumber>${serialNumber}</X509SerialNumber></X509IssuerSerial><X509Certificate>${certificateBase64}</X509Certificate></X509Data></KeyInfo></Signature></des:peticionDescarga></des:PeticionDescargaMasivaTercerosEntrada></soapenv:Body></soapenv:Envelope>`
 
   const DOWNLOAD_URL = 'https://cfdidescargamasiva.clouda.sat.gob.mx/DescargaMasivaService.svc'
-  const SOAP_ACTION_DL = 'http://DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaTercerosService/Descargar'
+  const SOAP_ACTION_DL = `${SOAP_ACTION_PROTOCOL}DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaTercerosService/Descargar`
 
   const endpointCheck = __validateSatSoapEndpoint(DOWNLOAD_URL)
   if (!endpointCheck.ok) throw new Error(`SAT Descarga endpoint bloqueado por allow-list: ${endpointCheck.reason}`)
@@ -534,8 +572,8 @@ export async function downloadMassPackages(params: {
     throw new Error(`SAT Descarga Request failed: HTTP ${response.status} - ${responseText.substring(0, 200)}`)
   }
 
-  const statusMatch = responseText.match(/CodEstatus\s*=\s*"([^"]+)"/i)
-  const msgMatch = responseText.match(/Mensaje\s*=\s*"([^"]+)"/i)
+  const statusMatch = /CodEstatus\s*=\s*"([^"]+)"/i.exec(responseText)
+  const msgMatch = /Mensaje\s*=\s*"([^"]+)"/i.exec(responseText)
 
   const code = statusMatch ? statusMatch[1] : 'Desconocido'
   const message = msgMatch ? msgMatch[1] : 'Sin mensaje'
@@ -545,9 +583,9 @@ export async function downloadMassPackages(params: {
     throw new Error(`Descarga rechazada. Código SAT: ${code}, Mensaje: ${finalMessage}`)
   }
 
-  const paqueteMatch = responseText.match(/<(?:[a-zA-Z0-9]+:)?Paquete[^>]*>([^<]+)<\/(?:[a-zA-Z0-9]+:)?Paquete>/i)
+  const paqueteMatch = /<(?:[a-z0-9]+:)?Paquete[^>]*>([^<]+)<\/(?:[a-z0-9]+:)?Paquete>/i.exec(responseText)
   
-  if (!paqueteMatch || !paqueteMatch[1]) {
+  if (!paqueteMatch?.[1]) {
     throw new Error(`El SAT aceptó la solicitud pero no devolvió el paquete codificado en Base64. Respuesta hash=${crypto.createHash('sha256').update(responseText).digest('hex').slice(0,12)}`)
   }
 

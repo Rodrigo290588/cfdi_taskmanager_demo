@@ -89,7 +89,7 @@ describeIfIntegrationDb('[FASE2] Prisma + PostgreSQL · Transacciones / Rollback
       feA = await createFiscalEntity(integrationPrisma, FE_A_RFC, orgA.id)
       userAdm = await createUser(integrationPrisma, USER_ADMIN_EMAIL, 'Admin Bulk', SystemRole.ADMIN)
       memAdm = await ensureMembership(integrationPrisma, userAdm.id, orgA.id, MemberRole.ADMIN, 'APPROVED')
-      compA = await createCompany(integrationPrisma, COMPANY_A_RFC, orgA.id, memAdm.id)
+      _compA = await createCompany(integrationPrisma, COMPANY_A_RFC, orgA.id, memAdm.id)
     })
 
     test('crear 5 facturas × 5,000 conceptos = 25,000 conceptos (pico cierre mes)', async () => {
@@ -210,7 +210,7 @@ describeIfIntegrationDb('[FASE2] Prisma + PostgreSQL · Transacciones / Rollback
         })
         results.push(r)
       }
-      expect(results.length).toBe(10)
+      expect(results).toHaveLength(10)
       const last = results[9]
       expect(last.name).toMatch(/Intento 9/)
       const reloaded = await integrationPrisma.company.findUnique({

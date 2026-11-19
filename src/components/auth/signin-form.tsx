@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type SyntheticEvent } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -146,7 +146,7 @@ export function SignInForm() {
   const [error, setError] = useState<string>(derivedUrlError || '')
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
 
@@ -162,14 +162,23 @@ export function SignInForm() {
     setIsLoading(true)
 
     try {
+      // #region debug-point E:client-submit
+      fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "E", location: "signin-form:handleSubmit", msg: "[DEBUG] Credential sign-in submitted", data: { phase: "start" }, ts: Date.now() }) }).catch(() => {})
+      // #endregion
       const result = await signIn('credentials', {
         email: validation.data.email,
         password: validation.data.password,
         redirect: false,
       })
 
+      // #region debug-point E:client-result
+      fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "E", location: "signin-form:handleSubmit", msg: "[DEBUG] Credential sign-in returned", data: { error: result?.error ?? null, ok: result?.ok ?? null, status: result?.status ?? null, hasUrlError: result?.url?.includes("error=") ?? false }, ts: Date.now() }) }).catch(() => {})
+      // #endregion
       processSignInResult(result, searchParams, router, setError)
-    } catch {
+    } catch (caughtError) {
+      // #region debug-point E:client-catch
+      fetch("http://127.0.0.1:7777/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "signin-credentials-error", runId: "pre-fix", hypothesisId: "E", location: "signin-form:handleSubmit", msg: "[DEBUG] Credential sign-in request threw", data: { errorName: caughtError instanceof Error ? caughtError.name : "unknown" }, ts: Date.now() }) }).catch(() => {})
+      // #endregion
       setError('Ocurrió un error. Por favor, intenta de nuevo.')
     } finally {
       setIsLoading(false)

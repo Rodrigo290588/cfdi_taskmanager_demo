@@ -8,21 +8,32 @@ import { setupSat69BBlacklistWorker } from '../workers/sat-69b-blacklist.worker'
 import { setupCfdiImportDispatchWorker } from '../workers/cfdi-import-dispatch.worker'
 import { setupCfdiImportItemWorker } from '../workers/cfdi-import-item.worker'
 import { setupCfdiImportWorker } from '../workers/cfdi-import.worker'
+import { setupMassDownloadRoutineWorker } from '../workers/mass-download-routine.worker'
+import { setupFiscalControlExportWorker } from '../workers/fiscal-control-export.worker'
 
 loadEnvConfig(process.cwd())
 
-console.log('Starting Background Workers (SAT Verification, Download, Provider Payment Compliance, SAT 69-B Blacklist & Provider Post-Load Cancellation Alerts)...')
-setupVerificationWorker()
-setupMassDownloadWorker()
-setupDownloadWorker()
-setupProviderPaymentComplianceWorker()
-setupProviderPostLoadCancellationAlertsWorker()
-setupSat69BBlacklistWorker()
-setupCfdiImportDispatchWorker()
-setupCfdiImportItemWorker()
-setupCfdiImportWorker()
-console.log('Workers started. Listening for jobs...')
+async function startWorkers(): Promise<void> {
+  console.log('Starting Background Workers (SAT Verification, Download, Routines, Provider Payment Compliance, SAT 69-B Blacklist & Provider Post-Load Cancellation Alerts)...')
+  setupVerificationWorker()
+  setupMassDownloadWorker()
+  setupDownloadWorker()
+  setupProviderPaymentComplianceWorker()
+  setupProviderPostLoadCancellationAlertsWorker()
+  setupSat69BBlacklistWorker()
+  setupCfdiImportDispatchWorker()
+  setupCfdiImportItemWorker()
+  setupCfdiImportWorker()
+  await setupMassDownloadRoutineWorker()
+  setupFiscalControlExportWorker()
+  console.log('Workers started. Listening for jobs...')
+}
 
 // Keep process alive
 process.on('SIGTERM', () => process.exit(0))
 process.on('SIGINT', () => process.exit(0))
+
+startWorkers().catch((error: unknown) => {
+  console.error('Unable to start background workers', error)
+  process.exitCode = 1
+})

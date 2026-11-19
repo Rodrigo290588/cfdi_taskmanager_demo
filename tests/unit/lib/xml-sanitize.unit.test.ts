@@ -23,7 +23,7 @@ import {
   loadRealCfdiSample,
   loadRealCfdiSamples,
   VALID_UUIDS_V4
-} from '@/tests/fixtures/xml-fixtures'
+} from '../../fixtures/xml-fixtures'
 
 /**
  * Helper que encapsula scanXXEAndReportSafe + lanza Error si no es seguro.
@@ -70,9 +70,7 @@ describe('xml-sanitize :: isStrictRfc4122Uuid (UUID RFC 4122)', () => {
     expect(isStrictRfc4122Uuid(undefined)).toBe(false)
     expect(isStrictRfc4122Uuid('')).toBe(false)
     expect(isStrictRfc4122Uuid('   ')).toBe(false)
-    // @ts-expect-error - probando tipo inválido a propósito
     expect(isStrictRfc4122Uuid(1234)).toBe(false)
-    // @ts-expect-error - idem
     expect(isStrictRfc4122Uuid({})).toBe(false)
   })
 
@@ -148,17 +146,20 @@ describe('xml-sanitize :: detectXXEBytes :: HAPPY PATH (CFDIs reales)', () => {
   })
 
   it('acepta CFDI mínimo válido sintáctico (2 conceptos)', () => {
-    expectSafe(buildMinimalValidCfdi({ conceptos: 2 }))
+    const result = scanXXEAndReportSafe(buildMinimalValidCfdi({ conceptos: 2 }))
+    expect(result.safe).toBe(true)
   })
 
   it('acepta CFDI con 100 conceptos (por debajo de 2500 aperturas+cierres combinados)', () => {
-    expectSafe(buildCfdiWithConceptos(100))
+    const result = scanXXEAndReportSafe(buildCfdiWithConceptos(100))
+    expect(result.safe).toBe(true)
   })
 
   it('acepta CFDI con 2499 conceptos (menos de 5000 conteo de tags apertura+cierre)', () => {
     // Nota: la regex /<[^:>]*:?Concepto\b/gi cuenta tanto <cfdi:Concepto apertura </cfdi:Concepto cierre.
     // Por lo tanto N conceptos = 2*N matches. MAX_CONCEPTOS_POR_CFDI=5000, así que N=2499 es seguro (4998 matches).
-    expectSafe(buildCfdiWithConceptos(2499))
+    const result = scanXXEAndReportSafe(buildCfdiWithConceptos(2499))
+    expect(result.safe).toBe(true)
   })
 
   it('detectXXEBytes retorna null para input benigno', () => {
@@ -179,7 +180,8 @@ describe('xml-sanitize :: detectXXEBytes :: BLOQUEOS LÍMITES FUNCIONALES', () =
   it('bloquea payload >10KB (? el sniff-window 16KB no es hard reject, conceptos sí lo es) - XML >16KB aún válido si sin ataques', () => {
     const bigSafe =
       buildMinimalValidCfdi() + '<!-- comentario gigante ' + 'x'.repeat(32 * 1024) + ' -->'
-    expectSafe(bigSafe)
+    const result = scanXXEAndReportSafe(bigSafe)
+    expect(result.safe).toBe(true)
   })
 })
 
@@ -309,14 +311,14 @@ describe('xml-sanitize :: createConceptoRegexSafe :: API de parsing seguro', () 
     const xml = buildMinimalValidCfdi({ conceptos: 2 })
     const parser = createConceptoRegexSafe()
     const concepts = parser.matchAll(xml)
-    expect(concepts.length).toBe(2)
+    expect(concepts).toHaveLength(2)
   })
 
   it('extrae 100 conceptos sin error y attrs tienen longitud esperada', () => {
     const xml = buildCfdiWithConceptos(100)
     const parser = createConceptoRegexSafe()
     const concepts = parser.matchAll(xml)
-    expect(concepts.length).toBe(100)
+    expect(concepts).toHaveLength(100)
     for (const c of concepts) {
       expect(typeof c.index).toBe('number')
       expect(c.index).toBeGreaterThanOrEqual(0)

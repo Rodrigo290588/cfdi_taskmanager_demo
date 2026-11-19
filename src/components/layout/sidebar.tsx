@@ -48,7 +48,8 @@ import {
   Activity,
   XCircle,
   Landmark,
-  Settings
+  Settings,
+  CalendarClock
 } from "lucide-react"
 
 function isAbortError(error: unknown) {
@@ -231,6 +232,7 @@ function MassDownloadsNavGroup({ show }: Readonly<{ show: boolean }>) {
           <SubNavLinkItem href="/mass-downloads/requests/monitor" icon={BarChart3} title="Monitor de solicitud de peticiones" />
         </CollapsibleContent>
       </Collapsible>
+      <SubNavLinkItem href="/mass-downloads/routines" icon={CalendarClock} title="Rutinas automatizadas" />
       <SubNavLinkItem href="/mass-downloads/verification" icon={Shield} title="Monitor de verificación de peticiones" />
       <SubNavLinkItem href="/mass-downloads/package-downloads" icon={CloudDownload} title="Módulo de descargas de paquetes de solicitud" />
       <SubNavLinkItem href="/mass-downloads/fiscal-control" icon={BarChart3} title="Panel de Control Fiscal CFDI" />

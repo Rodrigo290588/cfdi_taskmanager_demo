@@ -54,7 +54,7 @@ describe('[FASE3 · Performance] Audit PII bulk 1000 entries · Estabilidad de r
     )
     await Promise.all(proms)
     const elapsed = performance.now() - t0
-    expect(auditTrail.length).toBe(N)
+    expect(auditTrail).toHaveLength(N)
     expect(elapsed).toBeLessThan(5000)
 
     const withNull = auditTrail.filter((_, i) => i % 3 === 0)
@@ -72,6 +72,7 @@ describe('[FASE3 · Performance] Audit PII bulk 1000 entries · Estabilidad de r
         recordId: `mc-stress-${i}`,
         userId: `u-stress-${i}`,
         userEmail: `stress+audit${i}@itcomplements.com`,
+        description: 'Prueba de redacción de datos sensibles',
         newValues: {
           clientSecret: `DO_NOT_LOG_CLIENT_${i}`,
           request: {
@@ -84,7 +85,7 @@ describe('[FASE3 · Performance] Audit PII bulk 1000 entries · Estabilidad de r
         },
       })
     }
-    expect(auditTrail.length).toBe(N)
+    expect(auditTrail).toHaveLength(N)
     let violations = 0
     for (let i = 0; i < auditTrail.length; i++) {
       const entry = auditTrail[i]
@@ -120,7 +121,7 @@ describe('[FASE3 · Performance] Audit PII bulk 1000 entries · Estabilidad de r
         },
       },
     })
-    expect(auditTrail.length).toBe(1)
+    expect(auditTrail).toHaveLength(1)
     const entry = auditTrail[0]
     expect(entry.newValues.password).not.toContain('LVL1_pass')
     expect(entry.newValues.a.clientSecret).not.toContain('LVL2_secret')

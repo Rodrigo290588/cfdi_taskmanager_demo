@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { CFDI_IMPORT_QUEUE_NAME, resolveRedisConnection } from '@/lib/queue'
 import unzipper from 'unzipper'
 import fs from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { createInvoiceFromXml, parseInvoiceFromXml } from '@/lib/invoice-import'
 import { CfdiType, ImportRunSource, ImportRunClassificationResult, ImportRunItemStatus } from '@prisma/client'
 import { refreshHrMaterializedViews } from '@/lib/payroll-analytics-service'
@@ -10,6 +11,7 @@ import { refreshDireccionMaterializedViews } from '@/lib/direccion-analytics-ser
 import { safeErrSummary } from '@/lib/security'
 import { buildProviderReportFromXmlCandidates } from '@/lib/provider-cfdi-report'
 import { persistProviderAcceptedCfdis } from '@/lib/provider-cfdi-storage'
+import { validateMassDownloadZip } from '@/lib/mass-download-secure-storage'
 
 async function resolveOrganizationId(companyId: string, companyRfc: string): Promise<string> {
   const fiscalEntity = await prisma.fiscalEntity.findFirst({
@@ -204,6 +206,7 @@ async function handleCfdiImportJob(job: Job) {
     const targetOrganizationId = await resolveOrganizationId(request.company.id, request.company.rfc)
 
     console.log(`[CfdiImport] Descomprimiendo ZIP de ${idPaquete}...`)
+    await validateMassDownloadZip(await readFile(filePath))
     
     const { importedCount, errorCount, skippedCount, hasNomina, errorDetails } = await processZipStream(
       filePath, 

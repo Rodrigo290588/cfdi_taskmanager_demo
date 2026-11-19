@@ -190,8 +190,8 @@ describeIfIntegrationDb('[FASE2] Auth + Permisos + Rate Limit + Auditoria + RFC 
       }
       const alloweds = resultados.filter((x: any) => x && x.allowed)
       const blockeds = resultados.filter((x: any) => !x || !x.allowed)
-      expect(alloweds.length).toBe(10)
-      expect(blockeds.length).toBe(90)
+      expect(alloweds).toHaveLength(10)
+      expect(blockeds).toHaveLength(90)
     })
 
     test('rateLimitByUserId: 5 allow, 6to throw RateLimitError', () => {
@@ -274,6 +274,7 @@ describeIfIntegrationDb('[FASE2] Auth + Permisos + Rate Limit + Auditoria + RFC 
         recordId: 'u-002',
         userId: 'u-002',
         userEmail: null as any,
+        description: 'Prueba de correo de auditoría',
       })
       expect(lastAuditData).not.toBeNull()
       expect(lastAuditData.userEmail).toBe('unknown@tenant.local')
@@ -286,7 +287,7 @@ describeIfIntegrationDb('[FASE2] Auth + Permisos + Rate Limit + Auditoria + RFC 
       expect(res.isValid).toBe(true)
       expect(res.type).toBe('person')
       expect(res.homoclave).toBe('ABC')
-      expect(res.errors.length).toBe(0)
+      expect(res.errors).toHaveLength(0)
     })
 
     test('SCI041122EI5 persona moral valida type=company date OK', () => {
@@ -312,7 +313,7 @@ describeIfIntegrationDb('[FASE2] Auth + Permisos + Rate Limit + Auditoria + RFC 
       const rfc13 = 'ODE8604257UA'
       const dv = calculateOfficialSatVerificationDigit(rfc13)
       expect(typeof dv).toBe('string')
-      expect(dv.length).toBe(1)
+      expect(dv).toHaveLength(1)
       expect(/^[0-9A]$/.test(dv)).toBe(true)
     })
 
